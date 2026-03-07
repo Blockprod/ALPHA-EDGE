@@ -35,6 +35,9 @@ dist/
 # --- Logs ---
 alphaedge/logs/*.log
 
+# --- Proprietary / Sensitive ---
+ALPHAEDGE_ACTION_PLAN.md
+
 # --- Output Files ---
 ALPHAEDGE_backtest_results.csv
 ALPHAEDGE_equity_curve.png
