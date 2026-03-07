@@ -1,6 +1,6 @@
-# ⚡ ALPHAEDGE — FCR Forex Trading Bot
+# ⚡ ALPHAEDGE
 
-**Production-ready hybrid Python/Cython automated trading bot implementing the Failed Candle Range (FCR) multi-timeframe strategy for Forex via Interactive Brokers.**
+**Production-ready hybrid Python/Cython automated trading bot for Forex via Interactive Brokers.**
 
 > **⚠️ WARNING: This bot places REAL orders. Always start with PAPER TRADING (IB port 4002). Live trading carries significant risk of financial loss. Use at your own discretion.**
 
@@ -8,7 +8,7 @@
 
 ## Table of Contents
 
-1. [Strategy Overview](#strategy-overview)
+1. [Overview](#overview)
 2. [Architecture](#architecture)
 3. [Prerequisites](#prerequisites)
 4. [Installation](#installation)
@@ -24,36 +24,20 @@
 
 ---
 
-## Strategy Overview
+## Overview
 
-ALPHAEDGE implements the **FCR (Failed Candle Range) multi-timeframe strategy** adapted for Forex:
+ALPHAEDGE is a **low-latency Forex trading bot** built with a hybrid Python/Cython architecture. Performance-critical signal detection and order management run as compiled Cython extensions, while orchestration, data feeds, and broker connectivity are handled in Python.
 
-| Component | Details |
-|-----------|---------|
-| **Structure timeframe** | M5 (5-minute candles) |
-| **Entry timeframe** | M1 (1-minute candles) |
-| **Session** | NYSE Open only: 9:30–10:30 AM EST |
-| **Pairs** | EUR/USD, GBP/USD, USD/JPY |
-| **Risk per trade** | 1% of account equity |
-| **Risk-Reward** | 3:1 minimum |
-| **Max trades/session** | 2 |
-| **Daily loss limit** | -3% auto-shutdown |
+**Key features:**
 
-### Signal Flow
+- Compiled Cython core for low-latency signal processing
+- Interactive Brokers integration (live & paper trading)
+- Configurable risk management and position sizing
+- Historical backtesting engine with equity curve analysis
+- Rich terminal dashboard for real-time monitoring
+- Full QA pipeline: Black, Ruff, Pylint, Mypy, Pytest (100% coverage)
 
-```
-1. Pre-session (9:25-9:30 EST)  → Detect M5 FCR range
-2. Session open (9:30 EST)      → Detect ATR spike (gap equivalent)
-3. M1 monitoring (9:30-10:30)   → Detect engulfing pattern at FCR level
-4. Entry trigger                → Bracket order: Entry + SL + TP (3:1 RR)
-5. Risk check                   → Position size (1%), daily limit (-3%)
-```
-
-### Forex Adaptations
-
-- **No true gap at 9:30 EST** — uses ATR spike ratio as volatility expansion proxy
-- **Tick count as volume proxy** — Forex has no centralized volume
-- **Pip precision** — 4 decimals standard, 2 for JPY pairs (0.0001 / 0.01 pip size)
+> Strategy logic is proprietary and not documented here. See the source code if you have authorized access.
 
 ---
 
@@ -62,11 +46,6 @@ ALPHAEDGE implements the **FCR (Failed Candle Range) multi-timeframe strategy** 
 ```
 alphaedge/
 ├── core/           ← Cython (.pyx) — low-latency signal + execution
-│   ├── fcr_detector.pyx
-│   ├── gap_detector.pyx
-│   ├── engulfing_detector.pyx
-│   ├── order_manager.pyx
-│   └── risk_manager.pyx
 ├── engine/         ← Python — orchestration + I/O
 │   ├── broker.py
 │   ├── data_feed.py
@@ -247,17 +226,7 @@ IB_PAPER_MODE=true          # ALWAYS start with true
 
 ### Trading Parameters (`config.yaml`)
 
-All strategy parameters are in `config.yaml`. Key sections:
-
-```yaml
-trading:
-  pairs: ["EURUSD", "GBPUSD", "USDJPY"]
-  risk_per_trade_pct: 1.0
-  rr_ratio: 3.0
-  max_trades_per_session: 2
-  max_daily_loss_pct: 3.0
-  max_spread_pips: 2.0
-```
+All strategy and risk management parameters are in `config.yaml`. Edit to match your trading preferences — pairs, risk limits, session windows, and execution settings are all configurable.
 
 ---
 
@@ -339,8 +308,6 @@ pytest -v -s
 test_<module>_<function_or_scenario>.py
 ```
 
-Each Cython module has 3 dedicated test files (15 total).
-
 ---
 
 ## Running Backtest
@@ -350,9 +317,9 @@ python -m alphaedge.engine.backtest
 ```
 
 **Outputs:**
-- `ALPHAEDGE_backtest_results.csv` — Trade-by-trade results
-- `ALPHAEDGE_equity_curve.png` — Equity curve plot
-- Console summary with win rate, profit factor, max drawdown, Sharpe ratio
+- Trade results CSV
+- Equity curve plot
+- Console summary with key performance metrics
 
 > Backtest requires IB Gateway connection for historical data retrieval.
 
@@ -389,43 +356,17 @@ Displays the Rich terminal dashboard with mock data for layout testing.
 ```
 AlphaEdge/
 ├── .vscode/                    # VSCode workspace config
-│   ├── settings.json           # Formatter, linter, test settings
-│   ├── extensions.json         # Recommended extensions
-│   └── launch.json             # Debug configurations
+│   ├── settings.json
+│   ├── extensions.json
+│   └── launch.json
 ├── alphaedge/                  # Main package
 │   ├── __init__.py
-│   ├── core/                   # Cython modules (low-latency)
-│   │   ├── __init__.py
-│   │   ├── fcr_detector.pyx    # M5 FCR range detection
-│   │   ├── gap_detector.pyx    # ATR spike detection
-│   │   ├── engulfing_detector.pyx  # M1 engulfing patterns
-│   │   ├── order_manager.pyx   # Bracket order creation
-│   │   └── risk_manager.pyx    # Position sizing + risk limits
+│   ├── core/                   # Cython modules (compiled)
 │   ├── engine/                 # Python orchestration
-│   │   ├── __init__.py
-│   │   ├── broker.py           # IB Gateway connection + execution
-│   │   ├── data_feed.py        # Historical + real-time data
-│   │   ├── strategy.py         # Main FCR strategy loop
-│   │   ├── backtest.py         # Historical backtest engine
-│   │   └── dashboard.py        # Rich terminal dashboard
-│   ├── config/                 # Configuration
-│   │   ├── __init__.py
-│   │   ├── constants.py        # Project-wide constants
-│   │   └── loader.py           # YAML + env config loader
-│   ├── utils/                  # Utilities
-│   │   ├── __init__.py
-│   │   ├── timezone.py         # DST-aware timezone handling
-│   │   └── logger.py           # Loguru dual-time logging
+│   ├── config/                 # Configuration loading
+│   ├── utils/                  # Timezone + logging
 │   ├── logs/                   # Runtime log files
-│   │   └── __init__.py
-│   └── tests/                  # Pytest tests (15 files)
-│       ├── __init__.py
-│       ├── conftest.py         # Shared fixtures
-│       ├── test_fcr_detector_*.py
-│       ├── test_gap_detector_*.py
-│       ├── test_engulfing_detector_*.py
-│       ├── test_order_manager_*.py
-│       └── test_risk_manager_*.py
+│   └── tests/                  # Pytest tests
 ├── config.yaml                 # Trading parameters
 ├── .env.example                # Environment template
 ├── requirements.txt            # Pinned dependencies
