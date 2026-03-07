@@ -140,6 +140,7 @@ class FCRStrategy:
         self._rt_feed = RealtimeDataFeed(self._broker)
         self._states: dict[str, StrategyState] = {}
         self._modules = _import_core_modules()
+        self._shutdown_requested = False
 
     def _init_pair_state(self, pair: str) -> StrategyState:
         """Create a fresh strategy state for a pair."""
@@ -296,55 +297,59 @@ class FCRStrategy:
         pip_size: float,
     ) -> bool:
         """Execute a trade signal through IB Gateway."""
-        # Fetch live rate for non-USD-quoted pairs (JPY)
-        exchange_rate = 0.0
-        if pip_size >= 0.001:
-            exchange_rate = await self._rt_feed.get_mid_price(state.pair)
+        try:
+            # Fetch live rate for non-USD-quoted pairs (JPY)
+            exchange_rate = 0.0
+            if pip_size >= 0.001:
+                exchange_rate = await self._rt_feed.get_mid_price(state.pair)
 
-        pos_result = self._size_position(
-            state,
-            signal,
-            pip_size,
-            exchange_rate,
-        )
-        if pos_result is None:
-            return False
+            pos_result = self._size_position(
+                state,
+                signal,
+                pip_size,
+                exchange_rate,
+            )
+            if pos_result is None:
+                return False
 
-        spread = await self._rt_feed.get_live_spread(state.pair)
-        spread_pips = spread / pip_size
+            spread = await self._rt_feed.get_live_spread(state.pair)
+            spread_pips = spread / pip_size
 
-        bracket = self._build_validated_order(
-            signal,
-            pos_result["lot_size"],
-            pip_size,
-            spread_pips,
-        )
-        if bracket is None:
-            return False
+            bracket = self._build_validated_order(
+                signal,
+                pos_result["lot_size"],
+                pip_size,
+                spread_pips,
+            )
+            if bracket is None:
+                return False
 
-        order_mod = self._modules[3]
-        units = order_mod.lots_to_units(
-            bracket["lot_size"],
-            self._config.trading.lot_type,
-        )
-        trades_placed = await self._executor.place_bracket_order(
-            pair=state.pair,
-            direction=bracket["direction"],
-            quantity=units,
-            entry_price=bracket["entry_price"],
-            stop_loss=bracket["stop_loss"],
-            take_profit=bracket["take_profit"],
-        )
-
-        # Register fill callback to reset position flag on SL/TP exit
-        for trade_obj in trades_placed:
-            trade_obj.filledEvent += lambda _t, _pair=state.pair: self._on_trade_closed(
-                _pair
+            order_mod = self._modules[3]
+            units = order_mod.lots_to_units(
+                bracket["lot_size"],
+                self._config.trading.lot_type,
+            )
+            trades_placed = await self._executor.place_bracket_order(
+                pair=state.pair,
+                direction=bracket["direction"],
+                quantity=units,
+                entry_price=bracket["entry_price"],
+                stop_loss=bracket["stop_loss"],
+                take_profit=bracket["take_profit"],
             )
 
-        state.trades_today += 1
-        state.is_position_open = True
-        return True
+            # Register fill callback to reset position flag on SL/TP exit
+            for trade_obj in trades_placed:
+                trade_obj.filledEvent += (
+                    lambda _t, _pair=state.pair: self._on_trade_closed(_pair)
+                )
+
+            state.trades_today += 1
+            state.is_position_open = True
+            return True
+        except Exception:
+            logger.exception(f"ALPHAEDGE _execute_signal failed: {state.pair}")
+            return False
 
     def _on_trade_closed(self, pair: str) -> None:
         """Reset position flag when a bracket child (SL/TP) fills."""
@@ -353,8 +358,20 @@ class FCRStrategy:
             state.is_position_open = False
             logger.info(f"ALPHAEDGE: Position closed for {pair}")
 
+    @staticmethod
+    def _on_task_done(task: asyncio.Task[Any]) -> None:
+        """Log unhandled exceptions from fire-and-forget tasks."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error("ALPHAEDGE async task failed", exc_info=exc)
+
     def _on_new_m1_bar(self, pair: str, candle: dict[str, Any]) -> None:
         """Handle incoming real-time M1 bar data."""
+        if self._shutdown_requested:
+            return
+
         state = self._states.get(pair)
         if state is None:
             return
@@ -389,8 +406,29 @@ class FCRStrategy:
                 f"{'SELL' if signal['signal'] == -1 else 'BUY'} "
                 f"@ {signal['entry_price']}"
             )
-            # Schedule async execution
-            asyncio.ensure_future(self._execute_signal(state, signal, pip_size))
+            # Schedule async execution with exception safety
+            task = asyncio.ensure_future(self._execute_signal(state, signal, pip_size))
+            task.add_done_callback(self._on_task_done)
+
+    async def _check_daily_loss_shutdown(self) -> None:
+        """Check daily loss limit and trigger shutdown if breached."""
+        for state in self._states.values():
+            if state.starting_equity <= 0:
+                continue
+            try:
+                risk_result = await self._check_risk(state)
+            except Exception:
+                logger.exception("ALPHAEDGE daily-loss check failed")
+                continue
+            if risk_result.get("limit_breached"):
+                logger.warning(
+                    f"ALPHAEDGE: Daily loss limit breached — "
+                    f"PnL {risk_result.get('daily_pnl_pct', 0):.2f}%. "
+                    f"Shutting down."
+                )
+                self._shutdown_requested = True
+                await self._executor.cancel_all_orders()
+                return
 
     async def run_session(self) -> None:
         """
@@ -405,45 +443,55 @@ class FCRStrategy:
             logger.error("ALPHAEDGE: Cannot start — IB Gateway unavailable")
             return
 
-        # Get starting equity
-        starting_equity = await self._executor.get_account_equity()
-        session_start, _session_end = get_session_window_utc()
+        try:
+            # Get starting equity
+            starting_equity = await self._executor.get_account_equity()
+            session_start, _session_end = get_session_window_utc()
 
-        # Process each pair
-        for pair in self._config.trading.pairs:
-            state = self._init_pair_state(pair)
-            state.starting_equity = starting_equity
-            state.current_equity = starting_equity
+            # Process each pair
+            for pair in self._config.trading.pairs:
+                state = self._init_pair_state(pair)
+                state.starting_equity = starting_equity
+                state.current_equity = starting_equity
 
-            # Fetch pre-session M5 data for FCR
-            state.m5_candles = await self._fetch_pre_session_data(
-                pair,
-                session_start,
-            )
-            pip_size = _get_pip_size(pair)
-
-            # Detect FCR
-            fcr = self._detect_fcr(state, pip_size)
-            if fcr:
-                logger.info(
-                    f"ALPHAEDGE FCR: {pair} high={fcr['range_high']} "
-                    f"low={fcr['range_low']}"
+                # Fetch pre-session M5 data for FCR
+                state.m5_candles = await self._fetch_pre_session_data(
+                    pair,
+                    session_start,
                 )
+                pip_size = _get_pip_size(pair)
 
-        # Subscribe to real-time M1 data
-        self._rt_feed.on_bar(self._on_new_m1_bar)
-        for pair in self._config.trading.pairs:
-            await self._rt_feed.subscribe(pair)
+                # Detect FCR
+                fcr = self._detect_fcr(state, pip_size)
+                if fcr:
+                    logger.info(
+                        f"ALPHAEDGE FCR: {pair} high={fcr['range_high']} "
+                        f"low={fcr['range_low']}"
+                    )
 
-        # Wait for session to end
-        logger.info("ALPHAEDGE: Monitoring session...")
-        while is_session_active():
-            await asyncio.sleep(1.0)
+            # Subscribe to real-time M1 data
+            self._rt_feed.on_bar(self._on_new_m1_bar)
+            for pair in self._config.trading.pairs:
+                await self._rt_feed.subscribe(pair)
 
-        # Cleanup
-        await self._rt_feed.unsubscribe_all()
-        await self._broker.disconnect()
-        logger.info(f"ALPHAEDGE session ended at {format_dual_time(now_utc())}")
+            # Wait for session to end, checking risk every 30 seconds
+            logger.info("ALPHAEDGE: Monitoring session...")
+            risk_check_counter = 0
+            while is_session_active() and not self._shutdown_requested:
+                await asyncio.sleep(1.0)
+                risk_check_counter += 1
+
+                # Periodic daily-loss check every 30 seconds
+                if risk_check_counter >= 30:
+                    risk_check_counter = 0
+                    await self._check_daily_loss_shutdown()
+        except Exception:
+            logger.exception("ALPHAEDGE run_session error")
+        finally:
+            # Cleanup
+            await self._rt_feed.unsubscribe_all()
+            await self._broker.disconnect()
+            logger.info(f"ALPHAEDGE session ended at {format_dual_time(now_utc())}")
 
 
 # ------------------------------------------------------------------
@@ -476,7 +524,11 @@ async def _main() -> None:
         print("⚠️  WARNING: LIVE TRADING MODE")
         print("⚠️  Real money is at risk. Proceed with extreme caution.")
         print("=" * 60)
-        confirm = input("Type 'YES' to confirm live trading: ")
+        try:
+            confirm = input("Type 'YES' to confirm live trading: ")
+        except (EOFError, KeyboardInterrupt):
+            print("\nALPHAEDGE: Live trading cancelled (no interactive input).")
+            sys.exit(1)
         if confirm != "YES":
             print("ALPHAEDGE: Live trading cancelled.")
             sys.exit(0)

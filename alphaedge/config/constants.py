@@ -107,6 +107,7 @@ DEFAULT_SLIPPAGE_PIPS: float = 0.5
 # ------------------------------------------------------------------
 IB_MAX_REQUESTS_PER_10S: int = 50
 IB_PACING_WINDOW_SECONDS: float = 10.0
+IB_TIMEOUT_SECONDS: float = 15.0
 
 # ------------------------------------------------------------------
 # Logging

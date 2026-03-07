@@ -64,14 +64,13 @@ python_functions = ["test_*"]
 
 # --- Coverage Configuration ---
 # Note: Cython .pyx modules (core/) are compiled to C extensions and cannot
-# be measured by pytest-cov. Engine/config/utils require IB Gateway for
-# integration testing. Coverage scope is limited to testable Python code.
+# be measured by pytest-cov. Engine modules require IB Gateway for
+# integration testing. Coverage scope includes config/ and utils/ which
+# are testable without external dependencies.
 [tool.coverage.run]
 source = ["alphaedge"]
 omit = [
     "alphaedge/engine/*",
-    "alphaedge/config/*",
-    "alphaedge/utils/*",
     "alphaedge/logs/*",
 ]
 

@@ -17,7 +17,7 @@ from typing import Any
 
 from ib_insync import BarData, Contract
 
-from alphaedge.config.constants import TF_M1, TF_M5
+from alphaedge.config.constants import IB_TIMEOUT_SECONDS, TF_M1, TF_M5
 from alphaedge.engine.broker import BrokerConnection, build_forex_contract
 from alphaedge.utils.logger import get_logger
 from alphaedge.utils.timezone import get_tz_utc
@@ -86,14 +86,17 @@ class HistoricalDataFeed:
         use_rth: bool,
     ) -> list[BarData] | None:
         """Send historical data request to IB Gateway."""
-        return await self._broker.ib.reqHistoricalDataAsync(
-            contract,
-            endDateTime=end_str,
-            durationStr=duration,
-            barSizeSetting=timeframe,
-            whatToShow="MIDPOINT",
-            useRTH=use_rth,
-            formatDate=2,
+        return await asyncio.wait_for(
+            self._broker.ib.reqHistoricalDataAsync(
+                contract,
+                endDateTime=end_str,
+                durationStr=duration,
+                barSizeSetting=timeframe,
+                whatToShow="MIDPOINT",
+                useRTH=use_rth,
+                formatDate=2,
+            ),
+            timeout=IB_TIMEOUT_SECONDS,
         )
 
     async def fetch_bars(
@@ -108,24 +111,30 @@ class HistoricalDataFeed:
         self._broker._ensure_connected()
         await self._broker._throttler.acquire()
 
-        contract = build_forex_contract(pair)
-        end_str = "" if end_dt is None else end_dt.strftime("%Y%m%d-%H:%M:%S")
+        try:
+            contract = build_forex_contract(pair)
+            end_str = "" if end_dt is None else end_dt.strftime("%Y%m%d-%H:%M:%S")
 
-        bars = await self._request_bars(
-            contract,
-            end_str,
-            duration,
-            timeframe,
-            use_rth,
-        )
+            bars = await self._request_bars(
+                contract,
+                end_str,
+                duration,
+                timeframe,
+                use_rth,
+            )
 
-        if bars is None:
-            logger.warning(f"ALPHAEDGE: No bars returned for {pair} {timeframe}")
+            if bars is None:
+                logger.warning(f"ALPHAEDGE: No bars returned for {pair} {timeframe}")
+                return []
+
+            candles = _bars_to_dicts(bars)
+            logger.debug(
+                f"ALPHAEDGE fetched {len(candles)} {timeframe} bars for {pair}"
+            )
+            return candles
+        except Exception:
+            logger.exception(f"ALPHAEDGE fetch_bars failed: {pair} {timeframe}")
             return []
-
-        candles = _bars_to_dicts(bars)
-        logger.debug(f"ALPHAEDGE fetched {len(candles)} {timeframe} bars for {pair}")
-        return candles
 
     async def fetch_m5_pre_session(
         self,
@@ -224,22 +233,25 @@ class RealtimeDataFeed:
         self._broker._ensure_connected()
         await self._broker._throttler.acquire()
 
-        contract = build_forex_contract(pair)
+        try:
+            contract = build_forex_contract(pair)
 
-        # Request real-time bars (5-second granularity)
-        bars = self._broker.ib.reqRealTimeBars(
-            contract,
-            barSize=5,
-            whatToShow="MIDPOINT",
-            useRTH=False,
-        )
-        self._subscriptions[pair] = bars
+            # Request real-time bars (5-second granularity)
+            bars = self._broker.ib.reqRealTimeBars(
+                contract,
+                barSize=5,
+                whatToShow="MIDPOINT",
+                useRTH=False,
+            )
+            self._subscriptions[pair] = bars
 
-        # Set up bar update handler
-        bars.updateEvent += lambda bars, has_new: self._on_bar_update(
-            pair, bars, has_new
-        )
-        logger.info(f"ALPHAEDGE subscribed to real-time bars: {pair}")
+            # Set up bar update handler
+            bars.updateEvent += lambda bars, has_new: self._on_bar_update(
+                pair, bars, has_new
+            )
+            logger.info(f"ALPHAEDGE subscribed to real-time bars: {pair}")
+        except Exception:
+            logger.exception(f"ALPHAEDGE subscribe failed: {pair}")
 
     def _on_bar_update(
         self,
@@ -292,14 +304,18 @@ class RealtimeDataFeed:
         self._broker._ensure_connected()
         await self._broker._throttler.acquire()
 
-        contract = build_forex_contract(pair)
-        self._broker.ib.reqMktData(contract)
-        await asyncio.sleep(1.0)  # Allow data to arrive
+        try:
+            contract = build_forex_contract(pair)
+            self._broker.ib.reqMktData(contract)
+            await asyncio.sleep(1.0)  # Allow data to arrive
 
-        ticker = self._broker.ib.ticker(contract)
-        if ticker and ticker.bid > 0 and ticker.ask > 0:
-            return ticker.ask - ticker.bid
-        return 0.0
+            ticker = self._broker.ib.ticker(contract)
+            if ticker and ticker.bid > 0 and ticker.ask > 0:
+                return ticker.ask - ticker.bid
+            return 0.0
+        except Exception:
+            logger.exception(f"ALPHAEDGE get_live_spread failed: {pair}")
+            return 0.0
 
     async def get_mid_price(self, pair: str) -> float:
         """
@@ -318,14 +334,18 @@ class RealtimeDataFeed:
         self._broker._ensure_connected()
         await self._broker._throttler.acquire()
 
-        contract = build_forex_contract(pair)
-        self._broker.ib.reqMktData(contract)
-        await asyncio.sleep(1.0)
+        try:
+            contract = build_forex_contract(pair)
+            self._broker.ib.reqMktData(contract)
+            await asyncio.sleep(1.0)
 
-        ticker = self._broker.ib.ticker(contract)
-        if ticker and ticker.bid > 0 and ticker.ask > 0:
-            return (ticker.bid + ticker.ask) / 2.0
-        return 0.0
+            ticker = self._broker.ib.ticker(contract)
+            if ticker and ticker.bid > 0 and ticker.ask > 0:
+                return (ticker.bid + ticker.ask) / 2.0
+            return 0.0
+        except Exception:
+            logger.exception(f"ALPHAEDGE get_mid_price failed: {pair}")
+            return 0.0
 
 
 if __name__ == "__main__":
