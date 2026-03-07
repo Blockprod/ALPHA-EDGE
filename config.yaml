@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE
 # FILE         : config.yaml
 # DESCRIPTION  : Main configuration file template
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -49,19 +49,19 @@ trading:
   session_start: "09:30"
   session_end: "10:30"
 
-# --- FCR Detection ---
-fcr:
-  min_range_pips: 5.0       # Minimum M5 candle range for valid FCR
-  lookback_candles: 6       # Number of M5 candles to scan
+# --- Structure Detection ---
+structure:
+  min_range_pips: 5.0       # Minimum candle range for valid detection
+  lookback_candles: 6       # Number of candles to scan
 
-# --- Gap / Volatility Detection ---
-gap:
-  atr_period: 14            # Number of M1 candles for ATR
+# --- Volatility Detection ---
+volatility:
+  atr_period: 14            # Number of candles for ATR calculation
   min_atr_ratio: 1.5        # ATR spike threshold (current/baseline)
-  tolerance_pips: 5.0       # Buffer zone around gap boundaries
+  tolerance_pips: 5.0       # Buffer zone around boundaries
 
-# --- Engulfing Detection ---
-engulfing:
+# --- Pattern Detection ---
+pattern:
   volume_period: 20         # Lookback for average tick volume
   min_volume_ratio: 1.2     # Min ratio vs average for confirmation
 

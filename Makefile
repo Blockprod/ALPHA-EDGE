@@ -40,10 +40,9 @@ build:
 # --- All: QA + Build ---
 all: qa build
 
-# --- Clean artifacts ---
+# --- Clean artifacts (cross-platform) ---
 clean:
-	find . -type f -name "*.so" -delete 2>/dev/null || del /s /q *.pyd 2>nul
-	find . -type f -name "*.pyd" -delete 2>/dev/null || echo "clean done"
-	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || echo "clean done"
-	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || echo "clean done"
-	rm -rf build/ dist/ 2>/dev/null || rmdir /s /q build dist 2>nul
+	python -c "import shutil, pathlib; [p.unlink() for p in pathlib.Path('.').rglob('*.pyd')]; [p.unlink() for p in pathlib.Path('.').rglob('*.so')]"
+	python -c "import shutil, pathlib; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]"
+	python -c "import shutil, pathlib; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('*.egg-info')]"
+	python -c "import shutil, pathlib; [shutil.rmtree(d) for d in ['build', 'dist'] if pathlib.Path(d).exists()]"

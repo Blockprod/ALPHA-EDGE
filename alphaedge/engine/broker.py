@@ -195,6 +195,29 @@ class OrderExecutor:
         self._broker = broker
         self._throttler = broker._throttler
 
+    def _submit_bracket(
+        self,
+        contract: Contract,
+        action: str,
+        quantity: int,
+        entry_price: float,
+        take_profit: float,
+        stop_loss: float,
+    ) -> list[Trade]:
+        """Build and submit bracket orders to IB. Returns Trade list."""
+        bracket = self._broker.ib.bracketOrder(
+            action=action,
+            quantity=quantity,
+            limitPrice=entry_price,
+            takeProfitPrice=take_profit,
+            stopLossPrice=stop_loss,
+        )
+        trades: list[Trade] = []
+        for order in bracket:
+            trade = self._broker.ib.placeOrder(contract, order)
+            trades.append(trade)
+        return trades
+
     async def place_bracket_order(
         self,
         pair: str,
@@ -204,48 +227,21 @@ class OrderExecutor:
         stop_loss: float,
         take_profit: float,
     ) -> list[Trade]:
-        """
-        Place a bracket order (entry + SL + TP) via IB Gateway.
-
-        Parameters
-        ----------
-        pair : str
-            Currency pair.
-        direction : int
-            1 for BUY, -1 for SELL.
-        quantity : int
-            Number of currency units.
-        entry_price : float
-            Limit entry price.
-        stop_loss : float
-            Stop loss price.
-        take_profit : float
-            Take profit price.
-
-        Returns
-        -------
-        list[Trade]
-            List of IB Trade objects for the bracket.
-        """
+        """Place a bracket order (entry + SL + TP) via IB Gateway."""
         self._broker._ensure_connected()
         await self._throttler.acquire()
 
         contract = build_forex_contract(pair)
         action = "BUY" if direction == 1 else "SELL"
 
-        # Build bracket orders
-        bracket = self._broker.ib.bracketOrder(
-            action=action,
-            quantity=quantity,
-            limitPrice=entry_price,
-            takeProfitPrice=take_profit,
-            stopLossPrice=stop_loss,
+        trades = self._submit_bracket(
+            contract,
+            action,
+            quantity,
+            entry_price,
+            take_profit,
+            stop_loss,
         )
-
-        trades: list[Trade] = []
-        for order in bracket:
-            trade = self._broker.ib.placeOrder(contract, order)
-            trades.append(trade)
 
         logger.info(
             f"ALPHAEDGE bracket order placed: {pair} {action} "

@@ -232,17 +232,14 @@ class FCRStrategy:
         )
         return result
 
-    async def _execute_signal(
+    def _size_position(
         self,
         state: StrategyState,
         signal: dict[str, Any],
         pip_size: float,
-    ) -> bool:
-        """Execute a trade signal through IB Gateway."""
+    ) -> dict[str, Any] | None:
+        """Calculate and validate position size. Returns None on failure."""
         risk_mod = self._modules[4]
-        order_mod = self._modules[3]
-
-        # Calculate position size
         equity = state.current_equity or state.starting_equity
         pos_result: dict[str, Any] = risk_mod.calculate_position_size(
             account_equity=equity,
@@ -254,22 +251,26 @@ class FCRStrategy:
             min_lots=MIN_LOTS,
             max_lots=MAX_LOTS,
         )
-
         if not pos_result["is_valid"]:
             logger.warning(f"ALPHAEDGE: Invalid position size for {state.pair}")
-            return False
+            return None
+        return pos_result
 
-        # Get live spread
-        spread = await self._rt_feed.get_live_spread(state.pair)
-        spread_pips = spread / pip_size
-
-        # Validate and build bracket order
+    def _build_validated_order(
+        self,
+        signal: dict[str, Any],
+        lot_size: float,
+        pip_size: float,
+        spread_pips: float,
+    ) -> dict[str, Any] | None:
+        """Build bracket order and validate. Returns None on rejection."""
+        order_mod = self._modules[3]
         bracket: dict[str, Any] = order_mod.create_bracket_order(
             direction=signal["signal"],
             entry_price=signal["entry_price"],
             stop_loss=signal["stop_loss"],
             take_profit=signal["take_profit"],
-            lot_size=pos_result["lot_size"],
+            lot_size=lot_size,
             pip_size=pip_size,
             spread_pips=spread_pips,
             max_spread_pips=self._config.trading.max_spread_pips,
@@ -278,14 +279,37 @@ class FCRStrategy:
             max_lots=MAX_LOTS,
             adjust_for_spread=True,
         )
-
         if not bracket.get("is_valid", False):
             logger.warning(
                 f"ALPHAEDGE: Order rejected — {bracket.get('rejection_reason')}"
             )
+            return None
+        return bracket
+
+    async def _execute_signal(
+        self,
+        state: StrategyState,
+        signal: dict[str, Any],
+        pip_size: float,
+    ) -> bool:
+        """Execute a trade signal through IB Gateway."""
+        pos_result = self._size_position(state, signal, pip_size)
+        if pos_result is None:
             return False
 
-        # Convert lots to IB units and place order
+        spread = await self._rt_feed.get_live_spread(state.pair)
+        spread_pips = spread / pip_size
+
+        bracket = self._build_validated_order(
+            signal,
+            pos_result["lot_size"],
+            pip_size,
+            spread_pips,
+        )
+        if bracket is None:
+            return False
+
+        order_mod = self._modules[3]
         units = order_mod.lots_to_units(
             bracket["lot_size"],
             self._config.trading.lot_type,

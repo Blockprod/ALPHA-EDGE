@@ -174,57 +174,32 @@ def _format_signal(signal: dict[str, Any] | None) -> str:
 # ------------------------------------------------------------------
 # Build the position and P&L panel
 # ------------------------------------------------------------------
+def _add_position_rows(
+    table: Table,
+    state: dict[str, Any],
+) -> None:
+    """Populate position table with current state data."""
+    position = state.get("position", {})
+    daily = state.get("daily", {})
+
+    table.add_row("Open Position", position.get("pair", "None"))
+    table.add_row("Direction", position.get("direction_str", "—"))
+    table.add_row("P&L (pips)", _color_pnl(position.get("pnl_pips", 0.0)))
+    table.add_row("P&L (USD)", _color_pnl(position.get("pnl_usd", 0.0)))
+    table.add_row("Trades Today", str(daily.get("trades_today", 0)))
+    table.add_row("Daily P&L", _color_pnl(daily.get("daily_pnl", 0.0)))
+    table.add_row("Next Trade", _trade_eligibility(daily))
+
+
 def _build_position_panel(
     state: dict[str, Any],
 ) -> Panel:
-    """
-    Create the open position and P&L panel.
-
-    Parameters
-    ----------
-    state : dict
-        Current strategy state data.
-
-    Returns
-    -------
-    Panel
-        Rich Panel with position details.
-    """
+    """Create the open position and P&L panel."""
     pos_table = Table(show_header=True, header_style="bold green")
     pos_table.add_column("Field", width=18)
     pos_table.add_column("Value", width=20)
 
-    position = state.get("position", {})
-    daily = state.get("daily", {})
-
-    pos_table.add_row(
-        "Open Position",
-        position.get("pair", "None"),
-    )
-    pos_table.add_row(
-        "Direction",
-        position.get("direction_str", "—"),
-    )
-    pos_table.add_row(
-        "P&L (pips)",
-        _color_pnl(position.get("pnl_pips", 0.0)),
-    )
-    pos_table.add_row(
-        "P&L (USD)",
-        _color_pnl(position.get("pnl_usd", 0.0)),
-    )
-    pos_table.add_row(
-        "Trades Today",
-        str(daily.get("trades_today", 0)),
-    )
-    pos_table.add_row(
-        "Daily P&L",
-        _color_pnl(daily.get("daily_pnl", 0.0)),
-    )
-    pos_table.add_row(
-        "Next Trade",
-        _trade_eligibility(daily),
-    )
+    _add_position_rows(pos_table, state)
 
     return Panel(pos_table, title="Position & P&L", border_style="green")
 

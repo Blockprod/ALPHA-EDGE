@@ -186,6 +186,24 @@ cdef EngulfingResult _build_result(
 
 
 # ------------------------------------------------------------------
+# Prepare candle data for engulfing detection
+# ------------------------------------------------------------------
+cdef tuple _prepare_engulfing_candles(list candles_data, int volume_period, double min_volume_ratio):
+    """Extract last two candles and validate volume. Returns (prev, curr) or None."""
+    cdef int n = len(candles_data)
+    cdef dict prev_candle = candles_data[n - 2]
+    cdef dict curr_candle = candles_data[n - 1]
+
+    cdef double avg_vol = _compute_avg_volume(
+        candles_data[:n - 1], volume_period,
+    )
+
+    if not _has_volume_confirmation(curr_candle, avg_vol, min_volume_ratio):
+        return None
+    return (prev_candle, curr_candle)
+
+
+# ------------------------------------------------------------------
 # Public: detect engulfing pattern on M1 candles
 # ------------------------------------------------------------------
 def detect_engulfing(
@@ -205,11 +223,11 @@ def detect_engulfing(
     candles_data : list[dict]
         M1 candle dicts with keys: open, high, low, close, volume.
     fcr_high : float
-        Upper boundary of the FCR range.
+        Upper boundary of the detection range.
     fcr_low : float
-        Lower boundary of the FCR range.
+        Lower boundary of the detection range.
     rr_ratio : float
-        Risk/reward ratio for TP calculation (e.g., 3.0).
+        Risk/reward ratio for TP calculation.
     pip_size : float
         Pip size for the pair.
     volume_period : int
@@ -225,22 +243,12 @@ def detect_engulfing(
     if len(candles_data) < 2:
         return None
 
-    # Get the last two candles
-    cdef int n = len(candles_data)
-    cdef dict prev_candle = candles_data[n - 2]
-    cdef dict curr_candle = candles_data[n - 1]
-
-    # Compute average volume for confirmation
-    cdef double avg_vol = _compute_avg_volume(
-        candles_data[:n - 1], volume_period,
-    )
-
-    # Check volume confirmation
-    if not _has_volume_confirmation(curr_candle, avg_vol, min_volume_ratio):
+    result = _prepare_engulfing_candles(candles_data, volume_period, min_volume_ratio)
+    if result is None:
         return None
 
     return _evaluate_engulfing(
-        prev_candle, curr_candle, fcr_high, fcr_low,
+        result[0], result[1], fcr_high, fcr_low,
         rr_ratio, pip_size,
     )
 

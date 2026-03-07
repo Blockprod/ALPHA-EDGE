@@ -15,7 +15,7 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 
-from ib_insync import BarData
+from ib_insync import BarData, Contract
 
 from alphaedge.config.constants import TF_M1, TF_M5
 from alphaedge.engine.broker import BrokerConnection, build_forex_contract
@@ -77,6 +77,25 @@ class HistoricalDataFeed:
         """Initialize with a broker connection."""
         self._broker = broker
 
+    async def _request_bars(
+        self,
+        contract: Contract,
+        end_str: str,
+        duration: str,
+        timeframe: str,
+        use_rth: bool,
+    ) -> list[BarData] | None:
+        """Send historical data request to IB Gateway."""
+        return await self._broker.ib.reqHistoricalDataAsync(
+            contract,
+            endDateTime=end_str,
+            durationStr=duration,
+            barSizeSetting=timeframe,
+            whatToShow="MIDPOINT",
+            useRTH=use_rth,
+            formatDate=2,
+        )
+
     async def fetch_bars(
         self,
         pair: str,
@@ -85,41 +104,19 @@ class HistoricalDataFeed:
         end_dt: datetime | None = None,
         use_rth: bool = False,
     ) -> list[dict[str, Any]]:
-        """
-        Fetch historical bars from IB.
-
-        Parameters
-        ----------
-        pair : str
-            Currency pair (e.g., 'EURUSD').
-        timeframe : str
-            Bar size ('1 min', '5 mins', etc.).
-        duration : str
-            IB duration string (e.g., '1 D', '2 D').
-        end_dt : datetime | None
-            End datetime for the query. Defaults to now.
-        use_rth : bool
-            Whether to use regular trading hours only.
-
-        Returns
-        -------
-        list[dict]
-            List of candle dicts.
-        """
+        """Fetch historical bars from IB for a given pair and timeframe."""
         self._broker._ensure_connected()
         await self._broker._throttler.acquire()
 
         contract = build_forex_contract(pair)
         end_str = "" if end_dt is None else end_dt.strftime("%Y%m%d-%H:%M:%S")
 
-        bars = await self._broker.ib.reqHistoricalDataAsync(
+        bars = await self._request_bars(
             contract,
-            endDateTime=end_str,
-            durationStr=duration,
-            barSizeSetting=timeframe,
-            whatToShow="MIDPOINT",
-            useRTH=use_rth,
-            formatDate=2,
+            end_str,
+            duration,
+            timeframe,
+            use_rth,
         )
 
         if bars is None:

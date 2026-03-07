@@ -41,6 +41,7 @@ ALPHAEDGE_ACTION_PLAN.md
 # --- Output Files ---
 ALPHAEDGE_backtest_results.csv
 ALPHAEDGE_equity_curve.png
+ALPHAEDGE_coverage_report*/
 ALPHAEDGE_coverage_report.html
 htmlcov/
 .coverage

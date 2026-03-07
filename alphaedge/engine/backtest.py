@@ -407,20 +407,25 @@ def plot_equity_curve(
 # ------------------------------------------------------------------
 # Main backtest runner
 # ------------------------------------------------------------------
+async def _fetch_pair_trades(
+    hist_feed: Any,
+    pair: str,
+    config: AppConfig,
+) -> list[TradeRecord]:
+    """Fetch historical bars for a pair and run backtest logic."""
+    logger.info(f"ALPHAEDGE backtesting: {pair}")
+    bars = await hist_feed.fetch_bars(
+        pair=pair,
+        timeframe="1 min",
+        duration="30 D",
+    )
+    if not bars:
+        return []
+    return _backtest_pair(pair, bars, config)
+
+
 async def run_backtest(config: AppConfig) -> BacktestStats:
-    """
-    Run the FCR strategy backtest using IB historical data.
-
-    Parameters
-    ----------
-    config : AppConfig
-        Application configuration.
-
-    Returns
-    -------
-    BacktestStats
-        Aggregate backtest results.
-    """
+    """Run the strategy backtest using IB historical data."""
     logger.info(f"{PROJECT_TITLE} — Backtest starting")
 
     from alphaedge.engine.broker import BrokerConnection
@@ -435,27 +440,14 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
     all_trades: list[TradeRecord] = []
 
     for pair in config.trading.pairs:
-        logger.info(f"ALPHAEDGE backtesting: {pair}")
-        # Fetch historical data for backtest period
-        bars = await hist_feed.fetch_bars(
-            pair=pair,
-            timeframe="1 min",
-            duration="30 D",
-        )
-        if not bars:
-            continue
-
-        # Process through FCR strategy logic on historical bars
-        trades = _backtest_pair(pair, bars, config)
+        trades = await _fetch_pair_trades(hist_feed, pair, config)
         all_trades.extend(trades)
 
     await broker.disconnect()
 
-    # Compute and export results
     stats = compute_stats(all_trades)
     export_results_csv(all_trades, stats)
     plot_equity_curve(all_trades)
-
     _log_stats_summary(stats)
     _validate_with_vectorbt(all_trades)
     return stats
@@ -504,28 +496,31 @@ def _detect_signal_at_bar(
     return None
 
 
+def _build_trade_record(
+    pair: str,
+    signal: dict[str, Any],
+    bars: list[dict[str, Any]],
+    bar_index: int,
+) -> TradeRecord:
+    """Create a TradeRecord from a detected signal and simulate exit."""
+    trade = TradeRecord(
+        pair=pair,
+        direction=signal["signal"],
+        entry_price=signal["entry_price"],
+        stop_loss=signal["stop_loss"],
+        take_profit=signal["take_profit"],
+        entry_time=bars[bar_index].get("datetime", datetime.now()),
+        spread_cost_pips=DEFAULT_SLIPPAGE_PIPS,
+    )
+    return _simulate_trade_exit(trade, bars, bar_index)
+
+
 def _backtest_pair(
     pair: str,
     bars: list[dict[str, Any]],
     config: AppConfig,
 ) -> list[TradeRecord]:
-    """
-    Run the FCR strategy logic on historical bars for one pair.
-
-    Parameters
-    ----------
-    pair : str
-        Currency pair.
-    bars : list[dict]
-        Historical M1 bar data.
-    config : AppConfig
-        Application configuration.
-
-    Returns
-    -------
-    list[TradeRecord]
-        Trade records generated from backtesting.
-    """
+    """Run the strategy logic on historical bars for one pair."""
     trades: list[TradeRecord] = []
     pip_size = PIP_SIZES.get(pair, 0.0001)
 
@@ -540,8 +535,7 @@ def _backtest_pair(
         )
         return trades
 
-    # Walk through bars in windows
-    window_size = 60  # 1-hour windows
+    window_size = 60
     for i in range(window_size, len(bars)):
         signal = _detect_signal_at_bar(
             bars,
@@ -553,18 +547,7 @@ def _backtest_pair(
         )
         if not signal:
             continue
-
-        trade = TradeRecord(
-            pair=pair,
-            direction=signal["signal"],
-            entry_price=signal["entry_price"],
-            stop_loss=signal["stop_loss"],
-            take_profit=signal["take_profit"],
-            entry_time=bars[i].get("datetime", datetime.now()),
-            spread_cost_pips=DEFAULT_SLIPPAGE_PIPS,
-        )
-        trade = _simulate_trade_exit(trade, bars, i)
-        trades.append(trade)
+        trades.append(_build_trade_record(pair, signal, bars, i))
 
     return trades
 
