@@ -1,0 +1,75 @@
+{
+    // ============================================================
+    // PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+    // FILE         : .vscode/settings.json
+    // DESCRIPTION  : VSCode workspace settings for QA toolchain
+    // ============================================================
+
+    // --- Python Environment ---
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+
+    // --- Formatting (Black) ---
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        }
+    },
+    "black-formatter.args": [
+        "--config",
+        "${workspaceFolder}/pyproject.toml"
+    ],
+
+    // --- Linting (Ruff) ---
+    "ruff.enable": true,
+    "ruff.lint.args": [
+        "--config",
+        "${workspaceFolder}/pyproject.toml"
+    ],
+    "ruff.format.args": [
+        "--config",
+        "${workspaceFolder}/pyproject.toml"
+    ],
+
+    // --- Type Checking (Mypy) ---
+    "mypy-type-checker.args": [
+        "--config-file",
+        "${workspaceFolder}/mypy.ini"
+    ],
+    "python.analysis.typeCheckingMode": "basic",
+
+    // --- Pylint ---
+    "pylint.args": [
+        "--rcfile",
+        "${workspaceFolder}/.pylintrc"
+    ],
+
+    // --- Testing (Pytest) ---
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+        "alphaedge/tests",
+        "-v",
+        "--tb=short"
+    ],
+
+    // --- Editor ---
+    "editor.rulers": [88],
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+    "files.associations": {
+        "*.pyx": "cython",
+        "*.pxd": "cython"
+    },
+
+    // --- Search Exclusions ---
+    "search.exclude": {
+        "**/__pycache__": true,
+        "**/*.so": true,
+        "**/*.pyd": true,
+        "**/build": true,
+        "**/*.egg-info": true,
+        "**/.venv": true
+    }
+}

@@ -1,0 +1,21 @@
+{
+    // ============================================================
+    // PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+    // FILE         : .vscode/extensions.json
+    // DESCRIPTION  : Recommended VSCode extensions for ALPHAEDGE
+    // ============================================================
+    "recommendations": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "ms-python.mypy-type-checker",
+        "ms-python.pylint",
+        "charliermarsh.ruff",
+        "littlefoxteam.vscode-python-test-adapter",
+        "eamodio.gitlens",
+        "redhat.vscode-yaml",
+        "mikestead.dotenv",
+        "tht13.html-preview-vscode",
+        "lextudio.cython"
+    ]
+}

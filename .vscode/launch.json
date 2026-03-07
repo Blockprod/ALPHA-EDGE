@@ -1,0 +1,84 @@
+{
+    // ============================================================
+    // PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+    // FILE         : .vscode/launch.json
+    // DESCRIPTION  : Debug configurations for ALPHAEDGE workflows
+    // ============================================================
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "ALPHAEDGE — Paper Trading",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "alphaedge.engine.strategy",
+            "args": ["--mode", "paper"],
+            "envFile": "${workspaceFolder}/.env",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "ALPHAEDGE — Backtest",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "alphaedge.engine.backtest",
+            "envFile": "${workspaceFolder}/.env",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "ALPHAEDGE — Unit Tests + Coverage",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "alphaedge/tests",
+                "-v",
+                "--tb=short",
+                "--cov=alphaedge",
+                "--cov-report=html:ALPHAEDGE_coverage_report.html",
+                "--cov-fail-under=80"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "ALPHAEDGE — Mypy Check",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "mypy",
+            "args": [
+                "alphaedge/",
+                "--config-file",
+                "mypy.ini"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "ALPHAEDGE — Ruff Check",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "ruff",
+            "args": [
+                "check",
+                "alphaedge/",
+                "--config",
+                "pyproject.toml"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "ALPHAEDGE — Dashboard Only",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "alphaedge.engine.dashboard",
+            "envFile": "${workspaceFolder}/.env",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        }
+    ]
+}

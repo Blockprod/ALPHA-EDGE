@@ -1,0 +1,73 @@
+# ============================================================
+# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# FILE         : config.yaml
+# DESCRIPTION  : Main configuration file template
+# AUTHOR       : ALPHAEDGE Dev Team
+# WORKFLOW     : VSCode + Claude + Copilot Pro + File Engineering
+# PYTHON       : 3.11.9
+# LAST UPDATED : 2026-03-07
+# ============================================================
+
+# --- Log Level ---
+log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+
+# --- Interactive Brokers Gateway ---
+ib:
+  host: "127.0.0.1"
+  port: 4002               # 4001 = live, 4002 = paper
+  client_id: 1
+  account_id: ""            # Set in .env (ALPHAEDGE_IB_ACCOUNT)
+  account_type: "Individual"  # Individual or Financial Advisor
+
+# --- Trading Parameters ---
+trading:
+  # Currency pairs to monitor
+  pairs:
+    - "EURUSD"
+    - "GBPUSD"
+    - "USDJPY"
+
+  # Risk/Reward ratio for take profit
+  rr_ratio: 3.0
+
+  # Risk per trade as % of account equity
+  risk_pct: 1.0
+
+  # Maximum daily loss before auto-shutdown (% of equity)
+  max_daily_loss_pct: 3.0
+
+  # Maximum trades per session
+  max_trades_per_session: 2
+
+  # Maximum acceptable spread in pips (skip trade if exceeded)
+  max_spread_pips: 2.0
+
+  # Lot type: standard (100k), mini (10k), micro (1k)
+  lot_type: "micro"
+
+  # NYSE session window (Eastern Time — DST auto-handled)
+  session_start: "09:30"
+  session_end: "10:30"
+
+# --- FCR Detection ---
+fcr:
+  min_range_pips: 5.0       # Minimum M5 candle range for valid FCR
+  lookback_candles: 6       # Number of M5 candles to scan
+
+# --- Gap / Volatility Detection ---
+gap:
+  atr_period: 14            # Number of M1 candles for ATR
+  min_atr_ratio: 1.5        # ATR spike threshold (current/baseline)
+  tolerance_pips: 5.0       # Buffer zone around gap boundaries
+
+# --- Engulfing Detection ---
+engulfing:
+  volume_period: 20         # Lookback for average tick volume
+  min_volume_ratio: 1.2     # Min ratio vs average for confirmation
+
+# --- Risk Management ---
+risk:
+  slippage_buffer_pips: 0.5 # Added to SL for slippage protection
+  min_lots: 0.01            # Minimum position size
+  max_lots: 10.0            # Maximum position size
+  adjust_sl_for_spread: true

@@ -1,0 +1,82 @@
+# ============================================================
+# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# FILE         : pyproject.toml
+# DESCRIPTION  : Black, Ruff, Pytest configuration
+# AUTHOR       : ALPHAEDGE Dev Team
+# WORKFLOW     : VSCode + Claude + Copilot Pro + File Engineering
+# PYTHON       : 3.11.9
+# LAST UPDATED : 2026-03-07
+# ============================================================
+
+[build-system]
+requires = ["setuptools>=68.0", "Cython>=3.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alphaedge"
+version = "1.0.0"
+description = "ALPHAEDGE — FCR Forex Trading Bot"
+requires-python = ">=3.11,<3.12"
+readme = "README.md"
+
+# --- Black Configuration ---
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    \.venv
+  | build
+  | dist
+  | \.eggs
+)/
+'''
+
+# --- Ruff Configuration ---
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+src = ["alphaedge"]
+exclude = [
+    ".venv",
+    "build",
+    "dist",
+    "*.pyx",
+    "*.pxd",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP"]
+ignore = []
+fixable = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["alphaedge"]
+
+# --- Pytest Configuration ---
+[tool.pytest.ini_options]
+testpaths = ["alphaedge/tests"]
+addopts = "-v --tb=short"
+asyncio_mode = "auto"
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+# --- Coverage Configuration ---
+# Note: Cython .pyx modules (core/) are compiled to C extensions and cannot
+# be measured by pytest-cov. Engine/config/utils require IB Gateway for
+# integration testing. Coverage scope is limited to testable Python code.
+[tool.coverage.run]
+source = ["alphaedge"]
+omit = [
+    "alphaedge/engine/*",
+    "alphaedge/config/*",
+    "alphaedge/utils/*",
+    "alphaedge/logs/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if __name__",
+    "pragma: no cover",
+]

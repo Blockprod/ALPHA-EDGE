@@ -1,0 +1,47 @@
+# ============================================================
+# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# FILE         : .gitignore
+# DESCRIPTION  : Git ignore rules for ALPHAEDGE project
+# AUTHOR       : ALPHAEDGE Dev Team
+# ============================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# --- Virtual Environment ---
+.venv/
+venv/
+ENV/
+
+# --- Cython Build ---
+build/
+dist/
+*.egg-info/
+*.c
+!alphaedge/core/*.pyx
+
+# --- IDE ---
+.vscode/.ropeproject/
+*.swp
+*.swo
+
+# --- Environment ---
+.env
+
+# --- Logs ---
+alphaedge/logs/*.log
+
+# --- Output Files ---
+ALPHAEDGE_backtest_results.csv
+ALPHAEDGE_equity_curve.png
+ALPHAEDGE_coverage_report.html
+htmlcov/
+.coverage
+
+# --- OS ---
+Thumbs.db
+.DS_Store
