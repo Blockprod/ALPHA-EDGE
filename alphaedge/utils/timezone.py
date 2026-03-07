@@ -158,6 +158,8 @@ def is_session_active(dt_utc: datetime | None = None) -> bool:
     """
     Check if the given UTC time falls within the NYSE session window.
 
+    Returns False on weekends (Saturday/Sunday).
+
     Parameters
     ----------
     dt_utc : datetime | None
@@ -166,10 +168,15 @@ def is_session_active(dt_utc: datetime | None = None) -> bool:
     Returns
     -------
     bool
-        True if within the 9:30-10:30 ET window.
+        True if within the 9:30-10:30 ET window on a weekday.
     """
     if dt_utc is None:
         dt_utc = now_utc()
+
+    # Skip weekends — Forex market closed
+    ny_time = dt_utc.astimezone(get_tz_ny())
+    if ny_time.weekday() >= 5:
+        return False
 
     start, end = get_session_window_utc(dt_utc)
     return start <= dt_utc <= end

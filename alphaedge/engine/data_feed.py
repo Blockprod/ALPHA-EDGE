@@ -301,6 +301,32 @@ class RealtimeDataFeed:
             return ticker.ask - ticker.bid
         return 0.0
 
+    async def get_mid_price(self, pair: str) -> float:
+        """
+        Get the current mid price for a pair.
+
+        Parameters
+        ----------
+        pair : str
+            Currency pair.
+
+        Returns
+        -------
+        float
+            Mid price ((bid + ask) / 2), or 0.0 if unavailable.
+        """
+        self._broker._ensure_connected()
+        await self._broker._throttler.acquire()
+
+        contract = build_forex_contract(pair)
+        self._broker.ib.reqMktData(contract)
+        await asyncio.sleep(1.0)
+
+        ticker = self._broker.ib.ticker(contract)
+        if ticker and ticker.bid > 0 and ticker.ask > 0:
+            return (ticker.bid + ticker.ask) / 2.0
+        return 0.0
+
 
 if __name__ == "__main__":
     print("ALPHAEDGE — Data Feed module loaded (standalone test)")

@@ -131,9 +131,9 @@ def _build_ib_config(raw: dict[str, Any]) -> IBConfig:
 # Build TradingConfig from raw YAML data
 # ------------------------------------------------------------------
 def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
-    """Extract trading parameters from the YAML trading section."""
+    """Extract and validate trading parameters from the YAML section."""
     section: dict[str, Any] = raw.get("trading", {})
-    return TradingConfig(
+    cfg = TradingConfig(
         pairs=section.get("pairs", ["EURUSD", "GBPUSD", "USDJPY"]),
         rr_ratio=float(section.get("rr_ratio", DEFAULT_RR_RATIO)),
         risk_pct=float(section.get("risk_pct", DEFAULT_RISK_PCT)),
@@ -148,6 +148,26 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         session_start=section.get("session_start", "09:30"),
         session_end=section.get("session_end", "10:30"),
     )
+    _validate_trading_config(cfg)
+    return cfg
+
+
+def _validate_trading_config(cfg: TradingConfig) -> None:
+    """Validate trading config values are within safe ranges."""
+    if not 0.0 < cfg.risk_pct <= 10.0:
+        raise ValueError(f"risk_pct must be in (0, 10], got {cfg.risk_pct}")
+    if cfg.rr_ratio <= 0.0:
+        raise ValueError(f"rr_ratio must be > 0, got {cfg.rr_ratio}")
+    if cfg.max_daily_loss_pct <= 0.0:
+        raise ValueError(
+            f"max_daily_loss_pct must be > 0, got {cfg.max_daily_loss_pct}"
+        )
+    if cfg.max_trades_per_session <= 0:
+        raise ValueError(
+            f"max_trades_per_session must be > 0, got {cfg.max_trades_per_session}"
+        )
+    if cfg.max_spread_pips <= 0.0:
+        raise ValueError(f"max_spread_pips must be > 0, got {cfg.max_spread_pips}")
 
 
 # ------------------------------------------------------------------

@@ -106,6 +106,11 @@ def _simulate_trade_exit(
         bar = bars[i]
         hit_sl, hit_tp = _check_sl_tp_hit(trade, bar)
 
+        if hit_sl and hit_tp:
+            # Both hit — use bar direction to decide which was hit first
+            if _sl_hit_first(trade, bar):
+                return _close_trade(trade, trade.stop_loss, bar, "loss")
+            return _close_trade(trade, trade.take_profit, bar, "win")
         if hit_sl:
             return _close_trade(trade, trade.stop_loss, bar, "loss")
         if hit_tp:
@@ -138,6 +143,25 @@ def _check_sl_tp_hit(
         tp_hit = bar["low"] <= trade.take_profit
 
     return sl_hit, tp_hit
+
+
+# ------------------------------------------------------------------
+# Determine SL/TP priority when both hit on same bar
+# ------------------------------------------------------------------
+def _sl_hit_first(
+    trade: TradeRecord,
+    bar: dict[str, Any],
+) -> bool:
+    """
+    Use bar direction to estimate which level was hit first.
+
+    If the bar moves against the trade direction first (bearish bar for
+    a long, bullish bar for a short), assume SL was hit first.
+    """
+    bar_is_bearish: bool = bar["close"] < bar["open"]
+    if trade.direction == 1:  # Long
+        return bar_is_bearish  # bearish bar → low hit first → SL
+    return not bar_is_bearish  # bullish bar → high hit first → SL
 
 
 # ------------------------------------------------------------------

@@ -59,6 +59,7 @@ class StrategyState:
     is_position_open: bool = False
     m5_candles: list[dict[str, Any]] = field(default_factory=list)
     m1_candles: list[dict[str, Any]] = field(default_factory=list)
+    max_candles: int = 200
 
 
 # ------------------------------------------------------------------
@@ -237,6 +238,7 @@ class FCRStrategy:
         state: StrategyState,
         signal: dict[str, Any],
         pip_size: float,
+        exchange_rate: float = 0.0,
     ) -> dict[str, Any] | None:
         """Calculate and validate position size. Returns None on failure."""
         risk_mod = self._modules[4]
@@ -250,6 +252,7 @@ class FCRStrategy:
             lot_type=self._config.trading.lot_type,
             min_lots=MIN_LOTS,
             max_lots=MAX_LOTS,
+            exchange_rate=exchange_rate,
         )
         if not pos_result["is_valid"]:
             logger.warning(f"ALPHAEDGE: Invalid position size for {state.pair}")
@@ -293,7 +296,17 @@ class FCRStrategy:
         pip_size: float,
     ) -> bool:
         """Execute a trade signal through IB Gateway."""
-        pos_result = self._size_position(state, signal, pip_size)
+        # Fetch live rate for non-USD-quoted pairs (JPY)
+        exchange_rate = 0.0
+        if pip_size >= 0.001:
+            exchange_rate = await self._rt_feed.get_mid_price(state.pair)
+
+        pos_result = self._size_position(
+            state,
+            signal,
+            pip_size,
+            exchange_rate,
+        )
         if pos_result is None:
             return False
 
@@ -314,7 +327,7 @@ class FCRStrategy:
             bracket["lot_size"],
             self._config.trading.lot_type,
         )
-        await self._executor.place_bracket_order(
+        trades_placed = await self._executor.place_bracket_order(
             pair=state.pair,
             direction=bracket["direction"],
             quantity=units,
@@ -323,9 +336,22 @@ class FCRStrategy:
             take_profit=bracket["take_profit"],
         )
 
+        # Register fill callback to reset position flag on SL/TP exit
+        for trade_obj in trades_placed:
+            trade_obj.filledEvent += lambda _t, _pair=state.pair: self._on_trade_closed(
+                _pair
+            )
+
         state.trades_today += 1
         state.is_position_open = True
         return True
+
+    def _on_trade_closed(self, pair: str) -> None:
+        """Reset position flag when a bracket child (SL/TP) fills."""
+        state = self._states.get(pair)
+        if state:
+            state.is_position_open = False
+            logger.info(f"ALPHAEDGE: Position closed for {pair}")
 
     def _on_new_m1_bar(self, pair: str, candle: dict[str, Any]) -> None:
         """Handle incoming real-time M1 bar data."""
@@ -334,6 +360,8 @@ class FCRStrategy:
             return
 
         state.m1_candles.append(candle)
+        if len(state.m1_candles) > state.max_candles:
+            state.m1_candles = state.m1_candles[-state.max_candles :]
         pip_size = _get_pip_size(pair)
 
         # Skip if trade limit reached or position open

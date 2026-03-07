@@ -42,12 +42,13 @@ cdef double _compute_pip_value(
     str pair,
     double pip_size,
     str lot_type,
+    double exchange_rate=0.0,
 ):
     """
     Calculate the pip value in USD for standard/mini/micro lots.
 
     For pairs where USD is quote (EUR/USD, GBP/USD): pip value is fixed.
-    For JPY pairs (USD/JPY): pip value depends on exchange rate.
+    For JPY pairs (USD/JPY): divide by exchange rate to convert.
     """
     cdef double lot_units
     if lot_type == "standard":
@@ -59,9 +60,12 @@ cdef double _compute_pip_value(
     else:
         lot_units = 100000.0
 
-    # Pip value = lot_units * pip_size
-    # For USD-quoted pairs this gives value in USD directly
-    return lot_units * pip_size
+    cdef double raw_pip_value = lot_units * pip_size
+
+    # For non-USD-quoted pairs convert via exchange rate
+    if exchange_rate > 0.0 and pip_size >= 0.001:
+        return raw_pip_value / exchange_rate
+    return raw_pip_value
 
 
 # ------------------------------------------------------------------
@@ -131,6 +135,7 @@ def calculate_position_size(
     str lot_type,
     double min_lots,
     double max_lots,
+    double exchange_rate=0.0,
 ):
     """
     Calculate optimal position size based on risk parameters.
@@ -153,6 +158,8 @@ def calculate_position_size(
         Minimum lot size allowed.
     max_lots : float
         Maximum lot size allowed.
+    exchange_rate : float
+        Live exchange rate for non-USD-quoted pairs (0.0 to skip).
 
     Returns
     -------
@@ -160,7 +167,9 @@ def calculate_position_size(
         Position sizing result with lot_size, risk_amount, pip_value.
     """
     # Compute pip value per single lot
-    cdef double pip_val = _compute_pip_value(pair, pip_size, lot_type)
+    cdef double pip_val = _compute_pip_value(
+        pair, pip_size, lot_type, exchange_rate,
+    )
 
     # Compute position size
     cdef PositionSize result = _compute_position_size(
