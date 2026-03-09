@@ -15,7 +15,7 @@ log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
 ib:
   host: "127.0.0.1"
   port: 4002               # 4001 = live, 4002 = paper
-  client_id: 1
+  client_id: 2             # EDGECORE uses 1 — must differ to avoid IB disconnect
   account_id: ""            # Set in .env (ALPHAEDGE_IB_ACCOUNT)
   account_type: "Individual"  # Individual or Financial Advisor
 
