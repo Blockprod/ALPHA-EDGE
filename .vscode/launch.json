@@ -52,7 +52,7 @@
             "args": [
                 "alphaedge/",
                 "--config-file",
-                "mypy.ini"
+                "pyproject.toml"
             ],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal"

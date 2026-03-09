@@ -30,6 +30,18 @@ jobs:
           python -m ruff check alphaedge/ --config pyproject.toml
           python -m ruff format --check alphaedge/
 
+      - name: Type checking (Pyright / Pylance)
+        run: |
+          python -m pyright alphaedge/
+
+      - name: Secret scanning (TruffleHog)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
       - name: Tests (Pytest)
         run: |
           python -m pytest alphaedge/tests/ -v --tb=short \

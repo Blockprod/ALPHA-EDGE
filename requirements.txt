@@ -43,3 +43,6 @@ httpx==0.27.0
 # --- Type Stubs ---
 pandas-stubs==2.2.2.240514
 types-PyYAML==6.0.12.20240311
+
+# --- Type Checking ---
+pyright>=1.1.400

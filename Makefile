@@ -8,7 +8,7 @@
 # LAST UPDATED : 2026-03-07
 # ============================================================
 
-.PHONY: lint format test qa build all clean
+.PHONY: lint format typecheck pylint test qa qa-strict build all clean
 
 # --- Linting + Formatting (Ruff) ---
 lint:
@@ -16,6 +16,14 @@ lint:
 
 format:
 	python -m ruff format alphaedge/
+
+# --- Type Checking (Pyright / Pylance) ---
+typecheck:
+	python -m pyright alphaedge/
+
+# --- Pylint ---
+pylint:
+	python -m pylint alphaedge/
 
 # --- Testing ---
 test:
@@ -25,7 +33,10 @@ test:
 		--cov-fail-under=80
 
 # --- Full QA Pipeline ---
-qa: lint test
+qa: lint typecheck test
+
+# --- QA Strict (inclut pylint) ---
+qa-strict: lint typecheck pylint test
 
 # --- Cython Build ---
 build:
