@@ -42,6 +42,12 @@ alphaedge_daily_state.json
 # --- Proprietary / Sensitive ---
 ALPHAEDGE_ACTION_PLAN.md
 
+# --- QA Debug Dumps ---
+mypy_errors*.txt
+pylint_out*.txt
+pylint_output*.txt
+ruff_output*.txt
+
 # --- Output Files ---
 ALPHAEDGE_backtest_results.csv
 ALPHAEDGE_equity_curve.png
