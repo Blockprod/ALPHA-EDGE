@@ -64,10 +64,18 @@ def compute_stats(
     stats.max_drawdown_pct = _compute_max_drawdown(trades, starting_equity)
     stats.sharpe_ratio = _compute_sharpe(trades)
 
-    stats.avg_win_pips = float(np.mean([t.pnl_pips for t in wins])) if wins else 0.0
-    stats.avg_loss_pips = float(np.mean([t.pnl_pips for t in losses])) if losses else 0.0
-    stats.expectancy_pips = _compute_expectancy(stats.winrate, stats.avg_win_pips, stats.avg_loss_pips)
-    stats.max_consec_wins, stats.max_consec_losses = _compute_consec_wins_losses(trades)
+    stats.avg_win_pips = (
+        float(np.mean([t.pnl_pips for t in wins])) if wins else 0.0
+    )
+    stats.avg_loss_pips = (
+        float(np.mean([t.pnl_pips for t in losses])) if losses else 0.0
+    )
+    stats.expectancy_pips = _compute_expectancy(
+        stats.winrate, stats.avg_win_pips, stats.avg_loss_pips
+    )
+    stats.max_consec_wins, stats.max_consec_losses = _compute_consec_wins_losses(
+        trades
+    )
 
     return stats
 
@@ -129,7 +137,9 @@ def _compute_consec_wins_losses(
     return max_wins, max_losses
 
 
-def _compute_max_drawdown(trades: list[TradeRecord], starting_equity: float = 10000.0) -> float:
+def _compute_max_drawdown(
+    trades: list[TradeRecord], starting_equity: float = 10000.0
+) -> float:
     """
     Calculate maximum drawdown percentage from equity curve.
 
@@ -277,14 +287,19 @@ def compute_split_report(
 # ------------------------------------------------------------------
 # Logging helpers
 # ------------------------------------------------------------------
-def _log_stats_summary(stats: BacktestStats, eur_usd_rate: float = 1.08, starting_equity: float = 10000.0) -> None:
+def _log_stats_summary(
+    stats: BacktestStats,
+    eur_usd_rate: float = 1.08,
+    starting_equity: float = 10000.0,
+) -> None:
     """Print a full summary of backtest statistics to the log."""
     sep = "=" * 58
     logger.info(sep)
     logger.info(f"{PROJECT_TITLE} — BACKTEST RESULTS")
     logger.info(sep)
     logger.info(f"  {'CAPITAL'}")
-    logger.info(f"    Starting equity:      ${starting_equity:,.2f}  (€{starting_equity / eur_usd_rate:,.2f})")
+    eq_eur = starting_equity / eur_usd_rate
+    logger.info(f"    Starting equity:      ${starting_equity:,.2f}  (€{eq_eur:,.2f})")
     logger.info(f"  {'TRADES':}")
     logger.info(f"    Total trades:         {stats.total_trades}")
     logger.info(f"    Wins:                 {stats.wins}")
@@ -300,7 +315,10 @@ def _log_stats_summary(stats: BacktestStats, eur_usd_rate: float = 1.08, startin
     logger.info(f"  {'P&L':}")
     logger.info(f"    Total P&L (pips):     {stats.total_pnl_pips:+.1f} pips")
     logger.info(f"    Total P&L (USD):      ${stats.total_pnl_usd:+.2f}")
-    logger.info(f"    Total P&L (EUR):      €{stats.total_pnl_eur:+.2f}  [@ {eur_usd_rate:.4f}]")
+    logger.info(
+        f"    Total P&L (EUR):      "
+        f"€{stats.total_pnl_eur:+.2f}  [@ {eur_usd_rate:.4f}]"
+    )
     logger.info(f"  {'PER TRADE':}")
     logger.info(f"    Avg win:              {stats.avg_win_pips:+.1f} pips")
     logger.info(f"    Avg loss:             {stats.avg_loss_pips:+.1f} pips")

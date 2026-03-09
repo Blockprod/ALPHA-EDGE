@@ -21,7 +21,6 @@ from ib_insync import BarData, Contract
 
 from alphaedge.config.constants import (
     IB_HIST_TIMEOUT_SECONDS,
-    IB_TIMEOUT_SECONDS,
     TF_M1,
     TF_M5,
 )
