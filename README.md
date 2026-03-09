@@ -35,7 +35,7 @@ ALPHAEDGE is a **low-latency Forex trading bot** built with a hybrid Python/Cyth
 - Configurable risk management and position sizing
 - Historical backtesting engine with equity curve analysis
 - Rich terminal dashboard for real-time monitoring
-- Full QA pipeline: Black, Ruff, Pylint, Mypy, Pytest (100% coverage)
+- Full QA pipeline: Ruff, Pylint, Pyright (Pylance), Pytest (≥80% coverage — `config/`, `utils/`, `core/` stubs)
 
 > Strategy logic is proprietary and not documented here. See the source code if you have authorized access.
 
@@ -275,16 +275,18 @@ python setup.py build_ext --inplace
 make qa
 ```
 
-This runs: Black (format check) → Ruff (lint) → Pylint → Mypy → Pytest.
+This runs: Ruff (lint) → Pyright / Pylance (type checking) → Pytest.
+
+> **Coverage scope** : The ≥80% threshold applies to `config/`, `utils/`, and `core/` (via stubs) only.
+> `engine/` modules require a live IB Gateway connection and are excluded from automated coverage.
 
 ### Individual Tools
 
 | Tool | Command | Purpose |
 |------|---------|---------|
-| **Black** | `make format` | Auto-format code (line length 88) |
-| **Ruff** | `ruff check alphaedge/` | Fast linting (E, F, W, I, N, UP rules) |
-| **Pylint** | `pylint alphaedge/` | Deep analysis (target ≥ 8.5/10) |
-| **Mypy** | `mypy alphaedge/` | Static type checking (strict mode) |
+| **Ruff** | `make lint` | Fast linting (E, F, W, I, N, UP rules) |
+| **Pyright** | `make typecheck` | Static type checking (Pylance engine) |
+| **Pylint** | `make pylint` | Deep analysis — included in `make qa-strict` |
 | **Pytest** | `make test` | Unit tests + coverage report |
 
 ### Pytest
