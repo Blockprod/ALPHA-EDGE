@@ -12,7 +12,9 @@
 from __future__ import annotations
 
 import asyncio
+import pickle
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from ib_insync import BarData, Contract
@@ -28,6 +30,55 @@ from alphaedge.utils.logger import get_logger
 from alphaedge.utils.timezone import get_tz_utc
 
 logger = get_logger()
+
+_CACHE_DIR = Path("alphaedge/cache")
+
+
+# ------------------------------------------------------------------
+# Disk cache for historical bars (avoids re-fetching from IB on reruns)
+# ------------------------------------------------------------------
+class BarDiskCache:
+    """
+    Simple file-backed cache for historical bar data.
+
+    Each (pair, timeframe, start_date, end_date) combination is stored
+    as a pickle file under ``alphaedge/cache/``.  A cache hit makes
+    ``fetch_bars_chunked`` return instantly on reruns.
+    """
+
+    def __init__(self, cache_dir: Path = _CACHE_DIR) -> None:
+        """Create cache directory if it doesn't exist."""
+        self._dir = cache_dir
+        self._dir.mkdir(parents=True, exist_ok=True)
+
+    def _path(
+        self, pair: str, timeframe: str, start_dt: datetime, end_dt: datetime
+    ) -> Path:
+        tf_safe = timeframe.replace(" ", "_")
+        return self._dir / f"{pair}_{tf_safe}_{start_dt.date()}_{end_dt.date()}.pkl"
+
+    def load(
+        self, pair: str, timeframe: str, start_dt: datetime, end_dt: datetime
+    ) -> list[dict[str, Any]] | None:
+        """Return cached bars or None if not cached."""
+        p = self._path(pair, timeframe, start_dt, end_dt)
+        if p.exists():
+            with p.open("rb") as fh:
+                return pickle.load(fh)  # noqa: S301 — local trusted cache only
+        return None
+
+    def save(
+        self,
+        pair: str,
+        timeframe: str,
+        start_dt: datetime,
+        end_dt: datetime,
+        bars: list[dict[str, Any]],
+    ) -> None:
+        """Persist bars to disk."""
+        p = self._path(pair, timeframe, start_dt, end_dt)
+        with p.open("wb") as fh:
+            pickle.dump(bars, fh)
 
 
 # ------------------------------------------------------------------
@@ -233,6 +284,7 @@ class HistoricalDataFeed:
         timeframe: str,
         start_dt: datetime,
         end_dt: datetime,
+        cache: BarDiskCache | None = None,
     ) -> list[dict[str, Any]]:
         """
         Fetch historical bars in chunks to respect IB per-request duration limits.
@@ -257,6 +309,16 @@ class HistoricalDataFeed:
         list[dict]
             Sorted, deduplicated candle dicts covering [start_dt, end_dt].
         """
+        # Return immediately if this exact range is already cached on disk
+        if cache is not None:
+            cached = cache.load(pair, timeframe, start_dt, end_dt)
+            if cached is not None:
+                logger.info(
+                    f"ALPHAEDGE cache hit: {pair} {timeframe} "
+                    f"{start_dt.date()} → {end_dt.date()} ({len(cached)} bars)"
+                )
+                return cached
+
         # IB per-request limits
         if "1 min" in timeframe:
             chunk_days = 7
@@ -315,6 +377,11 @@ class HistoricalDataFeed:
             f"ALPHAEDGE chunked fetch: {pair} {timeframe} "
             f"{len(unique)} bars from {start_dt.date()} to {end_dt.date()}"
         )
+
+        # Persist to disk so subsequent runs skip IB entirely
+        if cache is not None and unique:
+            cache.save(pair, timeframe, start_dt, end_dt, unique)
+
         return unique
 
     async def fetch_m5_pre_session(

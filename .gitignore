@@ -35,6 +35,9 @@ dist/
 # --- Logs ---
 alphaedge/logs/*.log
 
+# --- Bar cache (avoid committing large IB data files) ---
+alphaedge/cache/
+
 # --- Runtime State ---
 alphaedge_daily_state.json
 *.tmp

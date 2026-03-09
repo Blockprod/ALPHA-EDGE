@@ -118,6 +118,37 @@ make clean
 
 ---
 
+## Public Core Interfaces
+
+> Implementation is [PROPRIETARY]. These are call signatures only — do not infer strategy logic.
+
+```python
+# fcr_detector
+detect_fcr(candles_data: list[dict], min_range_pips: float, pip_size: float) -> dict | None
+detect_fcr_scan(candles_data: list[dict], min_range_pips: float, pip_size: float, lookback: int) -> dict | None
+# → {detected, range_high, range_low, range_size, candle_timestamp}
+
+# gap_detector
+detect_gap(pre_session_m1, session_m1, pre_close, session_open, atr_period, min_atr_ratio) -> dict
+is_in_gap_zone(price: float, gap_high: float, gap_low: float) -> bool
+# → {detected, gap_high, gap_low, gap_size, atr_ratio, direction}
+
+# engulfing_detector
+detect_engulfing(candles_data, fcr_high, fcr_low, rr_ratio, pip_size, volume_period, min_volume_ratio) -> dict | None
+# → {direction, entry, stop_loss, take_profit, rr_ratio} | None
+
+# risk_manager
+calculate_position_size(account_equity, risk_pct, sl_pips, pair, pip_size, lot_type, min_lots, max_lots) -> dict
+check_daily_limit(starting_equity, current_equity, max_daily_loss_pct, trades_today, max_trades) -> dict
+# → {lot_size, risk_amount, pip_value, sl_pips, is_valid}
+
+# order_manager
+create_bracket_order(direction, entry_price, stop_loss, take_profit, lot_size, pip_size, spread_pips, ...) -> dict
+# → {is_valid, rejection_reason?, direction, entry, sl, tp, lot_size, rr_ratio}
+```
+
+---
+
 ## Gitignored / Proprietary Files
 
 The following files exist locally but are **intentionally not committed**:

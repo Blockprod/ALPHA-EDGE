@@ -58,6 +58,7 @@ from alphaedge.engine.backtest_stats import (
     split_trades_is_oos,
 )
 from alphaedge.engine.backtest_types import BacktestReport, BacktestStats, TradeRecord
+from alphaedge.engine.data_feed import BarDiskCache
 from alphaedge.engine.walk_forward import (
     WalkForwardReport,
     WalkForwardResult,
@@ -399,6 +400,7 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
         return BacktestStats()
 
     hist_feed = HistoricalDataFeed(broker)
+    cache = BarDiskCache()
     all_trades: list[TradeRecord] = []
 
     end_dt = datetime.now(tz=ZoneInfo("UTC"))
@@ -408,8 +410,13 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
         f"({config.trading.backtest_years} years, {len(config.trading.pairs)} pairs)"
     )
 
-    for pair in config.trading.pairs:
-        trades = await _fetch_pair_trades(hist_feed, pair, config, start_dt, end_dt)
+    pair_results = await asyncio.gather(
+        *[
+            _fetch_pair_trades(hist_feed, pair, config, start_dt, end_dt, cache)
+            for pair in config.trading.pairs
+        ]
+    )
+    for trades in pair_results:
         all_trades.extend(trades)
 
     await broker.disconnect()
@@ -422,11 +429,15 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
     export_results_csv(all_trades, stats, eur_usd_rate=eur_usd_rate)
     plot_equity_curve(all_trades, starting_equity=starting_equity)
     _log_stats_summary(stats, eur_usd_rate, starting_equity)
-    _validate_with_vectorbt(all_trades, manual_sharpe=stats.sharpe_ratio, starting_equity=starting_equity)
+    _validate_with_vectorbt(
+        all_trades, manual_sharpe=stats.sharpe_ratio, starting_equity=starting_equity
+    )
 
     # IS/OOS split report
     if all_trades:
-        report = compute_split_report(all_trades, eur_usd_rate=eur_usd_rate, starting_equity=starting_equity)
+        report = compute_split_report(
+            all_trades, eur_usd_rate=eur_usd_rate, starting_equity=starting_equity
+        )
         _log_split_report(report, eur_usd_rate)
 
     return stats

@@ -81,6 +81,30 @@ make clean                      # remove build artifacts
 
 ---
 
+## Test Naming Convention
+
+All test files must follow: `test_<module>_<scenario>.py`
+
+Examples:
+- `test_fcr_detector_detect.py` — happy path FCR detection
+- `test_risk_manager_daily.py` — daily loss limit check
+- `test_order_manager_validation.py` — bracket order rejection
+
+One scenario per file. Use `pytest.mark.parametrize` for data variants.
+
+---
+
+## Cython `.pyx` Files — Handling Rules
+
+- **Never edit `.pyx` files** without running `make build` immediately after.
+- The compiled `.pyd` (Windows) / `.so` (Linux) is the runtime module.
+  The `.pyx` source alone does nothing at runtime.
+- For quick iteration, use the pure-Python stubs in `alphaedge/core/_stubs/`.
+- Workflow after any `.pyx` change: `make build` → `make qa` (both must pass).
+- Always flag `.pyx` edits in commit messages: `cython: <description>`.
+
+---
+
 ## Gitignored / Proprietary
 
 - `ALPHAEDGE_ACTION_PLAN.md` — proprietary, do not regenerate
