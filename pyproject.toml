@@ -64,6 +64,7 @@ source = ["alphaedge"]
 omit = [
     "alphaedge/engine/*",
     "alphaedge/logs/*",
+    "alphaedge/tests/*",
 ]
 
 [tool.coverage.report]
