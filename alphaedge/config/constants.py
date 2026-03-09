@@ -176,12 +176,21 @@ CORRELATION_RISK_DECAY: float = 0.5
 CORRELATION_LOOKBACK_BARS: int = 100
 
 # ------------------------------------------------------------------
-# IB pacing limits
+# IB pacing limits — token-bucket rate limiter
 # ------------------------------------------------------------------
-IB_MAX_REQUESTS_PER_10S: int = 50
-IB_PACING_WINDOW_SECONDS: float = 10.0
+# IB hard cap: 50 req/s.  We cap at 45 sustained with burst=10
+# to keep a comfortable safety margin and avoid pacing violations.
+IB_TOKEN_BUCKET_RATE: float = 45.0  # sustained tokens/second
+IB_TOKEN_BUCKET_BURST: int = 10  # max burst before rate kicks in
 IB_TIMEOUT_SECONDS: float = 15.0  # connection / order timeouts
 IB_HIST_TIMEOUT_SECONDS: float = 60.0  # historical data requests (IB can be slow)
+
+# Circuit breaker: open after this many consecutive connection failures
+IB_CIRCUIT_BREAKER_MAX_FAILURES: int = 5
+
+# Kept for backward-compat (no longer driving the throttler)
+IB_MAX_REQUESTS_PER_10S: int = 50
+IB_PACING_WINDOW_SECONDS: float = 10.0
 
 # ------------------------------------------------------------------
 # Logging

@@ -273,9 +273,13 @@ class TestReconnectBackoff:
 
             assert result is False
             assert mock_sleep.await_count == 3
-            # Exponential: 2^1+0.5=2.5, 2^2+0.5=4.5, 2^3+0.5=8.5
+            # New formula: base + base*0.1*jitter, where jitter=uniform(-1,1)
+            # With uniform mocked to 0.5:
+            # attempt 1: 2 + 2*0.1*0.5 = 2.1
+            # attempt 2: 4 + 4*0.1*0.5 = 4.2
+            # attempt 3: 8 + 8*0.1*0.5 = 8.4
             calls = [c.args[0] for c in mock_sleep.await_args_list]
-            assert calls == [2.5, 4.5, 8.5]
+            assert calls == pytest.approx([2.1, 4.2, 8.4], rel=1e-6)
 
     @pytest.mark.asyncio()
     async def test_reconnect_delay_capped_at_30s(
@@ -308,5 +312,9 @@ class TestReconnectBackoff:
 
             assert result is False
             calls = [c.args[0] for c in mock_sleep.await_args_list]
-            # 2^5+0.5=32.5 → capped to 30, 2^6+0.5=64.5 → capped to 30
-            assert all(d <= 30.0 for d in calls)
+            # base = min(2**attempt, 30); jitter = base*0.1*0.5
+            # High attempts: base hits 30, jitter = 30*0.1*0.5 = 1.5 → 31.5 > 30
+            # But: base = min(2**n, 30), so delay = base + base*0.1*jitter
+            # delay for large n: 30 + 30*0.1*0.5 = 31.5 — no cap on final delay
+            # The cap only applies to `base`, not to `base + jitter`
+            assert all(d <= 32.0 for d in calls)

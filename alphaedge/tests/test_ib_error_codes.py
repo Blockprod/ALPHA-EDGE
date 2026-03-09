@@ -61,10 +61,10 @@ class TestIBErrorCodePacing:
 
     def test_code_162_injects_throttler_penalty(self) -> None:
         broker = _build_broker()
-        before = len(broker._throttler._timestamps)
+        # Token bucket: after penalise() tokens should be 0
+        broker._throttler._tokens = 5.0  # prime with some tokens
         broker._on_ib_error(1, 162, "pacing", None)
-        after = len(broker._throttler._timestamps)
-        assert after - before == broker._throttler._max_requests
+        assert broker._throttler._tokens == 0.0
 
 
 class TestIBErrorCodeSecurity:

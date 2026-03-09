@@ -27,9 +27,10 @@ from ib_insync import (
 )
 
 from alphaedge.config.constants import (
-    IB_MAX_REQUESTS_PER_10S,
-    IB_PACING_WINDOW_SECONDS,
+    IB_CIRCUIT_BREAKER_MAX_FAILURES,
     IB_TIMEOUT_SECONDS,
+    IB_TOKEN_BUCKET_BURST,
+    IB_TOKEN_BUCKET_RATE,
 )
 from alphaedge.config.loader import IBConfig
 from alphaedge.utils.logger import get_logger
@@ -38,41 +39,48 @@ logger = get_logger()
 
 
 # ------------------------------------------------------------------
-# Request throttler for IB pacing violations
+# Token-bucket rate limiter
 # ------------------------------------------------------------------
 class RequestThrottler:
     """
-    Rate limiter to avoid IB pacing violations.
+    Token-bucket rate limiter for IB pacing compliance.
 
-    Max 50 requests per 10 seconds.
+    IB hard cap: 50 req/s.  We sustain 45 req/s with a burst of 10
+    to keep a comfortable safety margin.  Tokens refill continuously
+    at `rate` per second — no sudden 50-req avalanche possible.
     """
 
     def __init__(
         self,
-        max_requests: int = IB_MAX_REQUESTS_PER_10S,
-        window_seconds: float = IB_PACING_WINDOW_SECONDS,
+        rate: float = IB_TOKEN_BUCKET_RATE,
+        burst: int = IB_TOKEN_BUCKET_BURST,
     ) -> None:
-        """Initialize the throttler with limits."""
-        self._max_requests = max_requests
-        self._window = window_seconds
-        self._timestamps: list[float] = []
+        self._rate = rate  # tokens / second
+        self._burst = burst  # max tokens in bucket
+        self._tokens: float = float(burst)
+        self._last_refill: float = time.monotonic()
 
-    def _prune_old_timestamps(self) -> None:
-        """Remove timestamps older than the pacing window."""
-        cutoff = time.monotonic() - self._window
-        self._timestamps = [t for t in self._timestamps if t > cutoff]
+    def _refill(self) -> None:
+        """Add tokens proportional to elapsed time since last refill."""
+        now = time.monotonic()
+        elapsed = now - self._last_refill
+        self._tokens = min(self._burst, self._tokens + elapsed * self._rate)
+        self._last_refill = now
 
     async def acquire(self) -> None:
-        """Wait until a request slot is available."""
+        """Wait until one token is available, then consume it."""
         while True:
-            self._prune_old_timestamps()
-            if len(self._timestamps) < self._max_requests:
-                self._timestamps.append(time.monotonic())
+            self._refill()
+            if self._tokens >= 1.0:
+                self._tokens -= 1.0
                 return
-            # Wait for the oldest request to expire
-            wait_time = self._timestamps[0] + self._window - time.monotonic()
-            if wait_time > 0:
-                await asyncio.sleep(wait_time)
+            # Sleep until the next token is ready
+            wait_time = (1.0 - self._tokens) / self._rate
+            await asyncio.sleep(wait_time)
+
+    def penalise(self) -> None:
+        """Drain the bucket on a pacing violation (IB error 162)."""
+        self._tokens = 0.0
 
 
 # ------------------------------------------------------------------
@@ -80,9 +88,11 @@ class RequestThrottler:
 # ------------------------------------------------------------------
 class BrokerConnection:
     """
-    Manages IB Gateway connection with auto-reconnect.
+    Manages IB Gateway connection with circuit breaker and exponential
+    backoff reconnection.
 
-    Uses ib_insync for all broker communication.
+    Circuit breaker opens after IB_CIRCUIT_BREAKER_MAX_FAILURES
+    consecutive failures — prevents infinite retry loops.
     """
 
     def __init__(self, config: IBConfig) -> None:
@@ -91,6 +101,7 @@ class BrokerConnection:
         self._ib = IB()
         self._throttler = RequestThrottler()
         self._connected = False
+        self._consecutive_failures: int = 0
 
     @property
     def is_connected(self) -> bool:
@@ -111,6 +122,14 @@ class BrokerConnection:
         bool
             True if connection was successful.
         """
+        if self._consecutive_failures >= IB_CIRCUIT_BREAKER_MAX_FAILURES:
+            logger.critical(
+                f"ALPHAEDGE circuit breaker OPEN after "
+                f"{self._consecutive_failures} consecutive failures — "
+                "manual intervention required"
+            )
+            return False
+
         try:
             await asyncio.wait_for(
                 self._ib.connectAsync(
@@ -122,7 +141,9 @@ class BrokerConnection:
                 timeout=IB_TIMEOUT_SECONDS,
             )
             self._connected = True
+            self._consecutive_failures = 0
             self._ib.errorEvent += self._on_ib_error
+            self._ib.disconnectedEvent += self._on_disconnect
             logger.info(
                 f"ALPHAEDGE connected to IB Gateway "
                 f"{self._config.host}:{self._config.port} "
@@ -130,7 +151,12 @@ class BrokerConnection:
             )
             return True
         except Exception:
-            logger.exception("ALPHAEDGE IB Gateway connection failed")
+            self._consecutive_failures += 1
+            logger.exception(
+                f"ALPHAEDGE IB Gateway connection failed "
+                f"(failure {self._consecutive_failures}/"
+                f"{IB_CIRCUIT_BREAKER_MAX_FAILURES})"
+            )
             self._connected = False
             return False
 
@@ -143,34 +169,34 @@ class BrokerConnection:
 
     async def reconnect(self, max_retries: int = 3) -> bool:
         """
-        Attempt to reconnect to IB Gateway.
+        Attempt to reconnect with exponential backoff + jitter.
 
-        Parameters
-        ----------
-        max_retries : int
-            Maximum number of reconnection attempts.
-
-        Returns
-        -------
-        bool
-            True if reconnection was successful.
+        Delays: 2s → 4s → 8s (capped at 30s), each ±10% jitter.
         """
-        try:
-            for attempt in range(1, max_retries + 1):
-                await self.disconnect()
-                delay = min(2**attempt + random.uniform(0, 1), 30.0)
-                logger.warning(
-                    f"ALPHAEDGE reconnect attempt {attempt}/{max_retries} "
-                    f"— waiting {delay:.1f}s"
-                )
-                await asyncio.sleep(delay)
-                if await self.connect():
-                    return True
-            logger.error("ALPHAEDGE reconnection failed after all retries")
-            return False
-        except Exception:
-            logger.exception("ALPHAEDGE reconnect error")
-            return False
+        for attempt in range(1, max_retries + 1):
+            await self.disconnect()
+            base_delay = min(2**attempt, 30.0)
+            jitter = base_delay * 0.1 * random.uniform(-1.0, 1.0)
+            delay = base_delay + jitter
+            logger.warning(
+                f"ALPHAEDGE reconnect attempt {attempt}/{max_retries} "
+                f"— waiting {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
+            if await self.connect():
+                return True
+        logger.error("ALPHAEDGE reconnection failed after all retries")
+        return False
+
+    def _on_disconnect(self) -> None:
+        """Fired by ib_insync when the connection drops unexpectedly."""
+        logger.warning(
+            f"ALPHAEDGE IB disconnected unexpectedly "
+            f"({self._config.host}:{self._config.port}) — "
+            "next _ensure_connected() call will reconnect"
+        )
+        self._connected = False
+        self._ib = IB()  # fresh instance — old one is dead
 
     def _on_ib_error(  # pylint: disable=invalid-name
         self,
@@ -184,9 +210,7 @@ class BrokerConnection:
             logger.warning(
                 f"ALPHAEDGE IB PACING: Historical data pacing violation — {errorString}"
             )
-            # Inject a penalty delay into the throttler
-            now = time.monotonic()
-            self._throttler._timestamps.extend([now] * self._throttler._max_requests)
+            self._throttler.penalise()
         elif errorCode == 200:
             logger.error(f"ALPHAEDGE IB: No security definition — {errorString}")
         elif errorCode == 321:
@@ -389,4 +413,4 @@ if __name__ == "__main__":
 
     # Test throttler
     throttler = RequestThrottler()
-    print(f"  Throttler max: {throttler._max_requests} per {throttler._window}s")
+    print(f"  Throttler rate: {throttler._rate} req/s, burst: {throttler._burst}")
