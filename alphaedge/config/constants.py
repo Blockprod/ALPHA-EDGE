@@ -180,7 +180,8 @@ CORRELATION_LOOKBACK_BARS: int = 100
 # ------------------------------------------------------------------
 IB_MAX_REQUESTS_PER_10S: int = 50
 IB_PACING_WINDOW_SECONDS: float = 10.0
-IB_TIMEOUT_SECONDS: float = 15.0
+IB_TIMEOUT_SECONDS: float = 15.0         # connection / order timeouts
+IB_HIST_TIMEOUT_SECONDS: float = 60.0   # historical data requests (IB can be slow)
 
 # ------------------------------------------------------------------
 # Logging

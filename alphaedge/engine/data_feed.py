@@ -17,7 +17,12 @@ from typing import Any
 
 from ib_insync import BarData, Contract
 
-from alphaedge.config.constants import IB_TIMEOUT_SECONDS, TF_M1, TF_M5
+from alphaedge.config.constants import (
+    IB_HIST_TIMEOUT_SECONDS,
+    IB_TIMEOUT_SECONDS,
+    TF_M1,
+    TF_M5,
+)
 from alphaedge.engine.broker import BrokerConnection, build_forex_contract
 from alphaedge.utils.logger import get_logger
 from alphaedge.utils.timezone import get_tz_utc
@@ -182,7 +187,7 @@ class HistoricalDataFeed:
                 useRTH=use_rth,
                 formatDate=2,
             ),
-            timeout=IB_TIMEOUT_SECONDS,
+            timeout=IB_HIST_TIMEOUT_SECONDS,
         )
 
     async def fetch_bars(
@@ -262,6 +267,8 @@ class HistoricalDataFeed:
 
         all_candles: list[dict[str, Any]] = []
         current_end = end_dt
+        max_retries = 3
+        retry_delay = 15.0  # seconds between retries on timeout
 
         while current_end > start_dt:
             remaining = (current_end - start_dt).days
@@ -269,14 +276,29 @@ class HistoricalDataFeed:
             if days <= 0:
                 break
 
-            chunk = await self.fetch_bars(
-                pair=pair,
-                timeframe=timeframe,
-                duration=f"{days} D",
-                end_dt=current_end,
-            )
+            chunk: list[dict[str, Any]] = []
+            for attempt in range(1, max_retries + 1):
+                chunk = await self.fetch_bars(
+                    pair=pair,
+                    timeframe=timeframe,
+                    duration=f"{days} D",
+                    end_dt=current_end,
+                )
+                if chunk:
+                    break
+                if attempt < max_retries:
+                    logger.warning(
+                        f"ALPHAEDGE chunk retry {attempt}/{max_retries}: "
+                        f"{pair} {timeframe} ending {current_end.date()}"
+                    )
+                    await asyncio.sleep(retry_delay)
             if chunk:
                 all_candles.extend(chunk)
+            else:
+                logger.warning(
+                    f"ALPHAEDGE skipping chunk after {max_retries} attempts: "
+                    f"{pair} {timeframe} ending {current_end.date()}"
+                )
 
             current_end -= timedelta(days=days)
 
