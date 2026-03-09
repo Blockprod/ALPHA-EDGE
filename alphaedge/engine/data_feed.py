@@ -249,10 +249,10 @@ class HistoricalDataFeed:
         use_rth: bool = False,
     ) -> list[dict[str, Any]]:
         """Fetch historical bars from IB for a given pair and timeframe."""
-        self._broker._ensure_connected()
         await self._broker._throttler.acquire()
 
         try:
+            self._broker._ensure_connected()
             contract = build_forex_contract(pair)
             end_str = "" if end_dt is None else end_dt.strftime("%Y%m%d-%H:%M:%S")
 

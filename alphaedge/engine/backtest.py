@@ -413,12 +413,12 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
         f"({config.trading.backtest_years} years, {len(config.trading.pairs)} pairs)"
     )
 
-    pair_results = await asyncio.gather(
-        *[
-            _fetch_pair_trades(hist_feed, pair, config, start_dt, end_dt, cache)
-            for pair in config.trading.pairs
-        ]
-    )
+    pair_results: list[list[TradeRecord]] = []
+    for pair in config.trading.pairs:
+        trades = await _fetch_pair_trades(
+            hist_feed, pair, config, start_dt, end_dt, cache
+        )
+        pair_results.append(trades)
     for trades in pair_results:
         all_trades.extend(trades)
 
