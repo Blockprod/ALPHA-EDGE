@@ -222,6 +222,79 @@ class HistoricalDataFeed:
             logger.exception(f"ALPHAEDGE fetch_bars failed: {pair} {timeframe}")
             return []
 
+    async def fetch_bars_chunked(
+        self,
+        pair: str,
+        timeframe: str,
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> list[dict[str, Any]]:
+        """
+        Fetch historical bars in chunks to respect IB per-request duration limits.
+
+        IB limits per request:
+        - 1 min  bars → max 7 calendar days
+        - 5 mins bars → max 30 calendar days
+
+        Parameters
+        ----------
+        pair : str
+            Currency pair (e.g., 'EURUSD').
+        timeframe : str
+            IB bar size string (e.g., '1 min', '5 mins').
+        start_dt : datetime
+            Earliest bar datetime (UTC).
+        end_dt : datetime
+            Latest bar datetime (UTC, usually now).
+
+        Returns
+        -------
+        list[dict]
+            Sorted, deduplicated candle dicts covering [start_dt, end_dt].
+        """
+        # IB per-request limits
+        if "1 min" in timeframe:
+            chunk_days = 7
+        elif "5 min" in timeframe:
+            chunk_days = 30
+        else:
+            chunk_days = 365
+
+        all_candles: list[dict[str, Any]] = []
+        current_end = end_dt
+
+        while current_end > start_dt:
+            remaining = (current_end - start_dt).days
+            days = min(chunk_days, remaining) if remaining > 0 else chunk_days
+            if days <= 0:
+                break
+
+            chunk = await self.fetch_bars(
+                pair=pair,
+                timeframe=timeframe,
+                duration=f"{days} D",
+                end_dt=current_end,
+            )
+            if chunk:
+                all_candles.extend(chunk)
+
+            current_end -= timedelta(days=days)
+
+        # Sort by datetime and deduplicate on timestamp
+        seen: set[int] = set()
+        unique: list[dict[str, Any]] = []
+        for bar in sorted(all_candles, key=lambda b: b["timestamp"]):
+            ts = bar["timestamp"]
+            if ts not in seen:
+                seen.add(ts)
+                unique.append(bar)
+
+        logger.info(
+            f"ALPHAEDGE chunked fetch: {pair} {timeframe} "
+            f"{len(unique)} bars from {start_dt.date()} to {end_dt.date()}"
+        )
+        return unique
+
     async def fetch_m5_pre_session(
         self,
         pair: str,

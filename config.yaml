@@ -58,6 +58,9 @@ trading:
   # London Open session (8:00-9:00 UTC) — enable after OOS validation
   london_open_enabled: false
 
+  # Number of years of historical data to fetch for backtesting
+  backtest_years: 3
+
 # --- Structure Detection ---
 structure:
   min_range_pips: 5.0       # Minimum candle range for valid detection

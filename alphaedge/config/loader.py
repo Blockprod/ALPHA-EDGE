@@ -67,6 +67,7 @@ class TradingConfig:
     london_open_enabled: bool = False
     min_body_ratio: float = 0.3
     max_wick_ratio: float = 2.0
+    backtest_years: int = 3
 
 
 # ------------------------------------------------------------------
@@ -171,6 +172,7 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         london_open_enabled=bool(section.get("london_open_enabled", False)),
         min_body_ratio=float(eng_section.get("min_body_ratio", 0.3)),
         max_wick_ratio=float(eng_section.get("max_wick_ratio", 2.0)),
+        backtest_years=int(section.get("backtest_years", 3)),
     )
     _validate_trading_config(cfg)
     return cfg

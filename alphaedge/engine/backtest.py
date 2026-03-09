@@ -15,7 +15,7 @@ import asyncio
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -364,18 +364,22 @@ async def _fetch_pair_trades(
     hist_feed: Any,
     pair: str,
     config: AppConfig,
+    start_dt: datetime,
+    end_dt: datetime,
 ) -> list[TradeRecord]:
     """Fetch historical M1 and M5 bars for a pair and run backtest."""
-    logger.info(f"ALPHAEDGE backtesting: {pair}")
-    m1_bars = await hist_feed.fetch_bars(
+    logger.info(f"ALPHAEDGE backtesting: {pair} ({start_dt.date()} → {end_dt.date()})")
+    m1_bars = await hist_feed.fetch_bars_chunked(
         pair=pair,
         timeframe="1 min",
-        duration="30 D",
+        start_dt=start_dt,
+        end_dt=end_dt,
     )
-    m5_bars = await hist_feed.fetch_bars(
+    m5_bars = await hist_feed.fetch_bars_chunked(
         pair=pair,
         timeframe=TF_M5,
-        duration="30 D",
+        start_dt=start_dt,
+        end_dt=end_dt,
     )
     if not m1_bars:
         return []
@@ -397,8 +401,15 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
     hist_feed = HistoricalDataFeed(broker)
     all_trades: list[TradeRecord] = []
 
+    end_dt = datetime.now(tz=ZoneInfo("UTC"))
+    start_dt = end_dt - timedelta(days=365 * config.trading.backtest_years)
+    logger.info(
+        f"ALPHAEDGE: Backtest range {start_dt.date()} → {end_dt.date()} "
+        f"({config.trading.backtest_years} years, {len(config.trading.pairs)} pairs)"
+    )
+
     for pair in config.trading.pairs:
-        trades = await _fetch_pair_trades(hist_feed, pair, config)
+        trades = await _fetch_pair_trades(hist_feed, pair, config, start_dt, end_dt)
         all_trades.extend(trades)
 
     await broker.disconnect()
