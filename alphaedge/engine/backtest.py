@@ -367,6 +367,7 @@ async def _fetch_pair_trades(
     config: AppConfig,
     start_dt: datetime,
     end_dt: datetime,
+    cache: Any = None,
 ) -> list[TradeRecord]:
     """Fetch historical M1 and M5 bars for a pair and run backtest."""
     logger.info(f"ALPHAEDGE backtesting: {pair} ({start_dt.date()} → {end_dt.date()})")
@@ -375,12 +376,14 @@ async def _fetch_pair_trades(
         timeframe="1 min",
         start_dt=start_dt,
         end_dt=end_dt,
+        cache=cache,
     )
     m5_bars = await hist_feed.fetch_bars_chunked(
         pair=pair,
         timeframe=TF_M5,
         start_dt=start_dt,
         end_dt=end_dt,
+        cache=cache,
     )
     if not m1_bars:
         return []
