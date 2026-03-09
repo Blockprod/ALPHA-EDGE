@@ -64,18 +64,14 @@ def compute_stats(
     stats.max_drawdown_pct = _compute_max_drawdown(trades, starting_equity)
     stats.sharpe_ratio = _compute_sharpe(trades)
 
-    stats.avg_win_pips = (
-        float(np.mean([t.pnl_pips for t in wins])) if wins else 0.0
-    )
+    stats.avg_win_pips = float(np.mean([t.pnl_pips for t in wins])) if wins else 0.0
     stats.avg_loss_pips = (
         float(np.mean([t.pnl_pips for t in losses])) if losses else 0.0
     )
     stats.expectancy_pips = _compute_expectancy(
         stats.winrate, stats.avg_win_pips, stats.avg_loss_pips
     )
-    stats.max_consec_wins, stats.max_consec_losses = _compute_consec_wins_losses(
-        trades
-    )
+    stats.max_consec_wins, stats.max_consec_losses = _compute_consec_wins_losses(trades)
 
     return stats
 
@@ -316,8 +312,7 @@ def _log_stats_summary(
     logger.info(f"    Total P&L (pips):     {stats.total_pnl_pips:+.1f} pips")
     logger.info(f"    Total P&L (USD):      ${stats.total_pnl_usd:+.2f}")
     logger.info(
-        f"    Total P&L (EUR):      "
-        f"€{stats.total_pnl_eur:+.2f}  [@ {eur_usd_rate:.4f}]"
+        f"    Total P&L (EUR):      €{stats.total_pnl_eur:+.2f}  [@ {eur_usd_rate:.4f}]"
     )
     logger.info(f"  {'PER TRADE':}")
     logger.info(f"    Avg win:              {stats.avg_win_pips:+.1f} pips")
