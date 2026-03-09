@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import random
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -394,74 +393,44 @@ async def _fetch_pair_trades(
 async def run_backtest(config: AppConfig) -> BacktestStats:
     """Run the strategy backtest using IB historical data.
 
-    Each currency pair is fetched in its own thread with a dedicated IB
-    connection (unique client_id = base + index).  This gives true
-    parallelism without sharing a single connection — avoiding pacing
-    violations that plagued the asyncio.gather approach.
+    Pairs are fetched sequentially on a single IB connection — required
+    because ib_insync is not thread-safe and cannot share an event loop
+    across threads.  The token-bucket throttler ensures we stay within
+    IB's historical data pacing limit.
     """
     logger.info(f"{PROJECT_TITLE} — Backtest starting")
 
     from alphaedge.engine.broker import BrokerConnection
     from alphaedge.engine.data_feed import HistoricalDataFeed
 
+    broker = BrokerConnection(config.ib)
+    if not await broker.connect():
+        logger.error("ALPHAEDGE: Cannot backtest — IB Gateway unavailable")
+        return BacktestStats()
+
+    hist_feed = HistoricalDataFeed(broker)
+    cache = BarDiskCache()
+    all_trades: list[TradeRecord] = []
+
     end_dt = datetime.now(tz=ZoneInfo("UTC"))
     start_dt = end_dt - timedelta(days=365 * config.trading.backtest_years)
+    pairs = config.trading.pairs
     logger.info(
         f"ALPHAEDGE: Backtest range {start_dt.date()} → {end_dt.date()} "
-        f"({config.trading.backtest_years} years, {len(config.trading.pairs)} pairs)"
+        f"({config.trading.backtest_years} years, {len(pairs)} pairs)"
     )
 
-    cache = BarDiskCache()
-    base_client_id = config.ib.client_id
+    for idx, pair in enumerate(pairs, 1):
+        logger.info(f"ALPHAEDGE [{idx}/{len(pairs)}] Starting {pair}...")
+        trades = await _fetch_pair_trades(
+            hist_feed, pair, config, start_dt, end_dt, cache
+        )
+        all_trades.extend(trades)
+        logger.info(
+            f"ALPHAEDGE [{idx}/{len(pairs)}] {pair} done — {len(trades)} trades"
+        )
 
-    def _fetch_pair_in_thread(pair: str, worker_idx: int) -> list[TradeRecord]:
-        """Run async fetch+backtest for one pair in a dedicated thread."""
-        # Each thread gets its own event loop and its own IB connection
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            from dataclasses import replace as dc_replace
-
-            # Unique client_id: base + 10 + worker_index (avoids collision
-            # with the default client_id used for live trading)
-            worker_ib_config = dc_replace(
-                config.ib, client_id=base_client_id + 10 + worker_idx
-            )
-            worker_config = dc_replace(config, ib=worker_ib_config)
-
-            async def _run() -> list[TradeRecord]:
-                broker = BrokerConnection(worker_config.ib)
-                if not await broker.connect():
-                    logger.error(f"ALPHAEDGE [{pair}]: Cannot connect — skipping pair")
-                    return []
-                try:
-                    hist_feed = HistoricalDataFeed(broker)
-                    return await _fetch_pair_trades(
-                        hist_feed, pair, config, start_dt, end_dt, cache
-                    )
-                finally:
-                    await broker.disconnect()
-
-            return loop.run_until_complete(_run())
-        finally:
-            loop.close()
-
-    all_trades: list[TradeRecord] = []
-    pairs = config.trading.pairs
-
-    with ThreadPoolExecutor(max_workers=len(pairs)) as executor:
-        future_to_pair = {
-            executor.submit(_fetch_pair_in_thread, pair, idx): pair
-            for idx, pair in enumerate(pairs)
-        }
-        for future in as_completed(future_to_pair):
-            pair = future_to_pair[future]
-            try:
-                trades = future.result()
-                all_trades.extend(trades)
-                logger.info(f"ALPHAEDGE [{pair}]: {len(trades)} trades collected")
-            except Exception:
-                logger.exception(f"ALPHAEDGE [{pair}]: worker error")
+    await broker.disconnect()
 
     eur_usd_rate = config.trading.eur_usd_rate
     starting_equity = config.trading.starting_equity

@@ -326,6 +326,9 @@ class HistoricalDataFeed:
         else:
             chunk_days = 365
 
+        total_days = (end_dt - start_dt).days
+        total_chunks = max(1, (total_days + chunk_days - 1) // chunk_days)
+        chunk_num = 0
         all_candles: list[dict[str, Any]] = []
         current_end = end_dt
         max_retries = 3
@@ -336,6 +339,13 @@ class HistoricalDataFeed:
             days = min(chunk_days, remaining) if remaining > 0 else chunk_days
             if days <= 0:
                 break
+
+            chunk_num += 1
+            if chunk_num % 10 == 1 or chunk_num == total_chunks:
+                logger.info(
+                    f"ALPHAEDGE {pair} {timeframe}: chunk {chunk_num}/{total_chunks} "
+                    f"(ending {current_end.date()})"
+                )
 
             chunk: list[dict[str, Any]] = []
             for attempt in range(1, max_retries + 1):
