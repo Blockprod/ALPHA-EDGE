@@ -69,6 +69,7 @@ class TradingConfig:
     max_wick_ratio: float = 2.0
     backtest_years: int = 3
     eur_usd_rate: float = 1.08
+    starting_equity: float = 10000.0
 
 
 # ------------------------------------------------------------------
@@ -175,6 +176,7 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         max_wick_ratio=float(eng_section.get("max_wick_ratio", 2.0)),
         backtest_years=int(section.get("backtest_years", 3)),
         eur_usd_rate=float(section.get("eur_usd_rate", 1.08)),
+        starting_equity=float(section.get("starting_equity", 10000.0)),
     )
     _validate_trading_config(cfg)
     return cfg

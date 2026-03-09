@@ -26,6 +26,7 @@ logger = get_logger()
 def compute_stats(
     trades: list[TradeRecord],
     eur_usd_rate: float = 1.08,
+    starting_equity: float = 10000.0,
 ) -> BacktestStats:
     """
     Calculate aggregate backtest statistics.
@@ -60,7 +61,7 @@ def compute_stats(
     stats.total_pnl_pips = sum(t.pnl_pips for t in trades)
     stats.total_pnl_usd = sum(t.pnl_usd for t in trades)
     stats.total_pnl_eur = stats.total_pnl_usd / eur_usd_rate
-    stats.max_drawdown_pct = _compute_max_drawdown(trades)
+    stats.max_drawdown_pct = _compute_max_drawdown(trades, starting_equity)
     stats.sharpe_ratio = _compute_sharpe(trades)
 
     stats.avg_win_pips = float(np.mean([t.pnl_pips for t in wins])) if wins else 0.0
@@ -128,7 +129,7 @@ def _compute_consec_wins_losses(
     return max_wins, max_losses
 
 
-def _compute_max_drawdown(trades: list[TradeRecord]) -> float:
+def _compute_max_drawdown(trades: list[TradeRecord], starting_equity: float = 10000.0) -> float:
     """
     Calculate maximum drawdown percentage from equity curve.
 
@@ -136,6 +137,8 @@ def _compute_max_drawdown(trades: list[TradeRecord]) -> float:
     ----------
     trades : list[TradeRecord]
         Completed trades in chronological order.
+    starting_equity : float
+        Initial equity for drawdown calculation.
 
     Returns
     -------
@@ -145,7 +148,7 @@ def _compute_max_drawdown(trades: list[TradeRecord]) -> float:
     if not trades:
         return 0.0
 
-    equity = 10000.0  # Hypothetical starting equity
+    equity = starting_equity
     peak = equity
     max_dd = 0.0
 
@@ -232,6 +235,7 @@ def compute_split_report(
     trades: list[TradeRecord],
     is_ratio: float = 0.7,
     eur_usd_rate: float = 1.08,
+    starting_equity: float = 10000.0,
 ) -> BacktestReport:
     """
     Compute IS/OOS statistics and degradation metrics.
@@ -251,8 +255,8 @@ def compute_split_report(
         Report with IS stats, OOS stats, and degradation percentages.
     """
     is_trades, oos_trades = split_trades_is_oos(trades, is_ratio)
-    is_stats = compute_stats(is_trades, eur_usd_rate)
-    oos_stats = compute_stats(oos_trades, eur_usd_rate)
+    is_stats = compute_stats(is_trades, eur_usd_rate, starting_equity)
+    oos_stats = compute_stats(oos_trades, eur_usd_rate, starting_equity)
 
     degradation: dict[str, float] = {}
     for metric in ("winrate", "profit_factor", "sharpe_ratio"):
@@ -273,12 +277,14 @@ def compute_split_report(
 # ------------------------------------------------------------------
 # Logging helpers
 # ------------------------------------------------------------------
-def _log_stats_summary(stats: BacktestStats, eur_usd_rate: float = 1.08) -> None:
+def _log_stats_summary(stats: BacktestStats, eur_usd_rate: float = 1.08, starting_equity: float = 10000.0) -> None:
     """Print a full summary of backtest statistics to the log."""
     sep = "=" * 58
     logger.info(sep)
     logger.info(f"{PROJECT_TITLE} — BACKTEST RESULTS")
     logger.info(sep)
+    logger.info(f"  {'CAPITAL'}")
+    logger.info(f"    Starting equity:      ${starting_equity:,.2f}  (€{starting_equity / eur_usd_rate:,.2f})")
     logger.info(f"  {'TRADES':}")
     logger.info(f"    Total trades:         {stats.total_trades}")
     logger.info(f"    Wins:                 {stats.wins}")

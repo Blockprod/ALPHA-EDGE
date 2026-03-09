@@ -64,6 +64,9 @@ trading:
   # EUR/USD rate for PnL conversion in backtest reports (update as needed)
   eur_usd_rate: 1.08
 
+  # Starting equity for backtest drawdown and Sharpe calculations (USD)
+  starting_equity: 10000.0
+
 # --- Structure Detection ---
 structure:
   min_range_pips: 5.0       # Minimum candle range for valid detection
