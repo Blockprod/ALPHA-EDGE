@@ -23,7 +23,10 @@ logger = get_logger()
 # ------------------------------------------------------------------
 # Aggregate statistics
 # ------------------------------------------------------------------
-def compute_stats(trades: list[TradeRecord]) -> BacktestStats:
+def compute_stats(
+    trades: list[TradeRecord],
+    eur_usd_rate: float = 1.08,
+) -> BacktestStats:
     """
     Calculate aggregate backtest statistics.
 
@@ -31,6 +34,8 @@ def compute_stats(trades: list[TradeRecord]) -> BacktestStats:
     ----------
     trades : list[TradeRecord]
         Completed trade records.
+    eur_usd_rate : float
+        EUR/USD conversion rate for EUR P&L display.
 
     Returns
     -------
@@ -44,16 +49,24 @@ def compute_stats(trades: list[TradeRecord]) -> BacktestStats:
         return stats
 
     wins = [t for t in trades if t.pnl_pips > 0]
-    losses = [t for t in trades if t.pnl_pips <= 0]
+    losses = [t for t in trades if t.pnl_pips < 0]
+    breakevens = [t for t in trades if t.pnl_pips == 0]
     stats.wins = len(wins)
     stats.losses = len(losses)
+    stats.breakeven = len(breakevens)
 
     stats.winrate = _compute_winrate(stats.wins, stats.total_trades)
     stats.profit_factor = _compute_profit_factor(wins, losses)
     stats.total_pnl_pips = sum(t.pnl_pips for t in trades)
     stats.total_pnl_usd = sum(t.pnl_usd for t in trades)
+    stats.total_pnl_eur = stats.total_pnl_usd / eur_usd_rate
     stats.max_drawdown_pct = _compute_max_drawdown(trades)
     stats.sharpe_ratio = _compute_sharpe(trades)
+
+    stats.avg_win_pips = float(np.mean([t.pnl_pips for t in wins])) if wins else 0.0
+    stats.avg_loss_pips = float(np.mean([t.pnl_pips for t in losses])) if losses else 0.0
+    stats.expectancy_pips = _compute_expectancy(stats.winrate, stats.avg_win_pips, stats.avg_loss_pips)
+    stats.max_consec_wins, stats.max_consec_losses = _compute_consec_wins_losses(trades)
 
     return stats
 
@@ -79,6 +92,40 @@ def _compute_profit_factor(
     if gross_loss == 0:
         return float("inf") if gross_profit > 0 else 0.0
     return gross_profit / gross_loss
+
+
+def _compute_expectancy(
+    winrate_pct: float,
+    avg_win_pips: float,
+    avg_loss_pips: float,
+) -> float:
+    """Calculate expectancy in pips per trade (E = WR*avgW + (1-WR)*avgL)."""
+    wr = winrate_pct / 100.0
+    return wr * avg_win_pips + (1.0 - wr) * avg_loss_pips
+
+
+def _compute_consec_wins_losses(
+    trades: list[TradeRecord],
+) -> tuple[int, int]:
+    """
+    Calculate maximum consecutive wins and losses.
+
+    Returns
+    -------
+    tuple[int, int]
+        (max_consec_wins, max_consec_losses).
+    """
+    max_wins = max_losses = cur_wins = cur_losses = 0
+    for t in trades:
+        if t.pnl_pips > 0:
+            cur_wins += 1
+            cur_losses = 0
+        else:
+            cur_losses += 1
+            cur_wins = 0
+        max_wins = max(max_wins, cur_wins)
+        max_losses = max(max_losses, cur_losses)
+    return max_wins, max_losses
 
 
 def _compute_max_drawdown(trades: list[TradeRecord]) -> float:
@@ -184,6 +231,7 @@ def split_trades_is_oos(
 def compute_split_report(
     trades: list[TradeRecord],
     is_ratio: float = 0.7,
+    eur_usd_rate: float = 1.08,
 ) -> BacktestReport:
     """
     Compute IS/OOS statistics and degradation metrics.
@@ -194,6 +242,8 @@ def compute_split_report(
         All backtest trades.
     is_ratio : float
         Fraction for in-sample (default 0.7).
+    eur_usd_rate : float
+        EUR/USD rate for EUR P&L conversion.
 
     Returns
     -------
@@ -201,8 +251,8 @@ def compute_split_report(
         Report with IS stats, OOS stats, and degradation percentages.
     """
     is_trades, oos_trades = split_trades_is_oos(trades, is_ratio)
-    is_stats = compute_stats(is_trades)
-    oos_stats = compute_stats(oos_trades)
+    is_stats = compute_stats(is_trades, eur_usd_rate)
+    oos_stats = compute_stats(oos_trades, eur_usd_rate)
 
     degradation: dict[str, float] = {}
     for metric in ("winrate", "profit_factor", "sharpe_ratio"):
@@ -223,58 +273,85 @@ def compute_split_report(
 # ------------------------------------------------------------------
 # Logging helpers
 # ------------------------------------------------------------------
-def _log_stats_summary(stats: BacktestStats) -> None:
-    """Print a summary of backtest statistics to the log."""
-    logger.info("=" * 50)
+def _log_stats_summary(stats: BacktestStats, eur_usd_rate: float = 1.08) -> None:
+    """Print a full summary of backtest statistics to the log."""
+    sep = "=" * 58
+    logger.info(sep)
     logger.info(f"{PROJECT_TITLE} — BACKTEST RESULTS")
-    logger.info(f"  Total trades:   {stats.total_trades}")
-    logger.info(f"  Wins:           {stats.wins}")
-    logger.info(f"  Losses:         {stats.losses}")
-    logger.info(f"  Win rate:       {stats.winrate:.1f}%")
-    logger.info(f"  Profit factor:  {stats.profit_factor:.2f}")
-    logger.info(f"  Max drawdown:   {stats.max_drawdown_pct:.2f}%")
-    logger.info(f"  Sharpe ratio:   {stats.sharpe_ratio:.2f}")
-    logger.info(f"  Total P&L:      {stats.total_pnl_pips:.1f} pips")
-    logger.info("=" * 50)
+    logger.info(sep)
+    logger.info(f"  {'TRADES':}")
+    logger.info(f"    Total trades:         {stats.total_trades}")
+    logger.info(f"    Wins:                 {stats.wins}")
+    logger.info(f"    Losses:               {stats.losses}")
+    logger.info(f"    Breakeven:            {stats.breakeven}")
+    logger.info(f"    Win rate:             {stats.winrate:.1f}%")
+    logger.info(f"    Max consec. wins:     {stats.max_consec_wins}")
+    logger.info(f"    Max consec. losses:   {stats.max_consec_losses}")
+    logger.info(f"  {'PERFORMANCE':}")
+    logger.info(f"    Profit factor:        {stats.profit_factor:.2f}")
+    logger.info(f"    Sharpe ratio:         {stats.sharpe_ratio:.2f}")
+    logger.info(f"    Max drawdown:         {stats.max_drawdown_pct:.2f}%")
+    logger.info(f"  {'P&L':}")
+    logger.info(f"    Total P&L (pips):     {stats.total_pnl_pips:+.1f} pips")
+    logger.info(f"    Total P&L (USD):      ${stats.total_pnl_usd:+.2f}")
+    logger.info(f"    Total P&L (EUR):      €{stats.total_pnl_eur:+.2f}  [@ {eur_usd_rate:.4f}]")
+    logger.info(f"  {'PER TRADE':}")
+    logger.info(f"    Avg win:              {stats.avg_win_pips:+.1f} pips")
+    logger.info(f"    Avg loss:             {stats.avg_loss_pips:+.1f} pips")
+    logger.info(f"    Expectancy:           {stats.expectancy_pips:+.2f} pips/trade")
+    logger.info(sep)
 
 
-def _log_split_report(report: BacktestReport) -> None:
+def _log_split_report(report: BacktestReport, eur_usd_rate: float = 1.08) -> None:
     """Log IS/OOS comparison and degradation metrics."""
-    logger.info("=" * 50)
+    sep = "=" * 58
+    logger.info(sep)
     logger.info(f"{PROJECT_TITLE} — IN-SAMPLE / OUT-OF-SAMPLE REPORT")
-    logger.info("-" * 50)
+    logger.info("-" * 58)
 
     is_s = report.in_sample
     oos_s = report.out_of_sample
 
-    logger.info(f"  {'Metric':<18} {'IS':>10} {'OOS':>10} {'Degrad%':>10}")
-    logger.info(f"  {'-' * 48}")
+    logger.info(f"  {'Metric':<22} {'IS':>10} {'OOS':>10} {'Degrad%':>10}")
+    logger.info(f"  {'-' * 52}")
     logger.info(
-        f"  {'Trades':<18} {is_s.total_trades:>10} {oos_s.total_trades:>10} {'':>10}"
+        f"  {'Trades':<22} {is_s.total_trades:>10} {oos_s.total_trades:>10} {'':>10}"
     )
     logger.info(
-        f"  {'Win rate':<18} {is_s.winrate:>9.1f}% {oos_s.winrate:>9.1f}% "
+        f"  {'Win rate':<22} {is_s.winrate:>9.1f}% {oos_s.winrate:>9.1f}% "
         f"{report.degradation.get('winrate', 0.0):>9.1f}%"
     )
     logger.info(
-        f"  {'Profit factor':<18} {is_s.profit_factor:>10.2f} "
+        f"  {'Profit factor':<22} {is_s.profit_factor:>10.2f} "
         f"{oos_s.profit_factor:>10.2f} "
         f"{report.degradation.get('profit_factor', 0.0):>9.1f}%"
     )
     logger.info(
-        f"  {'Max drawdown':<18} {is_s.max_drawdown_pct:>9.2f}% "
+        f"  {'Max drawdown':<22} {is_s.max_drawdown_pct:>9.2f}% "
         f"{oos_s.max_drawdown_pct:>9.2f}%"
     )
     logger.info(
-        f"  {'Sharpe ratio':<18} {is_s.sharpe_ratio:>10.2f} "
+        f"  {'Sharpe ratio':<22} {is_s.sharpe_ratio:>10.2f} "
         f"{oos_s.sharpe_ratio:>10.2f} "
         f"{report.degradation.get('sharpe_ratio', 0.0):>9.1f}%"
     )
     logger.info(
-        f"  {'Total P&L':<18} {is_s.total_pnl_pips:>9.1f}p "
-        f"{oos_s.total_pnl_pips:>9.1f}p"
+        f"  {'Expectancy (pips)':<22} {is_s.expectancy_pips:>+9.2f}p "
+        f"{oos_s.expectancy_pips:>+9.2f}p"
     )
-    logger.info("=" * 50)
+    logger.info(
+        f"  {'P&L (pips)':<22} {is_s.total_pnl_pips:>+9.1f}p "
+        f"{oos_s.total_pnl_pips:>+9.1f}p"
+    )
+    logger.info(
+        f"  {'P&L (USD)':<22} ${is_s.total_pnl_usd:>+9.2f} "
+        f"${oos_s.total_pnl_usd:>+9.2f}"
+    )
+    logger.info(
+        f"  {'P&L (EUR)':<22} €{is_s.total_pnl_eur:>+9.2f} "
+        f"€{oos_s.total_pnl_eur:>+9.2f}  [@ {eur_usd_rate:.4f}]"
+    )
+    logger.info(sep)
 
     # Warn if OOS degrades > 30% on any key metric
     for metric, pct in report.degradation.items():

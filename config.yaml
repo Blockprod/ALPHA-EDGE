@@ -61,6 +61,9 @@ trading:
   # Number of years of historical data to fetch for backtesting
   backtest_years: 3
 
+  # EUR/USD rate for PnL conversion in backtest reports (update as needed)
+  eur_usd_rate: 1.08
+
 # --- Structure Detection ---
 structure:
   min_range_pips: 5.0       # Minimum candle range for valid detection

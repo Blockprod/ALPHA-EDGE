@@ -414,17 +414,19 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
 
     await broker.disconnect()
 
+    eur_usd_rate = config.trading.eur_usd_rate
+
     # Overall stats
-    stats = compute_stats(all_trades)
-    export_results_csv(all_trades, stats)
+    stats = compute_stats(all_trades, eur_usd_rate)
+    export_results_csv(all_trades, stats, eur_usd_rate=eur_usd_rate)
     plot_equity_curve(all_trades)
-    _log_stats_summary(stats)
+    _log_stats_summary(stats, eur_usd_rate)
     _validate_with_vectorbt(all_trades, manual_sharpe=stats.sharpe_ratio)
 
     # IS/OOS split report
     if all_trades:
-        report = compute_split_report(all_trades)
-        _log_split_report(report)
+        report = compute_split_report(all_trades, eur_usd_rate=eur_usd_rate)
+        _log_split_report(report, eur_usd_rate)
 
     return stats
 

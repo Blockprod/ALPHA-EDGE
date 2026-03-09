@@ -50,13 +50,20 @@ class BacktestStats:
     total_trades: int = 0
     wins: int = 0
     losses: int = 0
+    breakeven: int = 0
     winrate: float = 0.0
     profit_factor: float = 0.0
     max_drawdown_pct: float = 0.0
     sharpe_ratio: float = 0.0
     total_pnl_pips: float = 0.0
     total_pnl_usd: float = 0.0
+    total_pnl_eur: float = 0.0
     avg_rr_achieved: float = 0.0
+    avg_win_pips: float = 0.0
+    avg_loss_pips: float = 0.0
+    expectancy_pips: float = 0.0
+    max_consec_wins: int = 0
+    max_consec_losses: int = 0
 
 
 # ------------------------------------------------------------------

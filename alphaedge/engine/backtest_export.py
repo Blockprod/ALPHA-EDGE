@@ -34,6 +34,7 @@ def export_results_csv(
     trades: list[TradeRecord],
     stats: BacktestStats,
     output_path: str = "ALPHAEDGE_backtest_results.csv",
+    eur_usd_rate: float = 1.08,
 ) -> None:
     """
     Export trade records and stats to CSV.
@@ -59,6 +60,7 @@ def export_results_csv(
                 "take_profit": t.take_profit,
                 "pnl_pips": round(t.pnl_pips, 2),
                 "pnl_usd": round(t.pnl_usd, 2),
+                "pnl_eur": round(t.pnl_usd / eur_usd_rate, 2),
                 "outcome": t.outcome,
                 "entry_time": t.entry_time,
                 "exit_time": t.exit_time,
