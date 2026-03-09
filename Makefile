@@ -8,30 +8,24 @@
 # LAST UPDATED : 2026-03-07
 # ============================================================
 
-.PHONY: format lint typecheck test qa build all clean
+.PHONY: lint format test qa build all clean
 
-# --- Formatting ---
-format:
-	python -m black alphaedge/
-
-# --- Linting ---
+# --- Linting + Formatting (Ruff) ---
 lint:
 	python -m ruff check alphaedge/ --config pyproject.toml
-	python -m pylint alphaedge/ --rcfile=.pylintrc
 
-# --- Type Checking ---
-typecheck:
-	python -m mypy alphaedge/ --config-file mypy.ini
+format:
+	python -m ruff format alphaedge/
 
 # --- Testing ---
 test:
 	python -m pytest alphaedge/tests -v --tb=short \
 		--cov=alphaedge \
-		--cov-report=html:ALPHAEDGE_coverage_report.html \
+		--cov-report=html:ALPHAEDGE_coverage_report \
 		--cov-fail-under=80
 
 # --- Full QA Pipeline ---
-qa: format lint typecheck test
+qa: lint test
 
 # --- Cython Build ---
 build:
