@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 from typing import Any
 
@@ -19,6 +20,9 @@ from ib_insync import (
     IB,
     Contract,
     Forex,
+    LimitOrder,
+    MarketOrder,
+    StopOrder,
     Trade,
 )
 
@@ -84,14 +88,14 @@ class BrokerConnection:
     def __init__(self, config: IBConfig) -> None:
         """Initialize broker with IB configuration."""
         self._config = config
-        self._ib = IB()  # type: ignore[no-untyped-call]
+        self._ib = IB()
         self._throttler = RequestThrottler()
         self._connected = False
 
     @property
     def is_connected(self) -> bool:
         """Return True if connected to IB Gateway."""
-        return self._ib.isConnected()
+        return bool(self._ib.isConnected())
 
     @property
     def ib(self) -> IB:
@@ -118,6 +122,7 @@ class BrokerConnection:
                 timeout=IB_TIMEOUT_SECONDS,
             )
             self._connected = True
+            self._ib.errorEvent += self._on_ib_error
             logger.info(
                 f"ALPHAEDGE connected to IB Gateway "
                 f"{self._config.host}:{self._config.port} "
@@ -132,7 +137,7 @@ class BrokerConnection:
     async def disconnect(self) -> None:
         """Disconnect from IB Gateway gracefully."""
         if self._ib.isConnected():
-            self._ib.disconnect()  # type: ignore[no-untyped-call]
+            self._ib.disconnect()
             self._connected = False
             logger.info("ALPHAEDGE disconnected from IB Gateway")
 
@@ -152,9 +157,13 @@ class BrokerConnection:
         """
         try:
             for attempt in range(1, max_retries + 1):
-                logger.warning(f"ALPHAEDGE reconnect attempt {attempt}/{max_retries}")
                 await self.disconnect()
-                await asyncio.sleep(2.0 * attempt)  # Exponential backoff
+                delay = min(2**attempt + random.uniform(0, 1), 30.0)
+                logger.warning(
+                    f"ALPHAEDGE reconnect attempt {attempt}/{max_retries} "
+                    f"— waiting {delay:.1f}s"
+                )
+                await asyncio.sleep(delay)
                 if await self.connect():
                     return True
             logger.error("ALPHAEDGE reconnection failed after all retries")
@@ -162,6 +171,34 @@ class BrokerConnection:
         except Exception:
             logger.exception("ALPHAEDGE reconnect error")
             return False
+
+    def _on_ib_error(  # pylint: disable=invalid-name
+        self,
+        reqId: int,  # noqa: N803
+        errorCode: int,  # noqa: N803
+        errorString: str,  # noqa: N803
+        contract: Any,
+    ) -> None:
+        """Handle IB error events with appropriate severity logging."""
+        if errorCode == 162:
+            logger.warning(
+                f"ALPHAEDGE IB PACING: Historical data pacing violation — {errorString}"
+            )
+            # Inject a penalty delay into the throttler
+            now = time.monotonic()
+            self._throttler._timestamps.extend([now] * self._throttler._max_requests)
+        elif errorCode == 200:
+            logger.error(f"ALPHAEDGE IB: No security definition — {errorString}")
+        elif errorCode == 321:
+            logger.error(f"ALPHAEDGE IB: Server validation error — {errorString}")
+        elif errorCode == 504:
+            logger.critical(f"ALPHAEDGE IB: Not connected — {errorString}")
+        elif errorCode in (1100, 1101, 1102):
+            logger.critical(
+                f"ALPHAEDGE IB CONNECTION: code={errorCode} — {errorString}"
+            )
+        else:
+            logger.warning(f"ALPHAEDGE IB error {errorCode}: {errorString}")
 
     def _ensure_connected(self) -> None:
         """Raise if not currently connected."""
@@ -208,20 +245,28 @@ class OrderExecutor:
         contract: Contract,
         action: str,
         quantity: int,
-        entry_price: float,
         take_profit: float,
         stop_loss: float,
     ) -> list[Trade]:
-        """Build and submit bracket orders to IB. Returns Trade list."""
-        bracket = self._broker.ib.bracketOrder(
-            action=action,
-            quantity=quantity,
-            limitPrice=entry_price,
-            takeProfitPrice=take_profit,
-            stopLossPrice=stop_loss,
-        )
+        """Build and submit bracket orders (Market entry + SL/TP) to IB."""
+        reverse_action = "SELL" if action == "BUY" else "BUY"
+
+        # Parent: Market order for immediate fill
+        parent = MarketOrder(action, quantity)
+        parent.transmit = False
+
+        # Take-profit: Limit child
+        tp_order = LimitOrder(reverse_action, quantity, take_profit)
+        tp_order.parentId = parent.orderId
+        tp_order.transmit = False
+
+        # Stop-loss: Stop child
+        sl_order = StopOrder(reverse_action, quantity, stop_loss)
+        sl_order.parentId = parent.orderId
+        sl_order.transmit = True  # Last child transmits all
+
         trades: list[Trade] = []
-        for order in bracket:
+        for order in [parent, tp_order, sl_order]:
             trade = self._broker.ib.placeOrder(contract, order)
             trades.append(trade)
         return trades
@@ -247,7 +292,6 @@ class OrderExecutor:
                 contract,
                 action,
                 quantity,
-                entry_price,
                 take_profit,
                 stop_loss,
             )
@@ -266,7 +310,7 @@ class OrderExecutor:
         """Cancel all open orders."""
         self._broker._ensure_connected()
         try:
-            self._broker.ib.reqGlobalCancel()  # type: ignore[no-untyped-call]
+            self._broker.ib.reqGlobalCancel()
             logger.warning("ALPHAEDGE: All open orders cancelled")
         except Exception:
             logger.exception("ALPHAEDGE cancel_all_orders failed")
@@ -283,9 +327,26 @@ class OrderExecutor:
         self._broker._ensure_connected()
         await self._throttler.acquire()
         try:
-            return self._broker.ib.positions()
+            return list(self._broker.ib.positions())
         except Exception:
             logger.exception("ALPHAEDGE get_open_positions failed")
+            return []
+
+    async def get_open_orders(self) -> list[Any]:
+        """
+        Get all currently open orders.
+
+        Returns
+        -------
+        list
+            List of IB Order objects.
+        """
+        self._broker._ensure_connected()
+        await self._throttler.acquire()
+        try:
+            return list(self._broker.ib.openOrders())
+        except Exception:
+            logger.exception("ALPHAEDGE get_open_orders failed")
             return []
 
     async def get_account_equity(self) -> float:

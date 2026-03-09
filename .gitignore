@@ -35,6 +35,10 @@ dist/
 # --- Logs ---
 alphaedge/logs/*.log
 
+# --- Runtime State ---
+alphaedge_daily_state.json
+*.tmp
+
 # --- Proprietary / Sensitive ---
 ALPHAEDGE_ACTION_PLAN.md
 

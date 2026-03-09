@@ -158,6 +158,9 @@ def is_session_active(dt_utc: datetime | None = None) -> bool:
     """
     Check if the given UTC time falls within the NYSE session window.
 
+    Delegates to ``NYSE_SESSION.contains()`` so session logic is
+    defined in a single place (session_manager.py).
+
     Returns False on weekends (Saturday/Sunday).
 
     Parameters
@@ -170,16 +173,11 @@ def is_session_active(dt_utc: datetime | None = None) -> bool:
     bool
         True if within the 9:30-10:30 ET window on a weekday.
     """
+    from alphaedge.utils.session_manager import NYSE_SESSION  # avoid circular import
+
     if dt_utc is None:
         dt_utc = now_utc()
-
-    # Skip weekends — Forex market closed
-    ny_time = dt_utc.astimezone(get_tz_ny())
-    if ny_time.weekday() >= 5:
-        return False
-
-    start, end = get_session_window_utc(dt_utc)
-    return start <= dt_utc <= end
+    return NYSE_SESSION.contains(dt_utc)
 
 
 # ------------------------------------------------------------------
@@ -203,6 +201,59 @@ def format_dual_time(dt_utc: datetime) -> str:
     paris_dt = utc_to_tz(dt_utc, TZ_PARIS)
     paris_str = paris_dt.strftime("%Y-%m-%d %H:%M:%S %Z")
     return f"{utc_str} | {paris_str}"
+
+
+# ------------------------------------------------------------------
+# DST divergence helpers
+# ------------------------------------------------------------------
+def _nth_weekday_of_month(year: int, month: int, weekday: int, n: int) -> datetime:
+    """Return the nth occurrence of *weekday* (Mon=0..Sun=6) in month/year."""
+    first_day = datetime(year, month, 1, tzinfo=ZoneInfo(TZ_UTC))
+    days_ahead = (weekday - first_day.weekday()) % 7
+    first_occurrence = first_day + timedelta(days=days_ahead)
+    return first_occurrence + timedelta(weeks=n - 1)
+
+
+def _last_weekday_of_month(year: int, month: int, weekday: int) -> datetime:
+    """Return the last occurrence of *weekday* (Mon=0..Sun=6) in month/year."""
+    if month == 12:
+        last_day = datetime(year + 1, 1, 1, tzinfo=ZoneInfo(TZ_UTC)) - timedelta(days=1)
+    else:
+        last_day = datetime(year, month + 1, 1, tzinfo=ZoneInfo(TZ_UTC)) - timedelta(
+            days=1
+        )
+    days_behind = (last_day.weekday() - weekday) % 7
+    return last_day - timedelta(days=days_behind)
+
+
+def is_dst_transition_week(dt_utc: datetime | None = None) -> bool:
+    """
+    Return True during the spring EU/US DST divergence window.
+
+    Between US spring-forward (2nd Sunday of March) and EU spring-forward
+    (last Sunday of March) the NYSE session opens at 13:30 UTC while Paris
+    is still in CET (UTC+1), so the session appears 1 h earlier in local
+    Paris time than traders may expect.
+
+    Parameters
+    ----------
+    dt_utc : datetime | None
+        UTC datetime to check. Defaults to ``now_utc()``.
+
+    Returns
+    -------
+    bool
+        ``True`` on or after the US change day and before the EU change day
+        (inclusive of US change day, exclusive of EU change day).
+    """
+    if dt_utc is None:
+        dt_utc = now_utc()
+    year = dt_utc.year
+    # 2nd Sunday of March → US springs forward (EDT = UTC-4)
+    us_dst_start = _nth_weekday_of_month(year, 3, 6, 2)
+    # Last Sunday of March → EU springs forward (CEST = UTC+2)
+    eu_dst_start = _last_weekday_of_month(year, 3, 6)
+    return us_dst_start.date() <= dt_utc.date() < eu_dst_start.date()
 
 
 # ------------------------------------------------------------------

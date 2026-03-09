@@ -1,0 +1,2 @@
+﻿alphaedge\tests\test_ib_error_codes.py:40: error: The return type of a generator function should be "Generator" or one of its supertypes  [misc]
+alphaedge\tests\test_fill_verification.py:88: error: The return type of a generator function should be "Generator" or one of its supertypes  [misc]

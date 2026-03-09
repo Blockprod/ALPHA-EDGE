@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from alphaedge.core import engulfing_detector as eng_mod  # type: ignore[attr-defined]
+from alphaedge.core import engulfing_detector as eng_mod
 
 
 class TestEngulfingBearish:

@@ -34,6 +34,15 @@ SESSION_END_HOUR: int = 10
 SESSION_END_MINUTE: int = 30
 
 # ------------------------------------------------------------------
+# London Open session window (in UTC)
+# ------------------------------------------------------------------
+LONDON_START_HOUR: int = 8
+LONDON_START_MINUTE: int = 0
+LONDON_END_HOUR: int = 9
+LONDON_END_MINUTE: int = 0
+LONDON_TZ: str = "UTC"
+
+# ------------------------------------------------------------------
 # Timeframes
 # ------------------------------------------------------------------
 TF_M5: str = "5 mins"
@@ -79,6 +88,13 @@ DEFAULT_MIN_ATR_RATIO: float = 1.5
 DEFAULT_GAP_TOLERANCE_PIPS: float = 5.0
 
 # ------------------------------------------------------------------
+# Volatility regime filter
+# ------------------------------------------------------------------
+REGIME_ATR_LOOKBACK_DAYS: int = 20
+REGIME_ATR_LOW_MULTIPLIER: float = 0.5
+REGIME_ATR_HIGH_MULTIPLIER: float = 2.0
+
+# ------------------------------------------------------------------
 # Volume confirmation defaults
 # ------------------------------------------------------------------
 DEFAULT_VOLUME_PERIOD: int = 20
@@ -91,6 +107,29 @@ DEFAULT_MIN_RANGE_PIPS: float = 5.0
 DEFAULT_FCR_LOOKBACK: int = 6
 
 # ------------------------------------------------------------------
+# Engulfing quality filter defaults
+# ------------------------------------------------------------------
+DEFAULT_MIN_BODY_RATIO: float = 0.3
+DEFAULT_MAX_WICK_RATIO: float = 2.0
+
+# ------------------------------------------------------------------
+# News filter defaults
+# ------------------------------------------------------------------
+DEFAULT_BLACKOUT_MINUTES: int = 15
+DEFAULT_IMPACT_LEVELS: tuple[str, ...] = ("high",)
+
+# ------------------------------------------------------------------
+# Spread monitoring
+# ------------------------------------------------------------------
+DEFAULT_SPREAD_SPIKE_MULTIPLIER: float = 3.0
+
+# ------------------------------------------------------------------
+# Risk check intervals (seconds)
+# ------------------------------------------------------------------
+RISK_CHECK_INTERVAL_IDLE: int = 30
+RISK_CHECK_INTERVAL_POSITION: int = 5
+
+# ------------------------------------------------------------------
 # Lot sizing bounds
 # ------------------------------------------------------------------
 DEFAULT_LOT_TYPE: str = "micro"
@@ -101,6 +140,40 @@ MAX_LOTS: float = 10.0
 # Slippage
 # ------------------------------------------------------------------
 DEFAULT_SLIPPAGE_PIPS: float = 0.5
+DEFAULT_MARKET_SLIPPAGE_PIPS: float = 0.3
+
+# Variable slippage model
+BASE_SLIPPAGE_PIPS: float = 0.3
+NYSE_OPEN_SLIPPAGE_MULTIPLIER: float = 2.0  # 0.6 pips during NYSE open
+NEWS_SLIPPAGE_MULTIPLIER: float = 5.0  # 1.5 pips during news events
+
+# Variable spread model
+BASE_SPREAD_PIPS: float = 0.8  # Normal conditions (EUR/USD)
+NYSE_OPEN_SPREAD_PIPS: float = 1.5  # NYSE open window
+NEWS_SPREAD_PIPS: float = 3.0  # High-impact news events
+
+# Per-pair base spread in pips (normal market conditions)
+BASE_SPREAD_BY_PAIR: dict[str, float] = {
+    "EURUSD": 0.8,
+    "GBPUSD": 1.2,
+    "USDJPY": 0.9,
+    "AUDUSD": 1.0,
+    "USDCAD": 1.2,
+    "USDCHF": 1.2,
+    "NZDUSD": 1.5,
+    "EURJPY": 2.0,
+    "GBPJPY": 3.0,
+}
+
+# NYSE open window for slippage (first 5 minutes)
+NYSE_OPEN_WINDOW_MINUTES: int = 5
+
+# ------------------------------------------------------------------
+# Pair correlation
+# ------------------------------------------------------------------
+DEFAULT_MAX_CORRELATION: float = 0.7
+CORRELATION_RISK_DECAY: float = 0.5
+CORRELATION_LOOKBACK_BARS: int = 100
 
 # ------------------------------------------------------------------
 # IB pacing limits

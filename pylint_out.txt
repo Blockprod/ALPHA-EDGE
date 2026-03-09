@@ -1,0 +1,14 @@
+﻿************* Module alphaedge.engine.backtest
+alphaedge\engine\backtest.py:386:0: R0914: Too many local variables (32/30) (too-many-locals)
+************* Module alphaedge.engine.broker
+alphaedge\engine\broker.py:177:8: C0103: Argument name "reqId" doesn't conform to snake_case naming style (invalid-name)
+alphaedge\engine\broker.py:178:8: C0103: Argument name "errorCode" doesn't conform to snake_case naming style (invalid-name)
+alphaedge\engine\broker.py:179:8: C0103: Argument name "errorString" doesn't conform to snake_case naming style (invalid-name)
+************* Module alphaedge.engine.strategy
+alphaedge\engine\strategy.py:779:4: R0912: Too many branches (16/15) (too-many-branches)
+alphaedge\engine\strategy.py:779:4: R0915: Too many statements (60/50) (too-many-statements)
+************* Module alphaedge.tests.test_backtest_news_filter
+alphaedge\tests\test_backtest_news_filter.py:38:4: C0103: Variable name "ET" doesn't conform to snake_case naming style (invalid-name)
+************* Module alphaedge.utils.__init__
+alphaedge\utils\__init__.py:1:0: R0401: Cyclic import (alphaedge.utils.logger -> alphaedge.utils.timezone -> alphaedge.utils.session_manager) (cyclic-import)
+alphaedge\utils\__init__.py:1:0: R0401: Cyclic import (alphaedge.engine.backtest -> alphaedge.engine.sensitivity) (cyclic-import)

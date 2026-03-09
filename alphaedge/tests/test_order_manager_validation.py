@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from alphaedge.core import order_manager as order_mod  # type: ignore[attr-defined]
+from alphaedge.core import order_manager as order_mod
 
 
 class TestOrderManagerValidation:

@@ -43,10 +43,13 @@ def _bar_to_dict(bar: BarData) -> dict[str, Any]:
         Candle dict with keys: open, high, low, close, volume, timestamp.
     """
     # Convert bar date to UTC epoch
-    dt = bar.date
-    if not dt.tzinfo:  # type: ignore[attr-defined]
-        dt = dt.replace(tzinfo=get_tz_utc())  # type: ignore[call-arg]
-    epoch = int(dt.timestamp())  # type: ignore[attr-defined]
+    raw_date = bar.date
+    if isinstance(raw_date, datetime):
+        dt = raw_date if raw_date.tzinfo else raw_date.replace(tzinfo=get_tz_utc())
+    else:
+        # Plain date — assume midnight UTC
+        dt = datetime(raw_date.year, raw_date.month, raw_date.day, tzinfo=get_tz_utc())
+    epoch = int(dt.timestamp())
 
     return {
         "open": float(bar.open),
@@ -65,6 +68,89 @@ def _bar_to_dict(bar: BarData) -> dict[str, Any]:
 def _bars_to_dicts(bars: list[BarData]) -> list[dict[str, Any]]:
     """Convert a list of IB BarData objects to candle dicts."""
     return [_bar_to_dict(b) for b in bars]
+
+
+# ------------------------------------------------------------------
+# M1 bar aggregator — converts 5-second bars into M1 candles
+# ------------------------------------------------------------------
+class M1BarAggregator:
+    """
+    Aggregates 5-second real-time bars into complete M1 candles.
+
+    Accumulates incoming 5s bars and emits a single M1 candle
+    when the minute boundary is crossed.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the aggregator with empty buffers."""
+        self._buffer: dict[str, list[dict[str, Any]]] = {}
+        self._current_minute: dict[str, int] = {}
+
+    def _get_minute(self, candle: dict[str, Any]) -> int:
+        """Extract the minute timestamp (floored) from a candle."""
+        ts: int = candle["timestamp"]
+        return ts - (ts % 60)
+
+    def _build_m1(self, bars: list[dict[str, Any]]) -> dict[str, Any]:
+        """Build a single M1 candle from accumulated 5s bars."""
+        return {
+            "open": bars[0]["open"],
+            "high": max(b["high"] for b in bars),
+            "low": min(b["low"] for b in bars),
+            "close": bars[-1]["close"],
+            "volume": sum(b["volume"] for b in bars),
+            "timestamp": bars[0]["timestamp"] - (bars[0]["timestamp"] % 60),
+            "datetime": bars[0]["datetime"],
+        }
+
+    def process(
+        self,
+        pair: str,
+        bar_5s: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """
+        Process an incoming 5-second bar.
+
+        Returns a completed M1 candle when the minute boundary
+        is crossed, otherwise returns None.
+        """
+        bar_minute = self._get_minute(bar_5s)
+
+        if pair not in self._current_minute:
+            # First bar for this pair — start accumulating
+            self._current_minute[pair] = bar_minute
+            self._buffer[pair] = [bar_5s]
+            return None
+
+        if bar_minute == self._current_minute[pair]:
+            # Same minute — keep accumulating
+            self._buffer[pair].append(bar_5s)
+            return None
+
+        # Minute boundary crossed — emit completed M1 candle
+        completed_bars = self._buffer[pair]
+        m1_candle = self._build_m1(completed_bars)
+
+        # Start new minute
+        self._current_minute[pair] = bar_minute
+        self._buffer[pair] = [bar_5s]
+
+        return m1_candle
+
+    def flush(self, pair: str) -> dict[str, Any] | None:
+        """Flush remaining bars for a pair as a partial M1 candle."""
+        if pair in self._buffer and self._buffer[pair]:
+            m1_candle = self._build_m1(self._buffer[pair])
+            self._buffer[pair] = []
+            if pair in self._current_minute:
+                del self._current_minute[pair]
+            return m1_candle
+        return None
+
+    def reset(self) -> None:
+        """Clear all buffers."""
+        self._buffer.clear()
+        self._current_minute.clear()
 
 
 # ------------------------------------------------------------------
@@ -209,6 +295,7 @@ class RealtimeDataFeed:
         self._broker = broker
         self._subscriptions: dict[str, Any] = {}
         self._bar_callbacks: list[Any] = []
+        self._aggregator = M1BarAggregator()
 
     def on_bar(self, callback: Any) -> None:
         """
@@ -259,13 +346,15 @@ class RealtimeDataFeed:
         bars: Any,
         has_new: bool,
     ) -> None:
-        """Handle incoming bar updates from IB."""
+        """Handle incoming 5s bar updates and aggregate into M1."""
         if not has_new or not bars:
             return
 
-        candle = _bar_to_dict(bars[-1])
-        for callback in self._bar_callbacks:
-            callback(pair, candle)
+        bar_5s = _bar_to_dict(bars[-1])
+        m1_candle = self._aggregator.process(pair, bar_5s)
+        if m1_candle is not None:
+            for callback in self._bar_callbacks:
+                callback(pair, m1_candle)
 
     async def unsubscribe(self, pair: str) -> None:
         """
@@ -286,8 +375,9 @@ class RealtimeDataFeed:
         pairs = list(self._subscriptions.keys())
         for pair in pairs:
             await self.unsubscribe(pair)
+        self._aggregator.reset()
 
-    async def get_live_spread(self, pair: str) -> float:
+    async def get_live_spread(self, pair: str) -> float | None:
         """
         Get the current bid/ask spread for a pair.
 
@@ -298,8 +388,8 @@ class RealtimeDataFeed:
 
         Returns
         -------
-        float
-            Current spread in price (not pips).
+        float | None
+            Current spread in price (not pips), or None if unavailable.
         """
         self._broker._ensure_connected()
         await self._broker._throttler.acquire()
@@ -311,13 +401,13 @@ class RealtimeDataFeed:
 
             ticker = self._broker.ib.ticker(contract)
             if ticker and ticker.bid > 0 and ticker.ask > 0:
-                return ticker.ask - ticker.bid
-            return 0.0
+                return float(ticker.ask - ticker.bid)
+            return None
         except Exception:
             logger.exception(f"ALPHAEDGE get_live_spread failed: {pair}")
-            return 0.0
+            return None
 
-    async def get_mid_price(self, pair: str) -> float:
+    async def get_mid_price(self, pair: str) -> float | None:
         """
         Get the current mid price for a pair.
 
@@ -328,8 +418,8 @@ class RealtimeDataFeed:
 
         Returns
         -------
-        float
-            Mid price ((bid + ask) / 2), or 0.0 if unavailable.
+        float | None
+            Mid price ((bid + ask) / 2), or None if unavailable.
         """
         self._broker._ensure_connected()
         await self._broker._throttler.acquire()
@@ -341,11 +431,11 @@ class RealtimeDataFeed:
 
             ticker = self._broker.ib.ticker(contract)
             if ticker and ticker.bid > 0 and ticker.ask > 0:
-                return (ticker.bid + ticker.ask) / 2.0
-            return 0.0
+                return float((ticker.bid + ticker.ask) / 2.0)
+            return None
         except Exception:
             logger.exception(f"ALPHAEDGE get_mid_price failed: {pair}")
-            return 0.0
+            return None
 
 
 if __name__ == "__main__":

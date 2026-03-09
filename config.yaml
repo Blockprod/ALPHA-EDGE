@@ -42,12 +42,21 @@ trading:
   # Maximum acceptable spread in pips (skip trade if exceeded)
   max_spread_pips: 2.0
 
+  # Spread spike multiplier (spread > N× max → WARNING during open position)
+  spread_spike_multiplier: 3.0
+
   # Lot type: standard (100k), mini (10k), micro (1k)
   lot_type: "micro"
 
   # NYSE session window (Eastern Time — DST auto-handled)
   session_start: "09:30"
   session_end: "10:30"
+
+  # Action at session end if position still open: "hold" or "close"
+  session_end_action: "hold"
+
+  # London Open session (8:00-9:00 UTC) — enable after OOS validation
+  london_open_enabled: false
 
 # --- Structure Detection ---
 structure:
@@ -65,9 +74,48 @@ pattern:
   volume_period: 20         # Lookback for average tick volume
   min_volume_ratio: 1.2     # Min ratio vs average for confirmation
 
+# --- Engulfing Quality Filters ---
+engulfing:
+  min_body_ratio: 0.3       # Body >= 30% of FCR range
+  max_wick_ratio: 2.0       # Wick <= 200% of body size
+
+# --- News Filter ---
+news_filter:
+  enabled: true
+  blackout_minutes: 15        # Minutes before and after event
+  impact_levels: ["high"]     # Filter only high-impact events
+  calendar_path: "data/economic_calendar.csv"
+
 # --- Risk Management ---
 risk:
   slippage_buffer_pips: 0.5 # Added to SL for slippage protection
   min_lots: 0.01            # Minimum position size
   max_lots: 10.0            # Maximum position size
   adjust_sl_for_spread: true
+
+# --- Web Dashboard ---
+dashboard:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8080
+  api_token: ""
+
+# --- External Alerting ---
+alerting:
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
+  discord:
+    enabled: false
+    webhook_url: ""
+  events:
+    - signal_detected
+    - trade_executed
+    - trade_closed
+    - kill_switch
+    - ib_disconnected
+    - ib_reconnected
+    - session_end_open_position
+    - session_end_clean
+    - daily_summary

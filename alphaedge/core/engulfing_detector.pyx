@@ -214,6 +214,8 @@ def detect_engulfing(
     double pip_size,
     int volume_period,
     double min_volume_ratio,
+    double min_body_ratio=0.3,
+    double max_wick_ratio=2.0,
 ):
     """
     Detect bearish or bullish engulfing pattern on M1 candles.
@@ -234,6 +236,10 @@ def detect_engulfing(
         Lookback period for average volume calculation.
     min_volume_ratio : float
         Minimum ratio of current volume to average for confirmation.
+    min_body_ratio : float
+        Minimum body size as a ratio of the FCR range (default 0.3).
+    max_wick_ratio : float
+        Maximum total wick as a ratio of body size (default 2.0).
 
     Returns
     -------
@@ -249,8 +255,37 @@ def detect_engulfing(
 
     return _evaluate_engulfing(
         result[0], result[1], fcr_high, fcr_low,
-        rr_ratio, pip_size,
+        rr_ratio, pip_size, min_body_ratio, max_wick_ratio,
     )
+
+
+# ------------------------------------------------------------------
+# Quality filter: minimum body size and wick ratio
+# ------------------------------------------------------------------
+cdef bint _passes_quality_filter(
+    dict curr_candle,
+    double fcr_range,
+    double min_body_ratio,
+    double max_wick_ratio,
+):
+    """
+    Reject engulfing candles that lack conviction.
+
+    - Body must be >= min_body_ratio * FCR range
+    - Total wick must be <= max_wick_ratio * body size
+    """
+    cdef double body_size = fabs(curr_candle["close"] - curr_candle["open"])
+    cdef double min_body = fcr_range * min_body_ratio
+    if body_size < min_body:
+        return 0
+
+    cdef double upper_wick = curr_candle["high"] - max(curr_candle["open"], curr_candle["close"])
+    cdef double lower_wick = min(curr_candle["open"], curr_candle["close"]) - curr_candle["low"]
+    cdef double total_wick = upper_wick + lower_wick
+    if total_wick > max_wick_ratio * body_size:
+        return 0
+
+    return 1
 
 
 # ------------------------------------------------------------------
@@ -263,13 +298,18 @@ cdef dict _evaluate_engulfing(
     double fcr_low,
     double rr_ratio,
     double pip_size,
+    double min_body_ratio,
+    double max_wick_ratio,
 ):
     """Test for bearish then bullish engulfing against FCR levels."""
     cdef EngulfingResult result
+    cdef double fcr_range = fabs(fcr_high - fcr_low)
 
     # --- Bearish engulfing: close below FCR low ---
     if _is_bearish_engulfing(prev_candle, curr_candle):
         if curr_candle["close"] <= fcr_low:
+            if not _passes_quality_filter(curr_candle, fcr_range, min_body_ratio, max_wick_ratio):
+                return None
             result = _build_result(
                 signal=-1,
                 entry=curr_candle["close"],
@@ -282,6 +322,8 @@ cdef dict _evaluate_engulfing(
     # --- Bullish engulfing: close above FCR high ---
     if _is_bullish_engulfing(prev_candle, curr_candle):
         if curr_candle["close"] >= fcr_high:
+            if not _passes_quality_filter(curr_candle, fcr_range, min_body_ratio, max_wick_ratio):
+                return None
             result = _build_result(
                 signal=1,
                 entry=curr_candle["close"],

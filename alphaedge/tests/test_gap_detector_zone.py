@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from alphaedge.core import gap_detector as gap_mod  # type: ignore[attr-defined]
+from alphaedge.core import gap_detector as gap_mod
 
 
 class TestGapDetectorZone:

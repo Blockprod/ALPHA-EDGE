@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from alphaedge.utils.timezone import (
     get_session_window_utc,
+    is_dst_transition_week,
     is_session_active,
 )
 
@@ -77,3 +78,47 @@ class TestTimezoneDST:
 
         # EST start is 14:30 UTC, EDT start is 13:30 UTC — 1 hour difference
         assert est_start.hour - edt_start.hour == 1
+
+
+class TestDSTTransitionWeek:
+    """Tests for is_dst_transition_week() spring EU/US divergence detection."""
+
+    def test_inside_transition_2025(self) -> None:
+        """March 15, 2025 is between US (Mar 9) and EU (Mar 30) spring-forward."""
+        dt = datetime(2025, 3, 15, 12, 0, tzinfo=ZoneInfo("UTC"))
+        assert is_dst_transition_week(dt) is True
+
+    def test_before_us_transition_2025(self) -> None:
+        """March 8, 2025 is before US spring-forward (Mar 9) — not in window."""
+        dt = datetime(2025, 3, 8, 12, 0, tzinfo=ZoneInfo("UTC"))
+        assert is_dst_transition_week(dt) is False
+
+    def test_us_transition_day_inclusive_2025(self) -> None:
+        """March 9, 2025 is the US spring-forward day — included (inclusive start)."""
+        dt = datetime(2025, 3, 9, 12, 0, tzinfo=ZoneInfo("UTC"))
+        assert is_dst_transition_week(dt) is True
+
+    def test_eu_transition_day_exclusive_2025(self) -> None:
+        """March 30, 2025 is the EU spring-forward day — excluded (exclusive end)."""
+        dt = datetime(2025, 3, 30, 12, 0, tzinfo=ZoneInfo("UTC"))
+        assert is_dst_transition_week(dt) is False
+
+    def test_after_eu_transition_2025(self) -> None:
+        """April 1, 2025 is well after EU spring-forward — not in window."""
+        dt = datetime(2025, 4, 1, 12, 0, tzinfo=ZoneInfo("UTC"))
+        assert is_dst_transition_week(dt) is False
+
+    def test_winter_date_not_in_window(self) -> None:
+        """January 15, 2025 is outside any DST transition window."""
+        dt = datetime(2025, 1, 15, 12, 0, tzinfo=ZoneInfo("UTC"))
+        assert is_dst_transition_week(dt) is False
+
+    def test_inside_transition_2024(self) -> None:
+        """March 15, 2024 is between US (Mar 10) and EU (Mar 31) spring-forward."""
+        dt = datetime(2024, 3, 15, 12, 0, tzinfo=ZoneInfo("UTC"))
+        assert is_dst_transition_week(dt) is True
+
+    def test_eu_transition_day_exclusive_2024(self) -> None:
+        """March 31, 2024 is the EU spring-forward day — excluded."""
+        dt = datetime(2024, 3, 31, 12, 0, tzinfo=ZoneInfo("UTC"))
+        assert is_dst_transition_week(dt) is False

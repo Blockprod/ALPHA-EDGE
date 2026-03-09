@@ -2,48 +2,27 @@
     // ============================================================
     // PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
     // FILE         : .vscode/settings.json
-    // DESCRIPTION  : VSCode workspace settings for QA toolchain
+    // DESCRIPTION  : VSCode workspace settings — Ruff, Pylance, Pytest
     // ============================================================
 
     // --- Python Environment ---
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    "python.defaultInterpreterPath": ".venv/Scripts/python.exe",
 
-    // --- Formatting (Black) ---
+    // --- Formatting & Linting (Ruff) ---
     "[python]": {
-        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
             "source.organizeImports": "explicit"
         }
     },
-    "black-formatter.args": [
-        "--config",
-        "${workspaceFolder}/pyproject.toml"
-    ],
 
     // --- Linting (Ruff) ---
     "ruff.enable": true,
-    "ruff.lint.args": [
-        "--config",
-        "${workspaceFolder}/pyproject.toml"
-    ],
-    "ruff.format.args": [
-        "--config",
-        "${workspaceFolder}/pyproject.toml"
-    ],
 
-    // --- Type Checking (Mypy) ---
-    "mypy-type-checker.args": [
-        "--config-file",
-        "${workspaceFolder}/mypy.ini"
-    ],
+    // --- Type Checking (Pylance) ---
     "python.analysis.typeCheckingMode": "basic",
-
-    // --- Pylint ---
-    "pylint.args": [
-        "--rcfile",
-        "${workspaceFolder}/.pylintrc"
-    ],
+    "python.analysis.autoImportCompletions": true,
 
     // --- Testing (Pytest) ---
     "python.testing.pytestEnabled": true,

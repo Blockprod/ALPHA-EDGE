@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -25,6 +25,9 @@ from alphaedge.config.constants import (
 )
 from alphaedge.utils.timezone import format_dual_time, now_utc
 
+if TYPE_CHECKING:
+    from loguru import Record
+
 # Loguru Logger type alias for mypy
 _LoggerType = Any
 
@@ -32,7 +35,7 @@ _LoggerType = Any
 # ------------------------------------------------------------------
 # Custom log format with dual timezone display
 # ------------------------------------------------------------------
-def _alphaedge_format(record: dict[str, Any]) -> str:
+def _alphaedge_format(record: Record) -> str:
     """
     Build a custom log format line with UTC + Paris time.
 
@@ -80,7 +83,7 @@ def setup_logging(
     # Console handler
     logger.add(
         sys.stderr,
-        format=_alphaedge_format,  # type: ignore[arg-type]
+        format=_alphaedge_format,
         level=log_level,
         colorize=True,
     )
@@ -89,7 +92,7 @@ def setup_logging(
     log_path = Path(log_dir) / "alphaedge_{time:YYYY-MM-DD}.log"
     logger.add(
         str(log_path),
-        format=_alphaedge_format,  # type: ignore[arg-type]
+        format=_alphaedge_format,
         level=log_level,
         rotation=LOG_ROTATION,
         retention=LOG_RETENTION,

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from alphaedge.core import risk_manager as risk_mod  # type: ignore[attr-defined]
+from alphaedge.core import risk_manager as risk_mod
 
 
 class TestRiskManagerSlippage:

@@ -55,7 +55,7 @@ def _build_header(ib_connected: bool) -> Panel:
     status_text = "CONNECTED" if ib_connected else "DISCONNECTED"
     title_text = Text(PROJECT_TITLE, style="bold cyan")
 
-    header_content = f"{title_text}\n" f"IB Gateway: {status_icon} {status_text}"
+    header_content = f"{title_text}\nIB Gateway: {status_icon} {status_text}"
     return Panel(header_content, style="bold white", border_style="cyan")
 
 

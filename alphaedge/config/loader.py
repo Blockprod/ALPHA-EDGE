@@ -27,6 +27,7 @@ from alphaedge.config.constants import (
     DEFAULT_RR_RATIO,
     IB_HOST,
     IB_PAPER_PORT,
+    PIP_SIZES,
 )
 
 
@@ -58,9 +59,14 @@ class TradingConfig:
     max_daily_loss_pct: float = DEFAULT_MAX_DAILY_LOSS_PCT
     max_trades_per_session: int = DEFAULT_MAX_TRADES_PER_SESSION
     max_spread_pips: float = DEFAULT_MAX_SPREAD_PIPS
+    spread_spike_multiplier: float = 3.0
     lot_type: str = "micro"
     session_start: str = "09:30"
     session_end: str = "10:30"
+    session_end_action: str = "hold"
+    london_open_enabled: bool = False
+    min_body_ratio: float = 0.3
+    max_wick_ratio: float = 2.0
 
 
 # ------------------------------------------------------------------
@@ -74,6 +80,7 @@ class AppConfig:
     trading: TradingConfig = field(default_factory=TradingConfig)
     log_level: str = "INFO"
     mode: str = "paper"
+    news_filter_raw: dict[str, Any] = field(default_factory=dict)
 
 
 # ------------------------------------------------------------------
@@ -127,12 +134,24 @@ def _build_ib_config(raw: dict[str, Any]) -> IBConfig:
     )
 
 
+def _check_ib_port(port: int) -> None:
+    """Warn if IB port is not one of the standard Gateway ports."""
+    from alphaedge.utils.logger import get_logger
+
+    if port not in (4001, 4002):
+        get_logger().warning(
+            f"ALPHAEDGE CONFIG: Non-standard IB port {port} "
+            f"(expected 4001 for live or 4002 for paper)"
+        )
+
+
 # ------------------------------------------------------------------
 # Build TradingConfig from raw YAML data
 # ------------------------------------------------------------------
 def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
     """Extract and validate trading parameters from the YAML section."""
     section: dict[str, Any] = raw.get("trading", {})
+    eng_section: dict[str, Any] = raw.get("engulfing", {})
     cfg = TradingConfig(
         pairs=section.get("pairs", ["EURUSD", "GBPUSD", "USDJPY"]),
         rr_ratio=float(section.get("rr_ratio", DEFAULT_RR_RATIO)),
@@ -144,9 +163,14 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
             section.get("max_trades_per_session", DEFAULT_MAX_TRADES_PER_SESSION)
         ),
         max_spread_pips=float(section.get("max_spread_pips", DEFAULT_MAX_SPREAD_PIPS)),
+        spread_spike_multiplier=float(section.get("spread_spike_multiplier", 3.0)),
         lot_type=section.get("lot_type", "micro"),
         session_start=section.get("session_start", "09:30"),
         session_end=section.get("session_end", "10:30"),
+        session_end_action=section.get("session_end_action", "hold"),
+        london_open_enabled=bool(section.get("london_open_enabled", False)),
+        min_body_ratio=float(eng_section.get("min_body_ratio", 0.3)),
+        max_wick_ratio=float(eng_section.get("max_wick_ratio", 2.0)),
     )
     _validate_trading_config(cfg)
     return cfg
@@ -154,6 +178,17 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
 
 def _validate_trading_config(cfg: TradingConfig) -> None:
     """Validate trading config values are within safe ranges."""
+    # Pair validation: all configured pairs must be in PIP_SIZES
+    for pair in cfg.pairs:
+        if pair not in PIP_SIZES:
+            raise ValueError(
+                f"Unknown pair '{pair}'. Supported: {sorted(PIP_SIZES.keys())}"
+            )
+    # lot_type validation
+    if cfg.lot_type not in ("standard", "mini", "micro"):
+        raise ValueError(
+            f"Invalid lot_type '{cfg.lot_type}'. Must be standard/mini/micro."
+        )
     if not 0.0 < cfg.risk_pct <= 10.0:
         raise ValueError(f"risk_pct must be in (0, 10], got {cfg.risk_pct}")
     if cfg.rr_ratio <= 0.0:
@@ -200,6 +235,7 @@ def load_config(
 
     # Build sub-configs
     ib_cfg = _build_ib_config(raw)
+    _check_ib_port(ib_cfg.port)
     trading_cfg = _build_trading_config(raw)
 
     return AppConfig(
@@ -207,6 +243,7 @@ def load_config(
         trading=trading_cfg,
         log_level=raw.get("log_level", "INFO"),
         mode="paper" if ib_cfg.is_paper else "live",
+        news_filter_raw=raw.get("news_filter", {}),
     )
 
 

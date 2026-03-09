@@ -11,9 +11,25 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from typing import Any
 
 import pytest
+
+from alphaedge.utils.state_persistence import clear_daily_state
+
+
+# ------------------------------------------------------------------
+# Global autouse: guarantee a clean state file before every test.
+# This prevents tests that write the state file (e.g. via
+# _persist_daily_state) from polluting subsequent tests.
+# ------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _global_clear_daily_state() -> Generator[None, None, None]:
+    """Delete any leftover state file before and after each test."""
+    clear_daily_state()
+    yield
+    clear_daily_state()
 
 
 # ------------------------------------------------------------------

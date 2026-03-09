@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 # Python wrapper import — works without Cython compilation
-from alphaedge.core import fcr_detector as fcr_mod  # type: ignore[attr-defined]
+from alphaedge.core import fcr_detector as fcr_mod
 
 
 # ------------------------------------------------------------------
