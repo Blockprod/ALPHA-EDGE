@@ -52,9 +52,11 @@ extensions: list[Extension] = [
 ]
 
 setup(
-    name="alphaedge",
-    version="1.0.0",
-    description="ALPHAEDGE — FCR Forex Trading Bot",
+    # Project metadata is in pyproject.toml ([project] section).
+    # This setup() call exists solely to compile Cython extensions via
+    # `python setup.py build_ext --inplace` (i.e. `make build`).
+    # setuptools PEP 517 does not yet support `build_ext --inplace` natively,
+    # so setup.py is intentionally kept for that single purpose.
     ext_modules=cythonize(
         extensions,
         compiler_directives={
@@ -64,9 +66,6 @@ setup(
             "cdivision": True,
         },
     ),
-    packages=["alphaedge", "alphaedge.core", "alphaedge.engine",
-              "alphaedge.config", "alphaedge.utils"],
-    python_requires=">=3.11,<3.12",
 )
 
 

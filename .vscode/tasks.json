@@ -1,0 +1,91 @@
+{
+    // ============================================================
+    // PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+    // FILE         : .vscode/tasks.json
+    // DESCRIPTION  : Make-based tasks for QA, build, and testing
+    // ============================================================
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "ALPHAEDGE — QA (Ruff + Pyright + Pytest)",
+            "type": "shell",
+            "command": "make qa",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "ALPHAEDGE — QA Strict (+ Pylint)",
+            "type": "shell",
+            "command": "make qa-strict",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "ALPHAEDGE — Tests Only",
+            "type": "shell",
+            "command": "make test",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "ALPHAEDGE — Build Cython",
+            "type": "shell",
+            "command": "make build",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "ALPHAEDGE — Clean",
+            "type": "shell",
+            "command": "make clean",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}

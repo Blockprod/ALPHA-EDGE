@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from loguru import logger
+
 from alphaedge.config.constants import (
     LONDON_END_HOUR,
     LONDON_END_MINUTE,
@@ -32,9 +34,6 @@ from alphaedge.config.constants import (
     SESSION_START_MINUTE,
     TZ_NEW_YORK,
 )
-from alphaedge.utils.logger import get_logger
-
-logger = get_logger()
 
 
 # ------------------------------------------------------------------

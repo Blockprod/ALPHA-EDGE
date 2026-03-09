@@ -216,7 +216,7 @@ class MLSignalFilter:
             )
 
         x = np.array([features], dtype=np.float64)
-        x_scaled: np.ndarray[Any, Any] = self._scaler.transform(x)
+        x_scaled: np.ndarray[Any, Any] = np.asarray(self._scaler.transform(x))
         proba: np.ndarray[Any, Any] = self._model.predict_proba(x_scaled)
         win_prob = float(proba[0, 1])
 

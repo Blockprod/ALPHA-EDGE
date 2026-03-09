@@ -17,7 +17,7 @@ import numpy as np
 
 from alphaedge.config.constants import PROJECT_TITLE
 from alphaedge.config.loader import AppConfig
-from alphaedge.engine.backtest import (
+from alphaedge.engine.backtest import (  # pylint: disable=cyclic-import
     BacktestStats,
     _backtest_pair,
     compute_stats,
