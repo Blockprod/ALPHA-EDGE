@@ -36,23 +36,76 @@ IB Gateway
 
 ## Absolute Rules
 
-1. **`ALPHAEDGE_PAPER=true` is the default.** Never suggest live trading
-   without explicit user confirmation.
 
-2. **After editing any `.pyx` file, run `make build`** to recompile Cython.
-   The `.pyx` sources are not the runtime modules — the compiled `.pyd`/`.so`
-   files are.
-
-3. **Do not modify `alphaedge/core/` logic** without explicit instruction.
-   The FCR strategy is proprietary.
-
-4. **`make qa` must pass before any commit:**
-   Ruff lint + Mypy (`pyproject.toml`) + Pytest ≥80% coverage.
-
+1. **`ALPHAEDGE_PAPER=true` is the default.** Never suggest live trading without explicit user confirmation.
+2. **After editing any `.pyx` file, run `make build`** to recompile Cython. The `.pyx` sources are not the runtime modules — the compiled `.pyd`/`.so` files are.
+3. **Do not modify `alphaedge/core/` logic** without explicit instruction. The FCR strategy is proprietary.
+4. **`make qa` must pass before any commit:** Ruff lint + Mypy (`pyproject.toml`) + Pytest ≥80% coverage.
 5. **Python 3.11.9 only.** No 3.12+ syntax.
+6. **Coverage threshold applies to `config/`, `utils/`, `core/` only.** `engine/` modules are excluded (require IB Gateway).
 
-6. **Coverage threshold applies to `config/`, `utils/`, `core/` only.**
-   `engine/` modules are excluded (require IB Gateway).
+---
+
+## Hard Stops — Never Do These
+
+- Never set `ALPHAEDGE_PAPER=false` in any file, ever
+- Never modify `core/*.pyx` without explicit instruction from the user
+- Never commit `.env`, `*.log`, or any proprietary action plan files
+- Never run `make build` unless a `.pyx` file was intentionally modified
+- Never use `# type: ignore` or `# pyright: ignore` as a fix — find and fix the root cause
+- Never use `Any` as a type annotation shortcut — it is a rustine, not a solution
+- Never hardcode pip values, RR ratios, session times, or risk parameters outside `alphaedge/config/constants.py`
+- Never touch `alphaedge/utils/timezone.py` or `session_manager.py` without re-running DST edge case tests
+- Never mark a task complete without running `make qa` and confirm all tests pass
+- Never push a `.pyx` edit without running `make build` followed by `make qa`
+
+---
+
+## Workflow Orchestration
+
+- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
+- If something goes sideways, STOP and re-plan immediately — don't keep pushing
+- Use plan mode for verification steps, not just building
+- Write detailed specs upfront to reduce ambiguity
+- Use the `Explore` subagent for research/exploration
+- After ANY correction from the user: update `tasks/lessons.md` with the pattern
+- Never mark a task complete without proving it works (run `make qa` — all tests must pass)
+- Demand elegance: challenge your own work before presenting it
+- When given a bug report: just fix it. Don't ask for hand-holding
+
+---
+
+## Task Management
+
+1. Plan First: Use the Copilot todo list tool with checkable items
+2. Verify Plan: Check in before starting implementation
+3. Track Progress: Mark items complete as you go
+4. Explain Changes: High-level summary at each step
+5. Capture Lessons: Update `tasks/lessons.md` after any correction
+
+---
+
+## Core Principles
+
+- Simplicity First: Make every change as simple as possible. Impact minimal code.
+- No Laziness: Find root causes. No temporary fixes. Senior developer standards.
+- Minimal Impact: Changes should only touch what's necessary. Avoid introducing bugs.
+- Audit Before Modify: For any non-trivial change, read before writing. Cite file + line before proposing a modification.
+
+---
+
+## Return Value Contracts
+
+| Function | Returns None / falsy | Correct agent behavior |
+|----------|----------------------|------------------------|
+| `detect_fcr(...)` | No valid FCR found | STOP — do not proceed to gap detection |
+| `detect_gap(...)` | `detected: False` | STOP — do not proceed to engulfing detection |
+| `detect_engulfing(...)` | `None` | STOP — do not place any order |
+| `calculate_position_size(...)` | `is_valid: False` | STOP — do not submit order, log WARNING |
+| `check_daily_limit(...)` | `halt_trading: True` | STOP ALL trading immediately — log CRITICAL |
+| `create_bracket_order(...)` | `is_valid: False` | STOP — log rejection_reason, skip trade |
+
+**The pipeline is all-or-nothing: one STOP at any stage cancels the entire trade.**
 
 ---
 
