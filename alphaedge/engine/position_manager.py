@@ -51,6 +51,7 @@ class PositionManager:
         minimum lot or equity too low).
         """
         equity = state.current_equity or state.starting_equity
+        max_cap: float = getattr(config.trading, "max_lot_size", MAX_LOTS)
         pos_result: dict[str, Any] = modules.risk_manager.calculate_position_size(
             account_equity=equity,
             risk_pct=config.trading.risk_pct,
@@ -59,12 +60,19 @@ class PositionManager:
             pip_size=pip_size,
             lot_type=config.trading.lot_type,
             min_lots=MIN_LOTS,
-            max_lots=MAX_LOTS,
+            max_lots=max_cap,
             exchange_rate=exchange_rate,
         )
         if not pos_result["is_valid"]:
             logger.warning(f"ALPHAEDGE: Invalid position size for {state.pair}")
             return None
+        if pos_result["lot_size"] > max_cap:
+            logger.warning(
+                f"ALPHAEDGE: {state.pair} lot_size {pos_result['lot_size']:.2f} "
+                f"capped to max_lot_size={max_cap:.2f}"
+            )
+            pos_result = dict(pos_result)
+            pos_result["lot_size"] = max_cap
         return pos_result
 
     # ------------------------------------------------------------------

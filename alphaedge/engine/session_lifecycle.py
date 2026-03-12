@@ -178,6 +178,7 @@ class SessionLifecycle:
                 )
 
             state.trades_today += 1
+            self._s._global_trades_today += 1
             state.is_position_open = True
 
             # Persist state after each trade
@@ -329,8 +330,11 @@ class SessionLifecycle:
             state.m1_candles = state.m1_candles[-state.max_candles :]
         pip_size = _get_pip_size(pair)
 
-        # Skip if trade limit reached
-        if state.trades_today >= self._s._config.trading.max_trades_per_session:
+        # Skip if global trade limit reached across all pairs
+        if (
+            self._s._global_trades_today
+            >= self._s._config.trading.max_trades_per_session
+        ):
             return
 
         # Monitor spread spike while position is open
@@ -421,8 +425,11 @@ class SessionLifecycle:
                     f"pair limit reached (re-check under lock)"
                 )
                 return False
-            # Re-verify trade count under lock
-            if state.trades_today >= self._s._config.trading.max_trades_per_session:
+            # Re-verify global trade count under lock
+            if (
+                self._s._global_trades_today
+                >= self._s._config.trading.max_trades_per_session
+            ):
                 return False
             return await self._check_spread_and_execute(state, signal, pip_size)
 
@@ -548,7 +555,7 @@ class SessionLifecycle:
 
     def _persist_daily_state(self, *, shutdown: bool = False) -> None:
         """Persist current daily state to disk."""
-        total_trades = sum(s.trades_today for s in self._s._states.values())
+        total_trades = self._s._global_trades_today
         open_pairs = [p for p, s in self._s._states.items() if s.is_position_open]
         # Use first state's starting_equity (same for all pairs)
         starting_eq = 0.0
@@ -654,6 +661,7 @@ class SessionLifecycle:
                 state.m5_candles = m5_candles
                 if persisted:
                     state.trades_today = persisted.trades_today
+                    self._s._global_trades_today = persisted.trades_today
 
                 # Collect closes for correlation matrix
                 pair_closes[pair] = [c["close"] for c in m5_candles if "close" in c]

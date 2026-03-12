@@ -159,6 +159,7 @@ class TestPersistAfterTrade:
         state = strategy._init_pair_state("EURUSD")
         state.starting_equity = 10000.0
         state.trades_today = 1
+        strategy._global_trades_today = 1
         state.is_position_open = True
 
         strategy._lifecycle._persist_daily_state()

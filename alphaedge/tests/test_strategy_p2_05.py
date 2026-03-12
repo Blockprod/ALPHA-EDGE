@@ -94,6 +94,7 @@ class TestPersistOnTradeClosed:
         state = strategy._init_pair_state("EURUSD")
         state.starting_equity = 10_000.0
         state.trades_today = 1
+        strategy._global_trades_today = 1
         state.is_position_open = True
 
         strategy._lifecycle._on_trade_closed("EURUSD")

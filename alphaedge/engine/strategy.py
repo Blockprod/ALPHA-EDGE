@@ -150,6 +150,9 @@ class FCRStrategy:
             config.news_filter_raw,
         )
         self._trade_lock = asyncio.Lock()
+        self._global_trades_today: int = (
+            0  # Global counter across all pairs — reset each session
+        )
         self._correlation_matrix: dict[tuple[str, str], float] = {}
 
         # SRP components — detection and sizing logic

@@ -20,7 +20,6 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import numpy as np
-import pandas as pd
 
 from alphaedge.config.constants import (
     BASE_SLIPPAGE_PIPS,
@@ -42,19 +41,21 @@ from alphaedge.config.constants import (
     SESSION_END_MINUTE,
     SESSION_START_HOUR,
     SESSION_START_MINUTE,
-    TF_M5,
 )
-from alphaedge.config.loader import AppConfig, load_config
+from alphaedge.config.loader import AppConfig, SessionSpec, load_config
 from alphaedge.engine.backtest_export import export_results_csv, plot_equity_curve
 from alphaedge.engine.backtest_stats import (
+    _apply_equity_sizing,
     _compute_max_drawdown,
     _compute_profit_factor,
     _compute_sharpe,
     _compute_winrate,
+    _log_per_pair_report,
     _log_split_report,
     _log_stats_summary,
     compute_split_report,
     compute_stats,
+    print_rich_summary,
     split_trades_is_oos,
 )
 from alphaedge.engine.backtest_types import BacktestReport, BacktestStats, TradeRecord
@@ -88,6 +89,7 @@ __all__ = [
     "_compute_profit_factor",
     "_compute_max_drawdown",
     "_compute_sharpe",
+    "_apply_equity_sizing",
     "split_trades_is_oos",
     "compute_split_report",
     "_log_stats_summary",
@@ -165,7 +167,10 @@ def _simulate_trade_exit(
     entry_bar_idx: int,
 ) -> TradeRecord:
     """
-    Walk forward through bars to find the trade exit.
+    Walk forward through bars to find the trade exit (NumPy-vectorized).
+
+    Replaces the bar-by-bar Python loop with NumPy boolean masks so that
+    SL/TP detection runs at C speed rather than interpreter speed.
 
     Parameters
     ----------
@@ -181,22 +186,343 @@ def _simulate_trade_exit(
     TradeRecord
         The trade with exit fields populated.
     """
-    for i in range(entry_bar_idx + 1, len(bars)):
+    future = bars[entry_bar_idx + 1 :]
+    if not future:
+        return _close_trade(trade, bars[-1]["close"], bars[-1], "timeout")
+
+    n = len(future)
+    highs = np.fromiter((b["high"] for b in future), dtype=np.float64, count=n)
+    lows = np.fromiter((b["low"] for b in future), dtype=np.float64, count=n)
+
+    if trade.direction == 1:  # Long
+        sl_mask = lows <= trade.stop_loss
+        tp_mask = highs >= trade.take_profit
+    else:  # Short
+        sl_mask = highs >= trade.stop_loss
+        tp_mask = lows <= trade.take_profit
+
+    sl_hits = np.nonzero(sl_mask)[0]
+    tp_hits = np.nonzero(tp_mask)[0]
+
+    first_sl = int(sl_hits[0]) if len(sl_hits) else n
+    first_tp = int(tp_hits[0]) if len(tp_hits) else n
+
+    if first_sl == n and first_tp == n:
+        return _close_trade(trade, future[-1]["close"], future[-1], "timeout")
+    if first_sl < first_tp:
+        return _close_trade(trade, trade.stop_loss, future[first_sl], "loss")
+    if first_tp < first_sl:
+        return _close_trade(trade, trade.take_profit, future[first_tp], "win")
+    # Both hit on the same bar — use bar direction to decide which was first
+    bar = future[first_sl]
+    if _sl_hit_first(trade, bar):
+        return _close_trade(trade, trade.stop_loss, bar, "loss")
+    return _close_trade(trade, trade.take_profit, bar, "win")
+
+
+# ------------------------------------------------------------------
+# Fast exit simulation using pre-built NumPy arrays (zero-copy)
+# ------------------------------------------------------------------
+def _simulate_trade_exit_fast(
+    trade: TradeRecord,
+    bars: list[dict[str, Any]],
+    entry_bar_idx: int,
+    all_highs: np.ndarray,
+    all_lows: np.ndarray,
+) -> TradeRecord:
+    """
+    Vectorized trade exit using pre-built bar arrays.
+
+    The caller pre-builds ``all_highs`` / ``all_lows`` once from the
+    same ``bars`` list, so NumPy slicing (O(1) view) replaces repeated
+    per-trade dict key extraction (O(n) Python iteration).
+
+    Parameters
+    ----------
+    trade : TradeRecord
+        The trade to simulate.
+    bars : list[dict]
+        M1 bar data — used only to retrieve exit bar metadata.
+    entry_bar_idx : int
+        Index of the entry bar.
+    all_highs : np.ndarray
+        float64 array of bar highs aligned with ``bars``.
+    all_lows : np.ndarray
+        float64 array of bar lows aligned with ``bars``.
+
+    Returns
+    -------
+    TradeRecord
+        The trade with exit fields populated.
+    """
+    start = entry_bar_idx + 1
+    if start >= len(bars):
+        return _close_trade(trade, bars[-1]["close"], bars[-1], "timeout")
+
+    highs = all_highs[start:]  # O(1) NumPy view — no copy
+    lows = all_lows[start:]
+
+    if trade.direction == 1:  # Long
+        sl_mask = lows <= trade.stop_loss
+        tp_mask = highs >= trade.take_profit
+    else:  # Short
+        sl_mask = highs >= trade.stop_loss
+        tp_mask = lows <= trade.take_profit
+
+    sl_hits = np.nonzero(sl_mask)[0]
+    tp_hits = np.nonzero(tp_mask)[0]
+
+    n = len(highs)
+    first_sl = int(sl_hits[0]) if len(sl_hits) else n
+    first_tp = int(tp_hits[0]) if len(tp_hits) else n
+
+    if first_sl == n and first_tp == n:
+        return _close_trade(trade, bars[-1]["close"], bars[-1], "timeout")
+    if first_sl < first_tp:
+        return _close_trade(trade, trade.stop_loss, bars[start + first_sl], "loss")
+    if first_tp < first_sl:
+        return _close_trade(trade, trade.take_profit, bars[start + first_tp], "win")
+    # Both hit on the same bar
+    bar = bars[start + first_sl]
+    if _sl_hit_first(trade, bar):
+        return _close_trade(trade, trade.stop_loss, bar, "loss")
+    return _close_trade(trade, trade.take_profit, bar, "win")
+
+
+# ------------------------------------------------------------------
+# Partial exit: 50% at 1R, 50% at 2R with SL moved to breakeven
+# ------------------------------------------------------------------
+def _simulate_partial_exit_fast(
+    trade: TradeRecord,
+    bars: list[dict[str, Any]],
+    entry_bar_idx: int,
+    all_highs: np.ndarray,
+    all_lows: np.ndarray,
+) -> TradeRecord:
+    """
+    Simulate partial exit: 50% closes at 1R, remaining 50% has SL moved
+    to breakeven (entry price) and targets the full 2R TP.
+
+    Outcomes:
+    - SL hit before 1R  → full loss (unchanged from normal)
+    - 1R hit, then BE   → blended = 0.5 × 1R pips  (locked profit)
+    - 1R hit, then 2R   → blended = 0.5 × 1R + 0.5 × 2R = 1.5R pips
+    - 1R + 2R same bar  → treated as 1.5R (blew through both levels)
+    """
+    pip_size = PIP_SIZES.get(trade.pair, 0.0001)
+    sl_dist = abs(trade.entry_price - trade.stop_loss)
+    sl_pips = sl_dist / pip_size
+
+    partial_tp = (
+        trade.entry_price + sl_dist
+        if trade.direction == 1
+        else trade.entry_price - sl_dist
+    )
+
+    start = entry_bar_idx + 1
+    if start >= len(bars):
+        return _close_trade(trade, bars[-1]["close"], bars[-1], "timeout")
+
+    highs = all_highs[start:]
+    lows = all_lows[start:]
+    n = len(highs)
+
+    if trade.direction == 1:
+        sl_mask = lows <= trade.stop_loss
+        tp1_mask = highs >= partial_tp
+    else:
+        sl_mask = highs >= trade.stop_loss
+        tp1_mask = lows <= partial_tp
+
+    sl_hits = np.nonzero(sl_mask)[0]
+    tp1_hits = np.nonzero(tp1_mask)[0]
+    first_sl = int(sl_hits[0]) if len(sl_hits) else n
+    first_tp1 = int(tp1_hits[0]) if len(tp1_hits) else n
+
+    # SL hits before 1R — full loss
+    if first_sl < first_tp1:
+        return _close_trade(trade, trade.stop_loss, bars[start + first_sl], "loss")
+    # Same bar: SL and 1R both hit — check bar direction
+    if first_sl == first_tp1 < n and _sl_hit_first(trade, bars[start + first_sl]):
+        return _close_trade(trade, trade.stop_loss, bars[start + first_sl], "loss")
+    # No 1R hit at all — timeout
+    if first_tp1 == n:
+        return _close_trade(trade, bars[-1]["close"], bars[-1], "timeout")
+
+    # Check if 2R was hit on the same candle as 1R (blowthrough)
+    if trade.direction == 1:
+        tp2_same_bar = all_highs[start + first_tp1] >= trade.take_profit
+    else:
+        tp2_same_bar = all_lows[start + first_tp1] <= trade.take_profit
+
+    if tp2_same_bar:
+        blended = 0.5 * sl_pips + 0.5 * (2.0 * sl_pips) - trade.spread_cost_pips
+        exit_bar = bars[start + first_tp1]
+        trade.pnl_pips = blended
+        trade.pnl_usd = blended * 1000.0 * pip_size
+        trade.outcome = "win"
+        trade.exit_price = trade.take_profit
+        trade.exit_time = exit_bar.get("datetime")
+        return trade
+
+    # 1R hit. Phase 2: SL at BE, target 2R.
+    search_start_abs = start + first_tp1 + 1
+    if search_start_abs >= len(bars):
+        blended = 0.5 * sl_pips - trade.spread_cost_pips
+        trade.pnl_pips = blended
+        trade.pnl_usd = blended * 1000.0 * pip_size
+        trade.outcome = "win" if blended > 0 else "loss"
+        trade.exit_price = partial_tp
+        trade.exit_time = bars[start + first_tp1].get("datetime")
+        return trade
+
+    highs2 = all_highs[search_start_abs:]
+    lows2 = all_lows[search_start_abs:]
+    n2 = len(highs2)
+
+    if trade.direction == 1:
+        be_mask = lows2 <= trade.entry_price
+        tp2_mask = highs2 >= trade.take_profit
+    else:
+        be_mask = highs2 >= trade.entry_price
+        tp2_mask = lows2 <= trade.take_profit
+
+    first_be = int(np.nonzero(be_mask)[0][0]) if be_mask.any() else n2
+    first_tp2 = int(np.nonzero(tp2_mask)[0][0]) if tp2_mask.any() else n2
+
+    if first_be <= first_tp2:
+        # BE stop hit — second half closes at entry (0 pips)
+        pnl_second = 0.0
+        idx_abs = search_start_abs + first_be
+        exit_bar = bars[idx_abs] if idx_abs < len(bars) else bars[-1]
+    elif first_tp2 < n2:
+        # 2R TP hit — second half wins
+        pnl_second = 2.0 * sl_pips
+        idx_abs = search_start_abs + first_tp2
+        exit_bar = bars[idx_abs] if idx_abs < len(bars) else bars[-1]
+    else:
+        # Timeout — price stayed above BE, below 2R
+        raw2 = (bars[-1]["close"] - trade.entry_price) * trade.direction
+        pnl_second = max(raw2 / pip_size, 0.0)
+        exit_bar = bars[-1]
+
+    blended = 0.5 * sl_pips + 0.5 * pnl_second - trade.spread_cost_pips
+    trade.pnl_pips = blended
+    trade.pnl_usd = blended * 1000.0 * pip_size
+    trade.outcome = "win" if blended > 0 else "loss"
+    trade.exit_price = partial_tp
+    trade.exit_time = exit_bar.get("datetime")
+    return trade
+
+
+# ------------------------------------------------------------------
+# Trailing partial exit: 50% at 1R, trailing stop (1×SL behind peak)
+# ------------------------------------------------------------------
+def _simulate_trailing_partial_exit_fast(
+    trade: TradeRecord,
+    bars: list[dict[str, Any]],
+    entry_bar_idx: int,
+    all_highs: np.ndarray,
+    all_lows: np.ndarray,
+) -> TradeRecord:
+    """
+    Partial exit: 50% closes at 1R, remaining 50% held with a trailing
+    stop that stays 1×SL-distance behind the running price peak.
+
+    After 1R hit:
+    - Trailing stop initialises at entry (BE)
+    - Advances pip-for-pip as price extends in trade direction
+    - Remaining 50% exits when trailing stop is touched, or at timeout
+    """
+    pip_size = PIP_SIZES.get(trade.pair, 0.0001)
+    sl_dist = abs(trade.entry_price - trade.stop_loss)
+    sl_pips = sl_dist / pip_size
+
+    partial_tp = (
+        trade.entry_price + sl_dist
+        if trade.direction == 1
+        else trade.entry_price - sl_dist
+    )
+
+    start = entry_bar_idx + 1
+    if start >= len(bars):
+        return _close_trade(trade, bars[-1]["close"], bars[-1], "timeout")
+
+    highs = all_highs[start:]
+    lows = all_lows[start:]
+    n = len(highs)
+
+    if trade.direction == 1:
+        sl_mask = lows <= trade.stop_loss
+        tp1_mask = highs >= partial_tp
+    else:
+        sl_mask = highs >= trade.stop_loss
+        tp1_mask = lows <= partial_tp
+
+    sl_hits = np.nonzero(sl_mask)[0]
+    tp1_hits = np.nonzero(tp1_mask)[0]
+    first_sl = int(sl_hits[0]) if len(sl_hits) else n
+    first_tp1 = int(tp1_hits[0]) if len(tp1_hits) else n
+
+    # Full loss before 1R
+    if first_sl < first_tp1:
+        return _close_trade(trade, trade.stop_loss, bars[start + first_sl], "loss")
+    if first_sl == first_tp1 < n and _sl_hit_first(trade, bars[start + first_sl]):
+        return _close_trade(trade, trade.stop_loss, bars[start + first_sl], "loss")
+    # No 1R hit — timeout
+    if first_tp1 == n:
+        return _close_trade(trade, bars[-1]["close"], bars[-1], "timeout")
+
+    # Phase 2: trailing stop on remaining 50%
+    # Peak starts at the high/low of the 1R-hit bar; trailing stop = BE
+    tp1_bar_abs = start + first_tp1
+    if trade.direction == 1:
+        trailing_peak = float(all_highs[tp1_bar_abs])
+    else:
+        trailing_peak = float(all_lows[tp1_bar_abs])
+    trailing_stop = (
+        trailing_peak - sl_dist if trade.direction == 1 else trailing_peak + sl_dist
+    )
+
+    pnl_second = 0.0
+    exit_bar = bars[tp1_bar_abs]
+
+    for i in range(tp1_bar_abs + 1, len(bars)):
+        h = float(all_highs[i])
+        lv = float(all_lows[i])
         bar = bars[i]
-        hit_sl, hit_tp = _check_sl_tp_hit(trade, bar)
 
-        if hit_sl and hit_tp:
-            # Both hit — use bar direction to decide which was hit first
-            if _sl_hit_first(trade, bar):
-                return _close_trade(trade, trade.stop_loss, bar, "loss")
-            return _close_trade(trade, trade.take_profit, bar, "win")
-        if hit_sl:
-            return _close_trade(trade, trade.stop_loss, bar, "loss")
-        if hit_tp:
-            return _close_trade(trade, trade.take_profit, bar, "win")
+        if trade.direction == 1:
+            if h > trailing_peak:
+                trailing_peak = h
+                trailing_stop = trailing_peak - sl_dist
+            if lv <= trailing_stop:
+                pnl_second = (trailing_stop - trade.entry_price) / pip_size
+                exit_bar = bar
+                break
+        else:
+            if lv < trailing_peak:
+                trailing_peak = lv
+                trailing_stop = trailing_peak + sl_dist
+            if h >= trailing_stop:
+                pnl_second = (trade.entry_price - trailing_stop) / pip_size
+                exit_bar = bar
+                break
+    else:
+        last_close = bars[-1]["close"]
+        if trade.direction == 1:
+            pnl_second = max((last_close - trade.entry_price) / pip_size, 0.0)
+        else:
+            pnl_second = max((trade.entry_price - last_close) / pip_size, 0.0)
+        exit_bar = bars[-1]
 
-    # No exit triggered — close at last bar
-    return _close_trade(trade, bars[-1]["close"], bars[-1], "timeout")
+    blended = 0.5 * sl_pips + 0.5 * pnl_second - trade.spread_cost_pips
+    trade.pnl_pips = blended
+    trade.pnl_usd = blended * 1000.0 * pip_size
+    trade.outcome = "win" if blended > 0 else "loss"
+    trade.exit_price = partial_tp
+    trade.exit_time = exit_bar.get("datetime")
+    return trade
 
 
 # ------------------------------------------------------------------
@@ -292,45 +618,69 @@ def _close_trade(
 def _group_bars_by_session(
     m1_bars: list[dict[str, Any]],
     m5_bars: list[dict[str, Any]],
+    session_spec: SessionSpec | None = None,
 ) -> list[dict[str, Any]]:
     """
     Group M1 and M5 bars into per-day trading sessions.
 
     Returns a list of session dicts, each containing:
-    - 'date': the ET trading date
+    - 'date': the trading date (in the session timezone)
     - 'm5_pre': M5 bars from before session start (last 6)
+    - 'm1_pre': M1 bars from before session start (last 30, for ATR baseline)
     - 'm1_indices': indices into m1_bars for session-window bars
+
+    Parameters
+    ----------
+    session_spec : SessionSpec | None
+        Per-pair session window. Falls back to NYSE 9:30-10:30 ET when None.
     """
-    et_tz = ZoneInfo("America/New_York")
+    if session_spec is None:
+        sess_tz_name = "America/New_York"
+        sess_start_h = SESSION_START_HOUR
+        sess_start_m = SESSION_START_MINUTE
+        sess_end_h = SESSION_END_HOUR
+        sess_end_m = SESSION_END_MINUTE
+    else:
+        sess_tz_name = session_spec.tz_name
+        sess_start_h = session_spec.start_hour
+        sess_start_m = session_spec.start_minute
+        sess_end_h = session_spec.end_hour
+        sess_end_m = session_spec.end_minute
+
+    sess_tz = ZoneInfo(sess_tz_name)
 
     m5_by_date: dict[date, list[dict[str, Any]]] = defaultdict(list)
     for bar in m5_bars:
         dt_val = bar["datetime"]
         if dt_val.tzinfo is None:
             dt_val = dt_val.replace(tzinfo=ZoneInfo("UTC"))
-        et_dt = dt_val.astimezone(et_tz)
-        m5_by_date[et_dt.date()].append(bar)
+        local_dt = dt_val.astimezone(sess_tz)
+        m5_by_date[local_dt.date()].append(bar)
 
+    # Collect pre-session and in-session M1 bars by date
+    m1_pre_by_date: dict[date, list[int]] = defaultdict(list)
     session_indices: dict[date, list[int]] = defaultdict(list)
     for idx, bar in enumerate(m1_bars):
         dt_val = bar["datetime"]
         if dt_val.tzinfo is None:
             dt_val = dt_val.replace(tzinfo=ZoneInfo("UTC"))
-        et_dt = dt_val.astimezone(et_tz)
-        sess_start = et_dt.replace(
-            hour=SESSION_START_HOUR,
-            minute=SESSION_START_MINUTE,
+        local_dt = dt_val.astimezone(sess_tz)
+        sess_start = local_dt.replace(
+            hour=sess_start_h,
+            minute=sess_start_m,
             second=0,
             microsecond=0,
         )
-        sess_end = et_dt.replace(
-            hour=SESSION_END_HOUR,
-            minute=SESSION_END_MINUTE,
+        sess_end = local_dt.replace(
+            hour=sess_end_h,
+            minute=sess_end_m,
             second=0,
             microsecond=0,
         )
-        if sess_start <= et_dt <= sess_end:
-            session_indices[et_dt.date()].append(idx)
+        if sess_start <= local_dt <= sess_end:
+            session_indices[local_dt.date()].append(idx)
+        elif local_dt < sess_start:
+            m1_pre_by_date[local_dt.date()].append(idx)
 
     result: list[dict[str, Any]] = []
     for day in sorted(session_indices.keys()):
@@ -339,18 +689,22 @@ def _group_bars_by_session(
             day.year,
             day.month,
             day.day,
-            SESSION_START_HOUR,
-            SESSION_START_MINUTE,
-            tzinfo=et_tz,
+            sess_start_h,
+            sess_start_m,
+            tzinfo=sess_tz,
         )
-        pre_m5 = [b for b in day_m5 if b["datetime"].astimezone(et_tz) < sess_start_dt][
-            -6:
-        ]
+        pre_m5 = [
+            b for b in day_m5 if b["datetime"].astimezone(sess_tz) < sess_start_dt
+        ][-6:]
+        # Last 30 pre-session M1 bars — used as ATR baseline for gap detection
+        pre_m1_indices = m1_pre_by_date.get(day, [])[-30:]
+        pre_m1 = [m1_bars[i] for i in pre_m1_indices]
 
         result.append(
             {
                 "date": day,
                 "m5_pre": pre_m5,
+                "m1_pre": pre_m1,
                 "m1_indices": session_indices[day],
             }
         )
@@ -369,25 +723,149 @@ async def _fetch_pair_trades(
     end_dt: datetime,
     cache: Any = None,
 ) -> list[TradeRecord]:
-    """Fetch historical M1 and M5 bars for a pair and run backtest."""
+    """Fetch historical bars for a pair and run backtest.
+
+    Requests are strictly sequential (entry TF first, then FCR TF) — IB's historical
+    data pacing rejects concurrent requests with error 162 regardless of
+    semaphore depth.  The rolling cache makes subsequent runs near-instant.
+    """
+    # Resolve alias: e.g. EURUSD_LC → EURUSD for IB data fetch (reuses cached bars)
+    data_pair = config.trading.pair_aliases.get(pair, pair)
+    entry_tf = config.trading.entry_timeframe
+    fcr_tf = config.trading.fcr_timeframe
     logger.info(f"ALPHAEDGE backtesting: {pair} ({start_dt.date()} → {end_dt.date()})")
-    m1_bars = await hist_feed.fetch_bars_chunked(
-        pair=pair,
-        timeframe="1 min",
+    entry_bars = await hist_feed.fetch_bars_chunked(
+        pair=data_pair,
+        timeframe=entry_tf,
         start_dt=start_dt,
         end_dt=end_dt,
         cache=cache,
     )
-    m5_bars = await hist_feed.fetch_bars_chunked(
-        pair=pair,
-        timeframe=TF_M5,
+    fcr_bars = await hist_feed.fetch_bars_chunked(
+        pair=data_pair,
+        timeframe=fcr_tf,
         start_dt=start_dt,
         end_dt=end_dt,
         cache=cache,
     )
-    if not m1_bars:
+    if not entry_bars:
         return []
-    return _backtest_pair(pair, m1_bars, m5_bars, config)
+    # Per-pair parameter overrides (fall back to global config values)
+    pair_min_range = config.trading.min_range_pips_by_pair.get(
+        pair, config.trading.min_range_pips
+    )
+    pair_min_volume = config.trading.min_volume_ratio_by_pair.get(
+        pair, DEFAULT_MIN_VOLUME_RATIO
+    )
+    return _backtest_pair(
+        pair,
+        entry_bars,
+        fcr_bars,
+        config,
+        min_atr_ratio=config.trading.min_atr_ratio,
+        min_range_pips=pair_min_range,
+        min_volume_ratio=pair_min_volume,
+        session_spec=config.trading.pair_sessions.get(pair),
+    )
+
+
+def _apply_usd_correlation_filter(
+    trades: list[TradeRecord],
+) -> list[TradeRecord]:
+    """Block trades that amplify USD directional exposure within the same session.
+
+    USD direction encoding:
+    - EURUSD (USD is quote): long trade → USD short (-1), short trade → USD long (+1)
+    - USDJPY (USD is base): long trade → USD long (+1), short trade → USD short (-1)
+
+    If two trades in the same session have the same net USD direction, the
+    second (later entry) is dropped.  Opposite-direction trades (hedge) are
+    both kept.
+    """
+    _usd_base_pairs = {"USDJPY", "USDCHF", "USDCAD", "USDMXN"}
+
+    def _usd_dir(t: TradeRecord) -> int:
+        if t.pair in _usd_base_pairs:
+            return t.direction  # long USDJPY = USD long
+        return -t.direction  # long EURUSD = USD short
+
+    et_tz = ZoneInfo("America/New_York")
+    sessions: defaultdict[date, list[TradeRecord]] = defaultdict(list)
+    for t in trades:
+        dt = t.entry_time
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+        sessions[dt.astimezone(et_tz).date()].append(t)
+
+    filtered: list[TradeRecord] = []
+    blocked = 0
+    for day in sorted(sessions):
+        net_usd = 0
+        for t in sorted(sessions[day], key=lambda x: x.entry_time):
+            d = _usd_dir(t)
+            if net_usd != 0 and d == net_usd:
+                blocked += 1
+                continue
+            net_usd += d
+            filtered.append(t)
+
+    if blocked > 0:
+        logger.info(
+            f"ALPHAEDGE: USD correlation filter blocked {blocked} trade(s) "
+            f"(same-direction USD amplification)"
+        )
+    return filtered
+
+
+def _apply_global_session_limit(
+    trades: list[TradeRecord],
+    max_trades_per_session: int,
+    pair_priority: list[str] | None = None,
+) -> list[TradeRecord]:
+    """Enforce global max trades per session across all pairs.
+
+    Groups trades by NYSE session date and keeps only the first
+    *max_trades_per_session* trades per session, ordered by:
+    1. Pair priority rank (index in *pair_priority*, lower = higher priority)
+    2. Entry time within the session (earlier = higher priority)
+
+    This ensures that higher-priority pairs (e.g. EURUSD) always get their
+    slot before lower-priority pairs on the same day, instead of losing out
+    due to a later entry time.
+    """
+    if max_trades_per_session <= 0:
+        return trades
+    et_tz = ZoneInfo("America/New_York")
+    priority_map: dict[str, int] = (
+        {pair: idx for idx, pair in enumerate(pair_priority)} if pair_priority else {}
+    )
+    n_pairs = len(priority_map) if priority_map else 0
+
+    def _sort_key(t: TradeRecord) -> tuple[int, datetime]:
+        rank = priority_map.get(t.pair, n_pairs)  # unknown pairs go last
+        return (rank, t.entry_time)
+
+    # Group by session date
+    sessions: defaultdict[date, list[TradeRecord]] = defaultdict(list)
+    for trade in trades:
+        dt = trade.entry_time
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+        session_date = dt.astimezone(et_tz).date()
+        sessions[session_date].append(trade)
+
+    filtered: list[TradeRecord] = []
+    for day in sorted(sessions):
+        day_trades = sorted(sessions[day], key=_sort_key)
+        filtered.extend(day_trades[:max_trades_per_session])
+
+    dropped = len(trades) - len(filtered)
+    if dropped > 0:
+        logger.info(
+            f"ALPHAEDGE: Global session limit ({max_trades_per_session}/session) "
+            f"dropped {dropped} trade(s) across all pairs"
+        )
+    return filtered
 
 
 async def run_backtest(config: AppConfig) -> BacktestStats:
@@ -422,26 +900,52 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
 
     for idx, pair in enumerate(pairs, 1):
         logger.info(f"ALPHAEDGE [{idx}/{len(pairs)}] Starting {pair}...")
-        trades = await _fetch_pair_trades(
-            hist_feed, pair, config, start_dt, end_dt, cache
-        )
-        all_trades.extend(trades)
-        logger.info(
-            f"ALPHAEDGE [{idx}/{len(pairs)}] {pair} done — {len(trades)} trades"
-        )
+        try:
+            trades = await _fetch_pair_trades(
+                hist_feed, pair, config, start_dt, end_dt, cache
+            )
+            all_trades.extend(trades)
+            logger.info(
+                f"ALPHAEDGE [{idx}/{len(pairs)}] {pair} done "
+                f"\u2014 {len(trades)} trades"
+            )
+        except Exception:
+            logger.exception(
+                f"ALPHAEDGE [{idx}/{len(pairs)}] {pair} SKIPPED — fetch failed"
+            )
 
     await broker.disconnect()
 
     eur_usd_rate = config.trading.eur_usd_rate
     starting_equity = config.trading.starting_equity
 
+    # USD correlation filter: drop trades that double USD directional exposure
+    if config.trading.usd_correlation_filter:
+        all_trades = _apply_usd_correlation_filter(all_trades)
+
+    # Enforce global max trades per session across all pairs (priority-ordered)
+    all_trades = _apply_global_session_limit(
+        all_trades,
+        config.trading.max_trades_per_session,
+        pair_priority=config.trading.pairs,
+    )
+
+    # Apply compound fixed-fraction equity sizing before stats
+    _apply_equity_sizing(
+        all_trades,
+        starting_equity,
+        config.trading.risk_pct,
+        max_lot_size=config.trading.max_lot_size,
+    )
+
     # Overall stats
     stats = compute_stats(all_trades, eur_usd_rate, starting_equity)
     export_results_csv(all_trades, stats, eur_usd_rate=eur_usd_rate)
     plot_equity_curve(all_trades, starting_equity=starting_equity)
     _log_stats_summary(stats, eur_usd_rate, starting_equity)
+    _log_per_pair_report(all_trades, eur_usd_rate)
     _validate_with_vectorbt(
-        all_trades, manual_sharpe=stats.sharpe_ratio, starting_equity=starting_equity
+        all_trades, manual_sharpe=stats.sharpe_equity, starting_equity=starting_equity
     )
 
     # IS/OOS split report
@@ -450,6 +954,9 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
             all_trades, eur_usd_rate=eur_usd_rate, starting_equity=starting_equity
         )
         _log_split_report(report, eur_usd_rate)
+
+    # Rich table — printed last so it's the final thing visible in the terminal
+    print_rich_summary(all_trades, stats, starting_equity, eur_usd_rate)
 
     return stats
 
@@ -464,6 +971,7 @@ def _detect_signal_at_bar(
     config: AppConfig,
     eng_mod: Any,
     fcr_result: dict[str, Any],
+    min_volume_ratio: float = DEFAULT_MIN_VOLUME_RATIO,
 ) -> dict[str, Any] | None:
     """
     Detect engulfing signal at a session bar using pre-calculated FCR.
@@ -480,7 +988,7 @@ def _detect_signal_at_bar(
         rr_ratio=config.trading.rr_ratio,
         pip_size=pip_size,
         volume_period=DEFAULT_VOLUME_PERIOD,
-        min_volume_ratio=DEFAULT_MIN_VOLUME_RATIO,
+        min_volume_ratio=min_volume_ratio,
         min_body_ratio=config.trading.min_body_ratio,
         max_wick_ratio=config.trading.max_wick_ratio,
     )
@@ -494,10 +1002,16 @@ def _build_trade_record(
     signal: dict[str, Any],
     bars: list[dict[str, Any]],
     bar_index: int,
+    _all_highs: np.ndarray | None = None,
+    _all_lows: np.ndarray | None = None,
+    partial_exit: bool = False,
+    trailing_partial_exit: bool = False,
 ) -> TradeRecord:
     """Create a TradeRecord from a detected signal and simulate exit."""
     bar_time = bars[bar_index].get("datetime")
     spread_cost = compute_variable_slippage(bar_time, pair=pair)
+    pip_size = PIP_SIZES.get(pair, 0.0001)
+    sl_pips = abs(signal["entry_price"] - signal["stop_loss"]) / pip_size
     trade = TradeRecord(
         pair=pair,
         direction=signal["signal"],
@@ -506,7 +1020,18 @@ def _build_trade_record(
         take_profit=signal["take_profit"],
         entry_time=bar_time if bar_time is not None else datetime.now(),
         spread_cost_pips=spread_cost,
+        sl_pips=sl_pips,
     )
+    if _all_highs is not None and _all_lows is not None:
+        if trailing_partial_exit:
+            return _simulate_trailing_partial_exit_fast(
+                trade, bars, bar_index, _all_highs, _all_lows
+            )
+        if partial_exit:
+            return _simulate_partial_exit_fast(
+                trade, bars, bar_index, _all_highs, _all_lows
+            )
+        return _simulate_trade_exit_fast(trade, bars, bar_index, _all_highs, _all_lows)
     return _simulate_trade_exit(trade, bars, bar_index)
 
 
@@ -516,6 +1041,12 @@ def _backtest_pair(
     m5_bars: list[dict[str, Any]],
     config: AppConfig,
     news_filter: EconomicNewsFilter | None = None,
+    *,
+    min_atr_ratio: float = DEFAULT_MIN_ATR_RATIO,
+    min_range_pips: float = DEFAULT_MIN_RANGE_PIPS,
+    min_volume_ratio: float = DEFAULT_MIN_VOLUME_RATIO,
+    min_sl_pips: float = 0.0,
+    session_spec: SessionSpec | None = None,
 ) -> list[TradeRecord]:
     """
     Run the strategy logic on historical bars for one pair.
@@ -536,35 +1067,60 @@ def _backtest_pair(
         logger.warning(f"ALPHAEDGE: Cython not compiled — skipping backtest for {pair}")
         return trades
 
-    sessions = _group_bars_by_session(m1_bars, m5_bars)
+    sessions = _group_bars_by_session(m1_bars, m5_bars, session_spec=session_spec)
 
+    # Pre-build bar arrays once — amortises per-trade dict extraction across all trades
+    _m1_highs = np.array([b["high"] for b in m1_bars], dtype=np.float64)
+    _m1_lows = np.array([b["low"] for b in m1_bars], dtype=np.float64)
+
+    excluded_days = set(config.trading.excluded_days)
     for session in sessions:
+        if excluded_days and session["date"].weekday() in excluded_days:
+            continue
         m5_pre = session["m5_pre"]
+        m1_pre = session["m1_pre"]
         m1_idx = session["m1_indices"]
 
         if len(m5_pre) < 2 or len(m1_idx) < 4:
             continue
 
         # Step 1: FCR detection on pre-session M5 bars (once per session)
+        # Optional CV quality filter: skip noisy/irregular ranges
+        cv_max = config.trading.fcr_range_cv_max
+        if cv_max > 0.0 and len(m5_pre) >= 2:
+            bar_ranges = [
+                b["high"] - b["low"] for b in m5_pre if b["high"] - b["low"] > 0
+            ]
+            if bar_ranges:
+                mu = sum(bar_ranges) / len(bar_ranges)
+                if mu > 0:
+                    sigma = (
+                        sum((r - mu) ** 2 for r in bar_ranges) / len(bar_ranges)
+                    ) ** 0.5
+                    cv = sigma / mu
+                    if cv > cv_max:
+                        continue
+
         fcr_result = fcr_detector.detect_fcr(
             candles_data=m5_pre,
-            min_range_pips=DEFAULT_MIN_RANGE_PIPS,
+            min_range_pips=min_range_pips,
             pip_size=pip_size,
         )
         if not fcr_result:
             continue
 
         # Step 2: Gap/ATR detection on first 3 session M1 bars (once)
+        # Baseline uses pre-session M1 bars (same timeframe scale)
         first_3_m1 = [m1_bars[i] for i in m1_idx[:3]]
         pre_close = m5_pre[-1]["close"]
         session_open = m1_bars[m1_idx[0]]["open"]
         gap_result = gap_detector.detect_gap(
-            pre_session_m1=m5_pre,
+            pre_session_m1=m1_pre,
             session_m1=first_3_m1,
             pre_close=pre_close,
             session_open=session_open,
             atr_period=DEFAULT_ATR_PERIOD,
-            min_atr_ratio=DEFAULT_MIN_ATR_RATIO,
+            min_atr_ratio=min_atr_ratio,
         )
         if not gap_result or not gap_result.get("detected"):
             continue
@@ -584,11 +1140,30 @@ def _backtest_pair(
                 config,
                 engulfing_detector,
                 fcr_result,
+                min_volume_ratio=min_volume_ratio,
             )
             if not signal:
                 continue
+            # Reject signals where SL is too small — spread becomes too large
+            # a fraction of 1R, destroying the edge in USD terms
+            if min_sl_pips > 0.0 and (
+                abs(signal["entry_price"] - signal["stop_loss"]) / pip_size
+                < min_sl_pips
+            ):
+                continue
             global_idx = m1_idx[local_i]
-            trades.append(_build_trade_record(pair, signal, m1_bars, global_idx))
+            trades.append(
+                _build_trade_record(
+                    pair,
+                    signal,
+                    m1_bars,
+                    global_idx,
+                    _m1_highs,
+                    _m1_lows,
+                    partial_exit=config.trading.partial_exit,
+                    trailing_partial_exit=config.trading.trailing_partial_exit,
+                )
+            )
 
     return trades
 
@@ -626,13 +1201,13 @@ def _validate_with_vectorbt(
             pct_returns.append(0.0)
         equity += t.pnl_usd
 
-    return_series = pd.Series(pct_returns)
-    vbt_accessor = getattr(return_series, "vbt")  # vectorbt accessor
-    vbt_sharpe: float = vbt_accessor.returns.sharpe_ratio()
+    arr = np.array(pct_returns)
+    std = float(arr.std(ddof=1))
+    vbt_sharpe: float = float(arr.mean() / std * np.sqrt(252)) if std > 0.0 else 0.0
 
     logger.info(
-        f"ALPHAEDGE vectorbt validation — "
-        f"Sharpe (vbt): {vbt_sharpe:.2f}, "
+        f"ALPHAEDGE cross-validation — "
+        f"Sharpe (numpy annualised): {vbt_sharpe:.2f}, "
         f"Sharpe (manual): {manual_sharpe:.2f}, "
         f"Total PnL: {sum(t.pnl_pips for t in trades):.1f} pips"
     )
@@ -643,7 +1218,7 @@ def _validate_with_vectorbt(
         if divergence > 5.0:
             logger.warning(
                 f"ALPHAEDGE: Sharpe divergence {divergence:.1f}% "
-                f"(vbt={vbt_sharpe:.2f} vs manual={manual_sharpe:.2f})"
+                f"(numpy={vbt_sharpe:.2f} vs manual={manual_sharpe:.2f})"
             )
 
 
@@ -707,6 +1282,10 @@ def _generate_random_trades(
     # Avoid entries near the end of data (need room for exit)
     max_entry_idx = len(m1_bars) - 10
 
+    # Pre-build bar arrays once for vectorized exit simulation
+    _all_highs = np.array([b["high"] for b in m1_bars], dtype=np.float64)
+    _all_lows = np.array([b["low"] for b in m1_bars], dtype=np.float64)
+
     for _ in range(n_trades):
         bar_idx = rng.randint(5, max_entry_idx)
         direction = rng.choice([1, -1])
@@ -730,7 +1309,9 @@ def _generate_random_trades(
             entry_time=bar_time if bar_time is not None else datetime.now(),
             spread_cost_pips=spread_cost,
         )
-        trade = _simulate_trade_exit(trade, m1_bars, bar_idx)
+        trade = _simulate_trade_exit_fast(
+            trade, m1_bars, bar_idx, _all_highs, _all_lows
+        )
         trades.append(trade)
 
     return trades

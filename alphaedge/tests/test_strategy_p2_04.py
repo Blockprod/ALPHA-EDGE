@@ -82,6 +82,7 @@ def _make_strategy(pairs: list[str] | None = None) -> FCRStrategy:
     strat._news_filter = MagicMock()
     strat._news_filter.is_news_blackout.return_value = False
     strat._trade_lock = __import__("asyncio").Lock()
+    strat._global_trades_today = 0
     strat._correlation_matrix = {}
     strat._signal_pipeline = SignalPipeline()
     strat._position_manager = PositionManager()

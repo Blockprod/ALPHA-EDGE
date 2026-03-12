@@ -107,29 +107,15 @@ class TestValidateWithVectorbt:
         assert "starting_equity" in sig.parameters
 
     def test_divergence_warning_logged(self) -> None:
-        """When vbt and manual Sharpe diverge >5%, a warning is logged."""
-        trades = [_make_trade(10.0, 100.0)]
-
-        class FakeVbt:
-            class Returns:
-                @staticmethod
-                def sharpe_ratio() -> float:
-                    return 2.0  # 100% divergence from manual=1.0
-
-            @property
-            def returns(self) -> type:
-                return FakeVbt.Returns
-
-        with (
-            patch.object(
-                pd.Series,
-                "vbt",
-                create=True,
-                new_callable=lambda: property(lambda self: FakeVbt()),
-            ),
-            patch("alphaedge.engine.backtest.logger") as mock_logger,
-        ):
-            _validate_with_vectorbt(trades, manual_sharpe=1.0)
+        """When cross-validation and manual Sharpe diverge >5%, a warning is logged."""
+        trades = [
+            _make_trade(10.0, 100.0),
+            _make_trade(-5.0, -50.0),
+            _make_trade(8.0, 80.0),
+        ]
+        # manual_sharpe far from the actual numpy Sharpe → forces >5% divergence
+        with patch("alphaedge.engine.backtest.logger") as mock_logger:
+            _validate_with_vectorbt(trades, manual_sharpe=100.0)
 
         # Should have called warning about divergence
         warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
@@ -137,28 +123,26 @@ class TestValidateWithVectorbt:
 
     def test_no_warning_when_sharpes_close(self) -> None:
         """When Sharpes are within 5%, no warning should fire."""
-        trades = [_make_trade(10.0, 100.0)]
+        import numpy as np
 
-        class FakeVbt:
-            class Returns:
-                @staticmethod
-                def sharpe_ratio() -> float:
-                    return 1.02  # ~2% divergence from manual=1.0
+        trades = [
+            _make_trade(10.0, 100.0),
+            _make_trade(-5.0, -50.0),
+            _make_trade(8.0, 80.0),
+        ]
+        # Pre-compute the exact numpy Sharpe that the function will produce
+        equity = 10000.0
+        pct: list[float] = []
+        for t in trades:
+            pct.append(t.pnl_usd / equity)
+            equity += t.pnl_usd
+        arr = np.array(pct)
+        std = float(arr.std(ddof=1))
+        expected_sharpe = float(arr.mean() / std * np.sqrt(252)) if std > 0.0 else 0.0
 
-            @property
-            def returns(self) -> type:
-                return FakeVbt.Returns
-
-        with (
-            patch.object(
-                pd.Series,
-                "vbt",
-                create=True,
-                new_callable=lambda: property(lambda self: FakeVbt()),
-            ),
-            patch("alphaedge.engine.backtest.logger") as mock_logger,
-        ):
-            _validate_with_vectorbt(trades, manual_sharpe=1.0)
+        with patch("alphaedge.engine.backtest.logger") as mock_logger:
+            # Pass the exact computed Sharpe → 0% divergence → no warning
+            _validate_with_vectorbt(trades, manual_sharpe=expected_sharpe)
 
         # No warning should have been called
         warning_calls = [str(c) for c in mock_logger.warning.call_args_list]

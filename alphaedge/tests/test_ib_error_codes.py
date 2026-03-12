@@ -52,12 +52,12 @@ def log_capture() -> Generator[io.StringIO, None, None]:
 class TestIBErrorCodePacing:
     """Code 162 — historical data pacing violation."""
 
-    def test_code_162_logs_warning(self, log_capture: io.StringIO) -> None:
+    def test_code_162_logs_debug(self, log_capture: io.StringIO) -> None:
         broker = _build_broker()
         broker._on_ib_error(1, 162, "pacing violation", None)
         output = log_capture.getvalue()
-        assert "PACING" in output
-        assert "WARNING" in output
+        assert "162" in output
+        assert "DEBUG" in output
 
     def test_code_162_injects_throttler_penalty(self) -> None:
         broker = _build_broker()

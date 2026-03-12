@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import matplotlib
@@ -33,7 +34,7 @@ logger = get_logger()
 def export_results_csv(
     trades: list[TradeRecord],
     stats: BacktestStats,
-    output_path: str = "ALPHAEDGE_backtest_results.csv",
+    output_path: str = "reports/ALPHAEDGE_backtest_results.csv",
     eur_usd_rate: float = 1.08,
 ) -> None:
     """
@@ -69,6 +70,7 @@ def export_results_csv(
         )
 
     df = pd.DataFrame(rows)
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     df.to_csv(output_path, index=False)
     logger.info(f"ALPHAEDGE backtest results exported to {output_path}")
 
@@ -78,7 +80,7 @@ def export_results_csv(
 # ------------------------------------------------------------------
 def plot_equity_curve(
     trades: list[TradeRecord],
-    output_path: str = "ALPHAEDGE_equity_curve.png",
+    output_path: str = "reports/ALPHAEDGE_equity_curve.png",
     starting_equity: float = 10000.0,
 ) -> None:
     """
@@ -113,6 +115,7 @@ def plot_equity_curve(
     ax.set_ylabel("Equity ($)")
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
     logger.info(f"ALPHAEDGE equity curve saved to {output_path}")

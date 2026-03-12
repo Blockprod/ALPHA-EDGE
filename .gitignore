@@ -34,7 +34,13 @@ dist/
 
 # --- Logs ---
 alphaedge/logs/*.log
+alphaedge/logs/*.txt
 backtest_run.log
+
+# --- Sweep outputs ---
+scripts/sweep_*.txt
+scripts/targeted_sweep.txt
+docs/ALPHAEDGE_ACTION_PLAN.md
 
 # --- Bar cache (avoid committing large IB data files) ---
 alphaedge/cache/
@@ -53,11 +59,13 @@ pylint_output*.txt
 ruff_output*.txt
 
 # --- Output Files ---
-ALPHAEDGE_backtest_results.csv
-ALPHAEDGE_equity_curve.png
-ALPHAEDGE_coverage_report*/
-ALPHAEDGE_coverage_report.html
+reports/ALPHAEDGE_backtest_results.csv
+reports/ALPHAEDGE_equity_curve.png
+reports/ALPHAEDGE_coverage_report*/
+reports/ALPHAEDGE_coverage_report.html
 htmlcov/
+reports/backtest_result.txt
+reports/backtest_run.log
 .coverage
 
 # --- OS ---

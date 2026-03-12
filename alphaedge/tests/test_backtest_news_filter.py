@@ -95,6 +95,7 @@ class TestNewsFilterInBacktest:
         bars = _make_bars(15)
         fake_session = {
             "m5_pre": bars[:5],
+            "m1_pre": bars[:5],
             "m1_indices": list(range(5, 15)),
         }
 

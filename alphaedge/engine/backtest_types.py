@@ -37,6 +37,7 @@ class TradeRecord:
     pnl_usd: float = 0.0
     outcome: str = ""  # 'win', 'loss', 'breakeven'
     spread_cost_pips: float = 0.0
+    sl_pips: float = 0.0  # SL distance in pips (set at entry, used for equity sizing)
     sample_type: str = ""  # 'IS', 'OOS', or ''
 
 
@@ -54,7 +55,8 @@ class BacktestStats:
     winrate: float = 0.0
     profit_factor: float = 0.0
     max_drawdown_pct: float = 0.0
-    sharpe_ratio: float = 0.0
+    sharpe_ratio: float = 0.0  # signal quality: annualised Sharpe on raw pips
+    sharpe_equity: float = 0.0  # real Sharpe: annualised Sharpe on equity % returns
     total_pnl_pips: float = 0.0
     total_pnl_usd: float = 0.0
     total_pnl_eur: float = 0.0

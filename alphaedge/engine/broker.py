@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 import time
 from typing import Any
@@ -144,6 +145,9 @@ class BrokerConnection:
             self._consecutive_failures = 0
             self._ib.errorEvent += self._on_ib_error
             self._ib.disconnectedEvent += self._on_disconnect
+            # Silence ib_insync's own console output (Timeout /
+            # Error 162 lines) — our _on_ib_error handler takes over.
+            logging.getLogger("ib_insync").setLevel(logging.CRITICAL)
             logger.info(
                 f"ALPHAEDGE connected to IB Gateway "
                 f"{self._config.host}:{self._config.port} "
@@ -206,10 +210,17 @@ class BrokerConnection:
         contract: Any,
     ) -> None:
         """Handle IB error events with appropriate severity logging."""
+        # Informational status codes — not errors, suppress or debug only
+        # 2100-2119: data farm connectivity (HMDS, HFARM, SFARM, etc.)
+        # 2176: Pacing restriction lifted
+        if 2100 <= errorCode <= 2176:
+            logger.debug(f"ALPHAEDGE IB info {errorCode}: {errorString}")
+            return
+
         if errorCode == 162:
-            logger.warning(
-                f"ALPHAEDGE IB PACING: Historical data pacing violation — {errorString}"
-            )
+            # After a request timeout, IB sends error 162 as a server-side
+            # cancellation acknowledgement.  Log at DEBUG to avoid noise.
+            logger.debug(f"ALPHAEDGE IB 162 (cancelled/pacing): {errorString}")
             self._throttler.penalise()
         elif errorCode == 200:
             logger.error(f"ALPHAEDGE IB: No security definition — {errorString}")
@@ -295,6 +306,43 @@ class OrderExecutor:
             trades.append(trade)
         return trades
 
+    def _check_margin(
+        self,
+        quantity: int,
+        entry_price: float,
+        leverage_estimate: float = 50.0,
+    ) -> bool:
+        """Return True if available margin is sufficient for this trade.
+
+        Uses a conservative estimate: nominal_value / leverage * 1.2 safety factor.
+        Returns True on any failure (fail-open) to avoid blocking paper trading.
+        """
+        try:
+            account_values = self._broker.ib.accountSummary()
+            available_funds = 0.0
+            for av in account_values:
+                if av.tag == "AvailableFunds":
+                    available_funds = float(av.value)
+                    break
+            if available_funds <= 0.0:
+                logger.warning(
+                    "ALPHAEDGE: AvailableFunds not found in account summary — "
+                    "margin check skipped"
+                )
+                return True
+            required = (quantity * entry_price / leverage_estimate) * 1.2
+            if available_funds < required:
+                logger.warning(
+                    f"ALPHAEDGE: Insufficient margin — "
+                    f"available={available_funds:.2f} < required≈{required:.2f} "
+                    f"— trade SKIPPED"
+                )
+                return False
+            return True
+        except Exception:
+            logger.exception("ALPHAEDGE margin check failed — allowing trade")
+            return True
+
     async def place_bracket_order(
         self,
         pair: str,
@@ -307,6 +355,9 @@ class OrderExecutor:
         """Place a bracket order (entry + SL + TP) via IB Gateway."""
         self._broker._ensure_connected()
         await self._throttler.acquire()
+
+        if not self._check_margin(quantity, entry_price):
+            return []
 
         try:
             contract = build_forex_contract(pair)

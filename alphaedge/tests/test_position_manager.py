@@ -50,6 +50,7 @@ def _make_config(
     cfg.trading.lot_type = lot_type
     cfg.trading.max_spread_pips = max_spread_pips
     cfg.trading.rr_ratio = rr_ratio
+    cfg.trading.max_lot_size = 1.0
     return cfg
 
 

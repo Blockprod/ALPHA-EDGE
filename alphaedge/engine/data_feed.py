@@ -21,6 +21,7 @@ from ib_insync import BarData, Contract
 
 from alphaedge.config.constants import (
     IB_HIST_TIMEOUT_SECONDS,
+    IB_MAX_CONCURRENT_HIST_REQUESTS,
     TF_M1,
     TF_M5,
 )
@@ -38,11 +39,15 @@ _CACHE_DIR = Path("alphaedge/cache")
 # ------------------------------------------------------------------
 class BarDiskCache:
     """
-    Simple file-backed cache for historical bar data.
+    Rolling file-backed cache for historical bar data.
 
-    Each (pair, timeframe, start_date, end_date) combination is stored
-    as a pickle file under ``alphaedge/cache/``.  A cache hit makes
-    ``fetch_bars_chunked`` return instantly on reruns.
+    One ``.pkl`` file per ``(pair, timeframe)`` stores the full sorted bar
+    history.  On each run, only the gap between the newest cached bar and
+    ``end_dt`` is fetched from IB — typically one or two chunks, regardless
+    of the backtest window length.
+
+    First run: full download (~1 h for 3 years)
+    Subsequent runs: only today's new bars (~seconds)
     """
 
     def __init__(self, cache_dir: Path = _CACHE_DIR) -> None:
@@ -50,32 +55,21 @@ class BarDiskCache:
         self._dir = cache_dir
         self._dir.mkdir(parents=True, exist_ok=True)
 
-    def _path(
-        self, pair: str, timeframe: str, start_dt: datetime, end_dt: datetime
-    ) -> Path:
+    def _path(self, pair: str, timeframe: str) -> Path:
         tf_safe = timeframe.replace(" ", "_")
-        return self._dir / f"{pair}_{tf_safe}_{start_dt.date()}_{end_dt.date()}.pkl"
+        return self._dir / f"{pair}_{tf_safe}.pkl"
 
-    def load(
-        self, pair: str, timeframe: str, start_dt: datetime, end_dt: datetime
-    ) -> list[dict[str, Any]] | None:
-        """Return cached bars or None if not cached."""
-        p = self._path(pair, timeframe, start_dt, end_dt)
+    def load(self, pair: str, timeframe: str) -> list[dict[str, Any]] | None:
+        """Return all cached bars (sorted by timestamp) or None if no file."""
+        p = self._path(pair, timeframe)
         if p.exists():
             with p.open("rb") as fh:
                 return pickle.load(fh)  # noqa: S301 — local trusted cache only
         return None
 
-    def save(
-        self,
-        pair: str,
-        timeframe: str,
-        start_dt: datetime,
-        end_dt: datetime,
-        bars: list[dict[str, Any]],
-    ) -> None:
-        """Persist bars to disk."""
-        p = self._path(pair, timeframe, start_dt, end_dt)
+    def save(self, pair: str, timeframe: str, bars: list[dict[str, Any]]) -> None:
+        """Persist bars to disk (bars must be sorted by timestamp)."""
+        p = self._path(pair, timeframe)
         with p.open("wb") as fh:
             pickle.dump(bars, fh)
 
@@ -217,6 +211,9 @@ class HistoricalDataFeed:
     def __init__(self, broker: BrokerConnection) -> None:
         """Initialize with a broker connection."""
         self._broker = broker
+        # IB cancels requests when too many historical data queries run
+        # simultaneously (error 162).  This semaphore caps concurrency.
+        self._hist_sem = asyncio.Semaphore(IB_MAX_CONCURRENT_HIST_REQUESTS)
 
     async def _request_bars(
         self,
@@ -225,10 +222,18 @@ class HistoricalDataFeed:
         duration: str,
         timeframe: str,
         use_rth: bool,
-    ) -> list[BarData] | None:
-        """Send historical data request to IB Gateway."""
-        return await asyncio.wait_for(
-            self._broker.ib.reqHistoricalDataAsync(
+    ) -> list[BarData]:
+        """Send historical data request to IB Gateway.
+
+        Uses ib_insync's built-in timeout so cancellation is handled
+        cleanly by the library (avoids asyncio.CancelledError leaking
+        from asyncio.wait_for cancellation of the inner coroutine).
+
+        The semaphore limits concurrent IB historical data requests to
+        IB_MAX_CONCURRENT_HIST_REQUESTS — exceeding this triggers error 162.
+        """
+        async with self._hist_sem:
+            return await self._broker.ib.reqHistoricalDataAsync(
                 contract,
                 endDateTime=end_str,
                 durationStr=duration,
@@ -236,9 +241,8 @@ class HistoricalDataFeed:
                 whatToShow="MIDPOINT",
                 useRTH=use_rth,
                 formatDate=2,
-            ),
-            timeout=IB_HIST_TIMEOUT_SECONDS,
-        )
+                timeout=IB_HIST_TIMEOUT_SECONDS,
+            )
 
     async def fetch_bars(
         self,
@@ -264,7 +268,7 @@ class HistoricalDataFeed:
                 use_rth,
             )
 
-            if bars is None:
+            if not bars:
                 logger.warning(f"ALPHAEDGE: No bars returned for {pair} {timeframe}")
                 return []
 
@@ -273,6 +277,17 @@ class HistoricalDataFeed:
                 f"ALPHAEDGE fetched {len(candles)} {timeframe} bars for {pair}"
             )
             return candles
+        except asyncio.CancelledError:
+            raise  # propagate task cancellation; do not swallow
+        except ConnectionError:
+            # IB Gateway disconnected (maintenance window / restart).
+            # Trigger reconnect so the chunk retry loop can continue.
+            logger.warning(
+                f"ALPHAEDGE IB disconnected mid-fetch ({pair} {timeframe}) "
+                "\u2014 reconnecting"
+            )
+            await self._broker.reconnect()
+            return []
         except Exception:
             logger.exception(f"ALPHAEDGE fetch_bars failed: {pair} {timeframe}")
             return []
@@ -308,34 +323,66 @@ class HistoricalDataFeed:
         list[dict]
             Sorted, deduplicated candle dicts covering [start_dt, end_dt].
         """
-        # Return immediately if this exact range is already cached on disk
+        # --- Load rolling cache and determine the fetch gap ---
+        cached_bars: list[dict[str, Any]] = []
+        fetch_from_dt = start_dt  # default: full cold fetch
+
         if cache is not None:
-            cached = cache.load(pair, timeframe, start_dt, end_dt)
-            if cached is not None:
-                logger.info(
-                    f"ALPHAEDGE cache hit: {pair} {timeframe} "
-                    f"{start_dt.date()} → {end_dt.date()} ({len(cached)} bars)"
+            loaded = cache.load(pair, timeframe)
+            if loaded:
+                cached_bars = loaded
+                latest_ts = cached_bars[-1]["timestamp"]
+                latest_cached = datetime.fromtimestamp(latest_ts, tz=get_tz_utc())
+                # Start fetching from the day after the last cached bar
+                fetch_from_dt = (latest_cached + timedelta(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
                 )
-                return cached
+
+        # Cache is already up-to-date — no IB request needed
+        if cached_bars and fetch_from_dt >= end_dt:
+            logger.info(
+                f"ALPHAEDGE cache fresh: {pair} {timeframe} — "
+                f"{len(cached_bars)} bars, "
+                f"last={cached_bars[-1]['datetime'].date()}"
+            )
+            start_ts = int(start_dt.timestamp())
+            return [b for b in cached_bars if b["timestamp"] >= start_ts]
+
+        # --- Chunked fetch for the gap [fetch_from_dt, end_dt] ---
+        if cached_bars:
+            logger.info(
+                f"ALPHAEDGE rolling update: {pair} {timeframe} — "
+                f"fetching {fetch_from_dt.date()} → {end_dt.date()} "
+                f"({(end_dt - fetch_from_dt).days} new day(s))"
+            )
+        else:
+            logger.info(
+                f"ALPHAEDGE cold fetch: {pair} {timeframe} — "
+                f"{fetch_from_dt.date()} → {end_dt.date()}"
+            )
 
         # IB per-request limits
         if "1 min" in timeframe:
             chunk_days = 7
         elif "5 min" in timeframe:
             chunk_days = 30
+        elif "15 min" in timeframe:
+            chunk_days = 60  # IB supports up to ~60 days for 15-min bars
         else:
             chunk_days = 365
 
-        total_days = (end_dt - start_dt).days
+        total_days = max(1, (end_dt - fetch_from_dt).days)
         total_chunks = max(1, (total_days + chunk_days - 1) // chunk_days)
         chunk_num = 0
-        all_candles: list[dict[str, Any]] = []
+        new_candles: list[dict[str, Any]] = []
         current_end = end_dt
         max_retries = 3
-        retry_delay = 15.0  # seconds between retries on timeout
+        # IB pacing quarantine can last several minutes after repeated
+        # violations.  60 s gives the server time to clear the lock.
+        retry_delay = 60.0
 
-        while current_end > start_dt:
-            remaining = (current_end - start_dt).days
+        while current_end > fetch_from_dt:
+            remaining = (current_end - fetch_from_dt).days
             days = min(chunk_days, remaining) if remaining > 0 else chunk_days
             if days <= 0:
                 break
@@ -364,16 +411,30 @@ class HistoricalDataFeed:
                     )
                     await asyncio.sleep(retry_delay)
             if chunk:
-                all_candles.extend(chunk)
+                new_candles.extend(chunk)
             else:
                 logger.warning(
                     f"ALPHAEDGE skipping chunk after {max_retries} attempts: "
                     f"{pair} {timeframe} ending {current_end.date()}"
                 )
 
+            # Incremental cache save every 10 chunks — preserves progress
+            # so a mid-run IB disconnect doesn't lose everything.
+            if cache is not None and chunk_num % 10 == 0 and new_candles:
+                partial = sorted(
+                    (cached_bars + new_candles),
+                    key=lambda b: b["timestamp"],
+                )
+                cache.save(pair, timeframe, partial)
+                logger.debug(
+                    f"ALPHAEDGE checkpoint saved: {pair} {timeframe} "
+                    f"({len(partial)} bars after {chunk_num} chunks)"
+                )
+
             current_end -= timedelta(days=days)
 
-        # Sort by datetime and deduplicate on timestamp
+        # --- Merge cached + new, deduplicate, sort ---
+        all_candles = cached_bars + new_candles
         seen: set[int] = set()
         unique: list[dict[str, Any]] = []
         for bar in sorted(all_candles, key=lambda b: b["timestamp"]):
@@ -382,14 +443,17 @@ class HistoricalDataFeed:
                 seen.add(ts)
                 unique.append(bar)
 
+        # Trim bars older than start_dt to keep cache size bounded
+        start_ts = int(start_dt.timestamp())
+        unique = [b for b in unique if b["timestamp"] >= start_ts]
+
         logger.info(
-            f"ALPHAEDGE chunked fetch: {pair} {timeframe} "
-            f"{len(unique)} bars from {start_dt.date()} to {end_dt.date()}"
+            f"ALPHAEDGE cache updated: {pair} {timeframe} — "
+            f"{len(unique)} bars ({start_dt.date()} → {end_dt.date()})"
         )
 
-        # Persist to disk so subsequent runs skip IB entirely
         if cache is not None and unique:
-            cache.save(pair, timeframe, start_dt, end_dt, unique)
+            cache.save(pair, timeframe, unique)
 
         return unique
 

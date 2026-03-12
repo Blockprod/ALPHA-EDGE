@@ -81,6 +81,7 @@ class TestGracefulShutdownMethod:
         state = strategy._init_pair_state("EURUSD")
         state.starting_equity = 10000.0
         state.trades_today = 1
+        strategy._global_trades_today = 1
 
         await strategy.graceful_shutdown()
 

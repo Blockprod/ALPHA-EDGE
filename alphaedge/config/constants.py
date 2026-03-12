@@ -45,14 +45,15 @@ LONDON_TZ: str = "UTC"
 # ------------------------------------------------------------------
 # Timeframes
 # ------------------------------------------------------------------
+TF_M15: str = "15 mins"
 TF_M5: str = "5 mins"
 TF_M1: str = "1 min"
 
 # ------------------------------------------------------------------
 # Default trading parameters
 # ------------------------------------------------------------------
-DEFAULT_RR_RATIO: float = 3.0
-DEFAULT_RISK_PCT: float = 1.0
+DEFAULT_RR_RATIO: float = 2.5
+DEFAULT_RISK_PCT: float = 2.0
 DEFAULT_MAX_DAILY_LOSS_PCT: float = 3.0
 DEFAULT_MAX_TRADES_PER_SESSION: int = 2
 DEFAULT_MAX_SPREAD_PIPS: float = 2.0
@@ -70,6 +71,8 @@ PIP_SIZES: dict[str, float] = {
     "NZDUSD": 0.0001,
     "EURJPY": 0.01,
     "GBPJPY": 0.01,
+    "EURGBP": 0.0001,
+    "EURUSD_LC": 0.0001,  # London Close virtual session — same pip size as EURUSD
 }
 
 # ------------------------------------------------------------------
@@ -84,7 +87,7 @@ IB_CLIENT_ID: int = 1
 # ATR / Gap detection defaults
 # ------------------------------------------------------------------
 DEFAULT_ATR_PERIOD: int = 14
-DEFAULT_MIN_ATR_RATIO: float = 1.5
+DEFAULT_MIN_ATR_RATIO: float = 2.0
 DEFAULT_GAP_TOLERANCE_PIPS: float = 5.0
 
 # ------------------------------------------------------------------
@@ -98,19 +101,19 @@ REGIME_ATR_HIGH_MULTIPLIER: float = 2.0
 # Volume confirmation defaults
 # ------------------------------------------------------------------
 DEFAULT_VOLUME_PERIOD: int = 20
-DEFAULT_MIN_VOLUME_RATIO: float = 1.2
+DEFAULT_MIN_VOLUME_RATIO: float = 1.0
 
 # ------------------------------------------------------------------
 # FCR detection defaults
 # ------------------------------------------------------------------
-DEFAULT_MIN_RANGE_PIPS: float = 5.0
+DEFAULT_MIN_RANGE_PIPS: float = 8.0
 DEFAULT_FCR_LOOKBACK: int = 6
 
 # ------------------------------------------------------------------
 # Engulfing quality filter defaults
 # ------------------------------------------------------------------
 DEFAULT_MIN_BODY_RATIO: float = 0.3
-DEFAULT_MAX_WICK_RATIO: float = 2.0
+DEFAULT_MAX_WICK_RATIO: float = 1.5
 
 # ------------------------------------------------------------------
 # News filter defaults
@@ -184,6 +187,7 @@ IB_TOKEN_BUCKET_RATE: float = 45.0  # sustained tokens/second
 IB_TOKEN_BUCKET_BURST: int = 10  # max burst before rate kicks in
 IB_TIMEOUT_SECONDS: float = 15.0  # connection / order timeouts
 IB_HIST_TIMEOUT_SECONDS: float = 60.0  # historical data requests (IB can be slow)
+IB_MAX_CONCURRENT_HIST_REQUESTS: int = 3  # IB cancels >~3 simultaneous hist requests
 
 # Circuit breaker: open after this many consecutive connection failures
 IB_CIRCUIT_BREAKER_MAX_FAILURES: int = 5

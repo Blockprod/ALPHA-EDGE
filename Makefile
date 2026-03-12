@@ -29,7 +29,7 @@ pylint:
 test:
 	python -m pytest alphaedge/tests -v --tb=short \
 		--cov=alphaedge \
-		--cov-report=html:ALPHAEDGE_coverage_report \
+		--cov-report=html:reports/ALPHAEDGE_coverage_report \
 		--cov-fail-under=80
 
 # --- Full QA Pipeline ---

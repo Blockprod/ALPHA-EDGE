@@ -23,12 +23,44 @@ from alphaedge.config.constants import (
     DEFAULT_MAX_DAILY_LOSS_PCT,
     DEFAULT_MAX_SPREAD_PIPS,
     DEFAULT_MAX_TRADES_PER_SESSION,
+    DEFAULT_MIN_ATR_RATIO,
+    DEFAULT_MIN_RANGE_PIPS,
     DEFAULT_RISK_PCT,
     DEFAULT_RR_RATIO,
     IB_HOST,
     IB_PAPER_PORT,
     PIP_SIZES,
 )
+
+
+# ------------------------------------------------------------------
+# Per-pair session window specification
+# ------------------------------------------------------------------
+@dataclass(frozen=True)
+class SessionSpec:
+    """Describes the trading session window for a single pair."""
+
+    start_hour: int
+    start_minute: int
+    end_hour: int
+    end_minute: int
+    tz_name: str = "America/New_York"
+
+
+# Canonical defaults per pair (used when pair_sessions not in YAML)
+_PAIR_SESSION_DEFAULTS: dict[str, SessionSpec] = {
+    # London Open 08:00–09:00 UTC — EUR/GBP/AUD/NZD/CHF pairs
+    "EURUSD": SessionSpec(8, 0, 9, 0, "UTC"),
+    "GBPUSD": SessionSpec(8, 0, 9, 0, "UTC"),
+    "AUDUSD": SessionSpec(8, 0, 9, 0, "UTC"),
+    "NZDUSD": SessionSpec(8, 0, 9, 0, "UTC"),
+    "USDCHF": SessionSpec(8, 0, 9, 0, "UTC"),
+    "EURJPY": SessionSpec(8, 0, 9, 0, "UTC"),
+    "GBPJPY": SessionSpec(8, 0, 9, 0, "UTC"),
+    # NYSE Open 09:30–10:30 ET — USD-centric pairs
+    "USDJPY": SessionSpec(9, 30, 10, 30, "America/New_York"),
+    "USDCAD": SessionSpec(9, 30, 10, 30, "America/New_York"),
+}
 
 
 # ------------------------------------------------------------------
@@ -53,7 +85,16 @@ class IBConfig:
 class TradingConfig:
     """Strategy and risk management parameters."""
 
-    pairs: list[str] = field(default_factory=lambda: ["EURUSD", "GBPUSD", "USDJPY"])
+    pairs: list[str] = field(
+        default_factory=lambda: [
+            "EURUSD",
+            "GBPUSD",
+            "USDJPY",
+            "AUDUSD",
+            "USDCAD",
+            "EURJPY",
+        ]
+    )
     rr_ratio: float = DEFAULT_RR_RATIO
     risk_pct: float = DEFAULT_RISK_PCT
     max_daily_loss_pct: float = DEFAULT_MAX_DAILY_LOSS_PCT
@@ -66,10 +107,27 @@ class TradingConfig:
     session_end_action: str = "hold"
     london_open_enabled: bool = False
     min_body_ratio: float = 0.3
-    max_wick_ratio: float = 2.0
+    max_wick_ratio: float = 1.5
+    min_atr_ratio: float = DEFAULT_MIN_ATR_RATIO
+    min_range_pips: float = DEFAULT_MIN_RANGE_PIPS
+    max_lot_size: float = 1.0
     backtest_years: int = 3
     eur_usd_rate: float = 1.08
     starting_equity: float = 10000.0
+    partial_exit: bool = False  # 50% exit at 1R, SL moved to BE targeting 2R
+    trailing_partial_exit: bool = False  # 50% exit at 1R, trailing stop on remainder
+    # Per-pair parameter overrides (empty dict = use global defaults)
+    min_range_pips_by_pair: dict[str, float] = field(default_factory=dict)
+    min_volume_ratio_by_pair: dict[str, float] = field(default_factory=dict)
+    pair_aliases: dict[str, str] = field(default_factory=dict)  # virtual → real IB pair
+    fcr_timeframe: str = "5 mins"  # Timeframe for FCR detection (pre-session bars)
+    entry_timeframe: str = "1 min"  # Timeframe for engulfing entry signals
+    excluded_days: list[int] = field(default_factory=list)  # 0=Mon..6=Sun to exclude
+    usd_correlation_filter: bool = (
+        False  # Block trades that amplify USD directional exposure
+    )
+    fcr_range_cv_max: float = 1.0  # Max CV of pre-session bar ranges (0.0 = disabled)
+    pair_sessions: dict[str, SessionSpec] = field(default_factory=dict)
 
 
 # ------------------------------------------------------------------
@@ -155,9 +213,22 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
     """Extract and validate trading parameters from the YAML section."""
     section: dict[str, Any] = raw.get("trading", {})
     eng_section: dict[str, Any] = raw.get("engulfing", {})
+    risk_section: dict[str, Any] = raw.get("risk", {})
+    vol_section: dict[str, Any] = raw.get("volatility", {})
+    struct_section: dict[str, Any] = raw.get("structure", {})
+    # rr_ratio: primary source is risk.reward_ratio;
+    # fallback to trading.rr_ratio for backward compat
+    rr_ratio_value = float(
+        risk_section.get(
+            "reward_ratio",
+            section.get("rr_ratio", DEFAULT_RR_RATIO),
+        )
+    )
     cfg = TradingConfig(
-        pairs=section.get("pairs", ["EURUSD", "GBPUSD", "USDJPY"]),
-        rr_ratio=float(section.get("rr_ratio", DEFAULT_RR_RATIO)),
+        pairs=section.get(
+            "pairs", ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "EURJPY"]
+        ),
+        rr_ratio=rr_ratio_value,
         risk_pct=float(section.get("risk_pct", DEFAULT_RISK_PCT)),
         max_daily_loss_pct=float(
             section.get("max_daily_loss_pct", DEFAULT_MAX_DAILY_LOSS_PCT)
@@ -173,11 +244,48 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         session_end_action=section.get("session_end_action", "hold"),
         london_open_enabled=bool(section.get("london_open_enabled", False)),
         min_body_ratio=float(eng_section.get("min_body_ratio", 0.3)),
-        max_wick_ratio=float(eng_section.get("max_wick_ratio", 2.0)),
+        max_wick_ratio=float(eng_section.get("max_wick_ratio", 1.5)),
+        min_atr_ratio=float(vol_section.get("min_atr_ratio", DEFAULT_MIN_ATR_RATIO)),
+        min_range_pips=float(
+            struct_section.get("min_range_pips", DEFAULT_MIN_RANGE_PIPS)
+        ),
+        max_lot_size=float(section.get("max_lot_size", 1.0)),
         backtest_years=int(section.get("backtest_years", 3)),
         eur_usd_rate=float(section.get("eur_usd_rate", 1.08)),
         starting_equity=float(section.get("starting_equity", 10000.0)),
+        partial_exit=bool(risk_section.get("partial_exit", False)),
+        trailing_partial_exit=bool(risk_section.get("trailing_partial_exit", False)),
+        fcr_timeframe=str(struct_section.get("fcr_timeframe", "5 mins")),
+        entry_timeframe=str(struct_section.get("entry_timeframe", "1 min")),
+        excluded_days=[int(d) for d in section.get("excluded_days", [])],
+        usd_correlation_filter=bool(section.get("usd_correlation_filter", False)),
+        fcr_range_cv_max=float(struct_section.get("fcr_range_cv_max", 1.0)),
     )
+    # Build per-pair session windows: YAML overrides > canonical defaults
+    pair_sessions: dict[str, SessionSpec] = {}
+    for pair_name, ps in raw.get("pair_sessions", {}).items():
+        start_h, start_m = (int(x) for x in ps["start"].split(":"))
+        end_h, end_m = (int(x) for x in ps["end"].split(":"))
+        pair_sessions[pair_name] = SessionSpec(
+            start_hour=start_h,
+            start_minute=start_m,
+            end_hour=end_h,
+            end_minute=end_m,
+            tz_name=ps.get("tz", "America/New_York"),
+        )
+    for pair_name in cfg.pairs:
+        if pair_name not in pair_sessions and pair_name in _PAIR_SESSION_DEFAULTS:
+            pair_sessions[pair_name] = _PAIR_SESSION_DEFAULTS[pair_name]
+    cfg.pair_sessions = pair_sessions
+    # Per-pair parameter overrides
+    cfg.min_range_pips_by_pair = {
+        k: float(v) for k, v in struct_section.get("min_range_pips_by_pair", {}).items()
+    }
+    cfg.min_volume_ratio_by_pair = {
+        k: float(v)
+        for k, v in raw.get("pattern", {}).get("min_volume_ratio_by_pair", {}).items()
+    }
+    cfg.pair_aliases = {k: str(v) for k, v in section.get("pair_aliases", {}).items()}
     _validate_trading_config(cfg)
     return cfg
 
@@ -185,10 +293,13 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
 def _validate_trading_config(cfg: TradingConfig) -> None:
     """Validate trading config values are within safe ranges."""
     # Pair validation: all configured pairs must be in PIP_SIZES
+    # Aliased pairs resolve to their target for pip-size lookup
     for pair in cfg.pairs:
-        if pair not in PIP_SIZES:
+        data_pair = cfg.pair_aliases.get(pair, pair)
+        if data_pair not in PIP_SIZES:
             raise ValueError(
-                f"Unknown pair '{pair}'. Supported: {sorted(PIP_SIZES.keys())}"
+                f"Unknown pair '{data_pair}' (alias target for '{pair}'). "
+                f"Supported: {sorted(PIP_SIZES.keys())}"
             )
     # lot_type validation
     if cfg.lot_type not in ("standard", "mini", "micro"):

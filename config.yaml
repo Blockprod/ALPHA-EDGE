@@ -24,23 +24,34 @@ trading:
   # Currency pairs to monitor
   pairs:
     - "EURUSD"
-    - "GBPUSD"
     - "USDJPY"
 
-  # Risk/Reward ratio for take profit
-  rr_ratio: 3.0
-
+  # WARNING: risk_pct at 2% — projected return ~27.7% over 3Y, max DD ~12%
+  # Validate on full backtest before live deployment
   # Risk per trade as % of account equity
-  risk_pct: 1.0
+  risk_pct: 3.0
 
   # Maximum daily loss before auto-shutdown (% of equity)
   max_daily_loss_pct: 3.0
 
   # Maximum trades per session
-  max_trades_per_session: 2
+  max_trades_per_session: 6
+
+  # Days of week to exclude (0=Monday, 4=Friday, 6=Sunday)
+  # Tested [0, 4] → 42T WR=47.6%, Sharpe=2.23 vs baseline 69T WR=54.5%, Sharpe=3.37 — ELIMINATED
+  excluded_days: []  # LOCKED: no day exclusion optimal
+
+  # USD correlation filter: block 2nd trade when it amplifies same-direction USD exposure
+  # Tested: 26T WR=46.2%, Sharpe=1.94 vs baseline 69T WR=54.5%, Sharpe=3.37 — ELIMINATED
+  # (blocked 49/69 trades — sessions are structurally independent, not USD-correlated)
+  usd_correlation_filter: false
 
   # Maximum acceptable spread in pips (skip trade if exceeded)
   max_spread_pips: 2.0
+
+  # Safety cap on position size — dynamic sizing cannot exceed this value
+  # 10.0 = MAX_LOTS in constants.py; allows 3% risk sizing up to ~$33k equity (EURUSD)
+  max_lot_size: 10.0
 
   # Spread spike multiplier (spread > N× max → WARNING during open position)
   spread_spike_multiplier: 3.0
@@ -69,24 +80,37 @@ trading:
 
 # --- Structure Detection ---
 structure:
-  min_range_pips: 5.0       # Minimum candle range for valid detection
+  min_range_pips: 8.0        # Minimum candle range for valid detection (sweep-optimal — DO NOT lower)
   lookback_candles: 6       # Number of candles to scan
+  # Per-pair overrides tested: EURUSD 6.0 → 41T WR=31.7% vs 11T WR=54.5% — ELIMINATED
+  # Timeframe configuration
+  # fcr_timeframe: FCR pre-session structure detection (default: "5 mins")
+  # entry_timeframe: bar-by-bar engulfing detection (default: "1 min")
+  # Tested combinations: M15/M1 → WR=34.3%, PF=0.74, DD=62%, return=-59% — ELIMINATED
+  fcr_timeframe: "5 mins"    # LOCKED: M5 optimal (M15 tested and eliminated)
+  entry_timeframe: "1 min"   # LOCKED: M1 precision entries
+
+  # FCR range quality filter: coefficient of variation of pre-session bar heights
+  # CV = σ(bar_ranges) / μ(bar_ranges) — low CV = homogeneous consolidation
+  # 0.0 = disabled; 0.5 = strict; 0.7 = moderate; 1.0 = permissive
+  fcr_range_cv_max: 0.5
 
 # --- Volatility Detection ---
 volatility:
   atr_period: 14            # Number of candles for ATR calculation
-  min_atr_ratio: 1.5        # ATR spike threshold (current/baseline)
+  min_atr_ratio: 1.7        # ATR spike threshold (1.5=225 bruts; 2.0=10 nets; trying midpoint)
   tolerance_pips: 5.0       # Buffer zone around boundaries
 
 # --- Pattern Detection ---
 pattern:
   volume_period: 20         # Lookback for average tick volume
-  min_volume_ratio: 1.2     # Min ratio vs average for confirmation
+  min_volume_ratio: 1.0     # Min ratio vs average for confirmation
+  # Per-pair vol override tested: USDJPY 1.2 → 58T identical (NYSE Open already high-vol) — ELIMINATED
 
 # --- Engulfing Quality Filters ---
 engulfing:
-  min_body_ratio: 0.3       # Body >= 30% of FCR range
-  max_wick_ratio: 2.0       # Wick <= 200% of body size
+  min_body_ratio: 0.3       # Body >= 30% of FCR range (sweep-optimal)
+  max_wick_ratio: 1.5       # Wick <= 150% of body size (sweep-optimal)
 
 # --- News Filter ---
 news_filter:
@@ -97,6 +121,9 @@ news_filter:
 
 # --- Risk Management ---
 risk:
+  reward_ratio: 2.0         # R:R — lowered from 2.5: realized avg_win/avg_loss = ~1.45-1.5, TP at 2.5R rarely hit
+  partial_exit: false       # tested: WR 63.8% but Sharpe 2.31 vs 3.37 full exit — inferior
+  trailing_partial_exit: false  # tested: USDJPY PF 0.84, Sharpe 0.63 — worst result
   slippage_buffer_pips: 0.5 # Added to SL for slippage protection
   min_lots: 0.01            # Minimum position size
   max_lots: 10.0            # Maximum position size
@@ -128,3 +155,54 @@ alerting:
     - session_end_open_position
     - session_end_clean
     - daily_summary
+
+# --- Per-pair session windows ---
+# London Open (08:00-09:00 UTC) for EUR/GBP-based pairs: FCR forms during
+# the Frankfurt→London transition; engulfing fires at London bell.
+# NYSE Open (09:30-10:30 ET) for USD-centric pairs: driven by US economic
+# data drops and NYSE institutional flow.
+pair_sessions:
+  EURUSD_LC:
+    start: "15:00"
+    end: "16:00"
+    tz: "UTC"
+  EURGBP:
+    start: "08:00"
+    end: "09:00"
+    tz: "UTC"
+  EURUSD:
+    start: "08:00"
+    end: "09:00"
+    tz: "UTC"
+  GBPUSD:
+    start: "08:00"
+    end: "09:00"
+    tz: "UTC"
+  AUDUSD:
+    start: "08:00"
+    end: "09:00"
+    tz: "UTC"
+  NZDUSD:
+    start: "08:00"
+    end: "09:00"
+    tz: "UTC"
+  USDCHF:
+    start: "08:00"
+    end: "09:00"
+    tz: "UTC"
+  EURJPY:
+    start: "08:00"
+    end: "09:00"
+    tz: "UTC"
+  GBPJPY:
+    start: "08:00"
+    end: "09:00"
+    tz: "UTC"
+  USDJPY:
+    start: "09:30"
+    end: "10:30"
+    tz: "America/New_York"
+  USDCAD:
+    start: "09:30"
+    end: "10:30"
+    tz: "America/New_York"
