@@ -1,45 +1,11 @@
 # ⚡ ALPHAEDGE
+# ALPHAEDGE
 
-**Production-ready hybrid Python/Cython automated trading bot for Forex via Interactive Brokers.**
+This repository contains proprietary trading software.
 
-> **⚠️ WARNING: This bot places REAL orders. Always start with PAPER TRADING (IB port 4002). Live trading carries significant risk of financial loss. Use at your own discretion.**
+**No public documentation is provided.**
 
----
-
-## Table of Contents
-
-1. [Prerequisites](#prerequisites)
-2. [Installation](#installation)
-3. [IB Gateway Setup](#ib-gateway-setup)
-4. [VSCode Setup](#vscode-setup)
-5. [Configuration](#configuration)
-6. [Cython Compilation](#cython-compilation)
-7. [QA Toolchain](#qa-toolchain)
-8. [Running Backtest](#running-backtest)
-9. [Running Live / Paper](#running-live--paper)
-10. [License](#license)
-
----
-
-## Prerequisites
-
-### Python Version
-
-**Python 3.11.9** is strictly required. Verify:
-
-```powershell
-python --version
-# Expected: Python 3.11.9
-```
-
-> Do **not** use Python 3.12+.
-
-### System Requirements
-
-- **OS**: Windows 10/11
-- **C compiler**: [Microsoft Visual C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — required for Cython compilation
-- **Interactive Brokers Gateway**
-
+For inquiries, contact the project owner.
 ---
 
 ## Installation
