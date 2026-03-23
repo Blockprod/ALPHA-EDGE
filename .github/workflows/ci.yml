@@ -20,7 +20,7 @@ jobs:
       # Hard stop: ALPHAEDGE_PAPER must never be false in committed files
       - name: Paper trading guard
         run: |
-          if grep -rn "ALPHAEDGE_PAPER=false" --include="*.py" --include="*.yaml" --include="*.yml" --include="*.env" --include="*.cfg" .; then
+          if grep -rn "ALPHAEDGE_PAPER=false" --include="*.py" --include="*.yaml" --include="*.yml" --include="*.env" --include="*.cfg" --exclude-dir=".github" .; then
             echo "❌ ALPHAEDGE_PAPER=false found in committed files — BLOCKED"
             exit 1
           fi
