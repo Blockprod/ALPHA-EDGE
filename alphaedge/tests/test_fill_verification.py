@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Generator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -320,6 +320,7 @@ class TestMockedLiveCycle:
         assert state.fcr_result is not None
         assert state.pre_session_m1_candles == pre_session_m1
 
+        _now = datetime.now(UTC)
         live_m1_bars = [
             {
                 "open": 1.2470,
@@ -328,7 +329,7 @@ class TestMockedLiveCycle:
                 "close": 1.2472,
                 "volume": 110.0,
                 "timestamp": 1710941400,
-                "datetime": datetime(2026, 3, 20, 13, 50, tzinfo=UTC),
+                "datetime": _now - timedelta(seconds=30),
             },
             {
                 "open": 1.2472,
@@ -337,7 +338,7 @@ class TestMockedLiveCycle:
                 "close": 1.2476,
                 "volume": 115.0,
                 "timestamp": 1710941460,
-                "datetime": datetime(2026, 3, 20, 13, 51, tzinfo=UTC),
+                "datetime": _now - timedelta(seconds=20),
             },
             {
                 "open": 1.2476,
@@ -346,7 +347,7 @@ class TestMockedLiveCycle:
                 "close": 1.2480,
                 "volume": 140.0,
                 "timestamp": 1710941520,
-                "datetime": datetime(2026, 3, 20, 13, 52, tzinfo=UTC),
+                "datetime": _now - timedelta(seconds=10),
             },
         ]
 

@@ -197,7 +197,11 @@ IB_MAX_REQUESTS_PER_10S: int = 50
 IB_PACING_WINDOW_SECONDS: float = 10.0
 
 # ------------------------------------------------------------------
-# Logging
+# Data freshness
+# ------------------------------------------------------------------
+# M1 bars older than this threshold are stale and skipped to avoid
+# acting on delayed IB data farm feeds.
+MAX_BAR_STALENESS_SECONDS: int = 90
 # ------------------------------------------------------------------
 LOG_DIR: str = "alphaedge/logs"
 LOG_ROTATION: str = "1 day"

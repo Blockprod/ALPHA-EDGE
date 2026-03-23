@@ -80,7 +80,14 @@ class RequestThrottler:
                 return
             # Sleep until the next token is ready
             wait_time = (1.0 - self._tokens) / self._rate
+            _wait_ns = time.perf_counter_ns()
             await asyncio.sleep(wait_time)
+            _waited_ms = (time.perf_counter_ns() - _wait_ns) / 1e6
+            logging.getLogger(__name__).debug(
+                "ALPHAEDGE throttler: waited %.1fms (tokens=%.2f)",
+                _waited_ms,
+                self._tokens,
+            )
 
     def penalise(self) -> None:
         """Drain the bucket on a pacing violation (IB error 162)."""

@@ -31,6 +31,11 @@ _FALLBACK_MODULES: set[str] = set()
 logger = get_logger()
 
 
+def _is_production() -> bool:
+    """Return True when running in production (ALPHAEDGE_ENV=production)."""
+    return os.getenv("ALPHAEDGE_ENV", "").strip().lower() == "production"
+
+
 def _record_backend(name: str, backend: str) -> None:
     """Store which backend loaded a given core module."""
     _LOADED_BACKENDS[name] = backend
@@ -83,6 +88,13 @@ def _load_core_module(name: str) -> ModuleType:
     except ImportError:
         _FALLBACK_MODULES.add(name)
         _record_backend(name, "stubs")
+        if _is_production():
+            logger.critical(
+                "ALPHAEDGE CRITICAL: Cython module '{}' unavailable in production — "
+                "compiled extensions required. Run 'make build' and restart.",
+                name,
+            )
+            raise ImportError(f"Compiled module '{name}' required in production")
         logger.warning(
             "ALPHAEDGE core fallback: compiled module {} unavailable; using stubs",
             name,

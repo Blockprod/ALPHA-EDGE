@@ -664,6 +664,8 @@ class RealtimeDataFeed:
             bars.updateEvent += lambda bars, has_new: self._on_bar_update(
                 pair, bars, has_new
             )
+            # Stream bid/ask — eliminates per-call reqMktData in spread/mid reads
+            self._broker.ib.reqMktData(contract)
             logger.info(f"ALPHAEDGE subscribed to real-time bars: {pair}")
         except RuntimeError:
             logger.exception(f"ALPHAEDGE subscribe IB runtime failure: {pair}")
@@ -696,6 +698,7 @@ class RealtimeDataFeed:
             Currency pair to unsubscribe from.
         """
         if pair in self._subscriptions:
+            self._broker.ib.cancelMktData(build_forex_contract(pair))
             self._broker.ib.cancelRealTimeBars(self._subscriptions[pair])
             del self._subscriptions[pair]
             logger.info(f"ALPHAEDGE unsubscribed from: {pair}")
@@ -722,14 +725,9 @@ class RealtimeDataFeed:
             Current spread in price (not pips), or None if unavailable.
         """
         self._broker._ensure_connected()
-        await self._broker._throttler.acquire()
 
         try:
-            contract = build_forex_contract(pair)
-            self._broker.ib.reqMktData(contract)
-            await asyncio.sleep(1.0)  # Allow data to arrive
-
-            ticker = self._broker.ib.ticker(contract)
+            ticker = self._broker.ib.ticker(build_forex_contract(pair))
             if ticker and ticker.bid > 0 and ticker.ask > 0:
                 return float(ticker.ask - ticker.bid)
             return None
@@ -755,14 +753,9 @@ class RealtimeDataFeed:
             Mid price ((bid + ask) / 2), or None if unavailable.
         """
         self._broker._ensure_connected()
-        await self._broker._throttler.acquire()
 
         try:
-            contract = build_forex_contract(pair)
-            self._broker.ib.reqMktData(contract)
-            await asyncio.sleep(1.0)
-
-            ticker = self._broker.ib.ticker(contract)
+            ticker = self._broker.ib.ticker(build_forex_contract(pair))
             if ticker and ticker.bid > 0 and ticker.ask > 0:
                 return float((ticker.bid + ticker.ask) / 2.0)
             return None

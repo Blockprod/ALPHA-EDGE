@@ -18,11 +18,13 @@ FCRStrategy becomes a thin orchestrator.
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from alphaedge.config.constants import (
     DEFAULT_MARKET_SLIPPAGE_PIPS,
+    MAX_BAR_STALENESS_SECONDS,
     PIP_SIZES,
     RISK_CHECK_INTERVAL_IDLE,
     RISK_CHECK_INTERVAL_POSITION,
@@ -186,6 +188,7 @@ class SessionLifecycle:
         """Execute a trade signal through IB Gateway."""
         try:
             # Fetch live rate for non-USD-quoted pairs (JPY)
+            _t0 = time.perf_counter_ns()
             exchange_rate = 0.0
             if pip_size >= 0.001:
                 mid = await self._s._rt_feed.get_mid_price(state.pair)
@@ -202,6 +205,7 @@ class SessionLifecycle:
                 return False
 
             spread = await self._s._rt_feed.get_live_spread(state.pair)
+            _t_spread_end = time.perf_counter_ns()
             if spread is None:
                 logger.error(
                     f"ALPHAEDGE: Cannot verify spread for {state.pair} — signal SKIPPED"
@@ -218,11 +222,19 @@ class SessionLifecycle:
             if bracket is None:
                 return False
 
+            _t_order = time.perf_counter_ns()
             trades_placed = await self._submit_and_await_fill(state, bracket)
             if trades_placed is None:
                 return False
 
             self._record_fill(state, trades_placed)
+            logger.debug(
+                "LATENCE spread={:.1f}ms order_submit={:.1f}ms total={:.1f}ms — {}",
+                (_t_spread_end - _t0) / 1e6,
+                (_t_order - _t_spread_end) / 1e6,
+                (_t_order - _t0) / 1e6,
+                state.pair,
+            )
             return True
         except Exception:
             logger.exception(f"ALPHAEDGE _execute_signal failed: {state.pair}")
@@ -248,7 +260,12 @@ class SessionLifecycle:
     # ------------------------------------------------------------------
     def _on_ib_disconnect(self) -> None:
         """Handle IB Gateway disconnection event."""
-        logger.critical("ALPHAEDGE: IB Gateway DISCONNECTED")
+        # Log known open positions — gives operator visibility during reconnect
+        open_pairs = [p for p, s in self._s._states.items() if s.is_position_open]
+        logger.critical(
+            "ALPHAEDGE: IB Gateway DISCONNECTED — known open positions: {}",
+            open_pairs if open_pairs else "none",
+        )
         asyncio.ensure_future(
             self._s._alert_manager.send_async(alert_ib_disconnected())
         ).add_done_callback(self._on_task_done)
@@ -271,6 +288,12 @@ class SessionLifecycle:
                     await self._s._rt_feed.subscribe(pair)
                 logger.info("ALPHAEDGE: Real-time feeds re-subscribed after reconnect")
             else:
+                # Last-resort orphan check if a partial reconnect occurred
+                try:
+                    await self._reconcile_positions()
+                    await self._check_orphan_orders()
+                except Exception:
+                    logger.exception("ALPHAEDGE: Post-reconnect reconciliation failed")
                 logger.critical(
                     "ALPHAEDGE: Reconnection FAILED after all retries — shutting down"
                 )
@@ -383,6 +406,18 @@ class SessionLifecycle:
         state.m1_candles.append(candle)
         if len(state.m1_candles) > state.max_candles:
             state.m1_candles = state.m1_candles[-state.max_candles :]
+
+        _bar_dt = candle.get("datetime")
+        if _bar_dt is not None:
+            bar_age_s = (now_utc() - _bar_dt).total_seconds()
+            if bar_age_s > MAX_BAR_STALENESS_SECONDS:
+                logger.warning(
+                    "ALPHAEDGE STALE BAR: {} \u2014 age={:.0f}s \u2014 skipping",
+                    pair,
+                    bar_age_s,
+                )
+                return
+
         pip_size = PIP_SIZES.get(pair, 0.0001)
 
         # Skip if global trade limit reached across all pairs
@@ -449,8 +484,15 @@ class SessionLifecycle:
             return
 
         # Detect engulfing signal on each new M1 bar
+        _t_bar = time.perf_counter_ns()
         signal = self._s._detect_engulfing(state, pip_size)
         if signal and signal.get("detected"):
+            _t_signal = time.perf_counter_ns()
+            logger.debug(
+                "LATENCE bar→signal: {:.1f}ms — {}",
+                (_t_signal - _t_bar) / 1e6,
+                pair,
+            )
             logger.info(
                 f"ALPHAEDGE SIGNAL: {pair} "
                 f"{'SELL' if signal['signal'] == -1 else 'BUY'} "
@@ -470,8 +512,13 @@ class SessionLifecycle:
     ) -> bool:
         """Re-check pair/trade limits under lock, then execute."""
         async with self._s._trade_lock:
-            # Re-verify pair limit under lock (authoritative check)
-            open_pairs = [p for p, s in self._s._states.items() if s.is_position_open]
+            # Guard against re-entrant execution for the same pair
+            if state.pair in self._s._executing_pairs:
+                return False
+            # Virtual open_pairs: confirmed positions + currently executing
+            open_pairs = [
+                p for p, s in self._s._states.items() if s.is_position_open
+            ] + list(self._s._executing_pairs)
             risk_mod = self._s._modules.risk_manager
             pair_check: dict[str, Any] = risk_mod.check_pair_limit(
                 pair=state.pair,
@@ -490,7 +537,13 @@ class SessionLifecycle:
                 >= self._s._config.trading.max_trades_per_session
             ):
                 return False
+            # Reserve this pair atomically before releasing lock
+            self._s._executing_pairs.add(state.pair)
+        # Lock released — long awaits happen outside the lock
+        try:
             return await self._check_spread_and_execute(state, signal, pip_size)
+        finally:
+            self._s._executing_pairs.discard(state.pair)
 
     async def _check_spread_and_execute(
         self,

@@ -165,6 +165,7 @@ class FCRStrategy:
             config.news_filter_raw,
         )
         self._trade_lock = asyncio.Lock()
+        self._executing_pairs: set[str] = set()  # pairs with order in flight
         self._global_trades_today: int = (
             0  # Global counter across all pairs — reset each session
         )

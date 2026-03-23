@@ -35,6 +35,7 @@ Chaque audit suit le même pipeline en **3 étapes** :
 | 7 | [Stratégique (FCR)](#7--stratégique-fcr) | Intégrité signal · Walk-forward · RR ratio · DST | Ask |
 | 8 | [Master](#8--master) | Audit complet toutes dimensions | Agent |
 | 9 | [Modernisation Python](#9--modernisation-python-syntax) | Ruff · Pyright · syntaxe 3.11.9 · annotations | Agent |
+| 10 | [Latence Institutionnel](#10--latence-institutionnel) | Chemin critique · Cython vs stubs · Latence IBKR · asyncio · I/O synchrones | Agent |
 
 ---
 
@@ -192,8 +193,6 @@ Génère le plan d'action depuis l'audit disponible.
 Démarre l'exécution du plan d'action disponible.
 ```
 
----
-
 ## `7 · STRATÉGIQUE (FCR)`
 
 > Intégrité signal FCR · Walk-forward · Cohérence backtest ↔ live · RR ratio · Gestion risque DST
@@ -258,5 +257,33 @@ Démarre l'exécution du plan d'action disponible.
 Lance cet audit sur le workspace.
 ```
 
+
+
 > ⚠️ Cet audit intègre les étapes B et C directement —
 > il corrige et valide en une seule passe. Aucun plan intermédiaire requis.
+
+---
+
+## `10 · LATENCE INSTITUTIONNEL`
+
+> Chemin critique signal→ordre · Cython vs stubs · Latence IBKR · Event loop asyncio · I/O synchrones · Fraîcheur données · Résilience
+
+**Produit A** : `tasks/audits/audit_latence_prompt.md`
+
+**A — Audit**
+```
+#file:tasks/prompts/audit_latence_prompt.md
+Lance cet audit sur le workspace.
+```
+
+**B — Plan d'action**
+```
+#file:tasks/prompts/generate_action_plan_prompt.md
+Génère le plan d'action depuis l'audit disponible.
+```
+
+**C — Exécution**
+```
+#file:tasks/prompts/execute_corrections_prompt.md
+Démarre l'exécution du plan d'action disponible.
+```
