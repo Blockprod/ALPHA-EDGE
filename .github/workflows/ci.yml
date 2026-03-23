@@ -7,20 +7,79 @@ on:
     branches: [main]
 
 jobs:
-  qa:
+  # ----------------------------------------------------------------
+  # SAFETY GUARDS — run first, block everything else if they fail
+  # Catches the hardest-to-catch mistakes before any code runs.
+  # ----------------------------------------------------------------
+  safety:
+    name: Safety Guards
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Hard stop: ALPHAEDGE_PAPER must never be false in committed files
+      - name: Paper trading guard
+        run: |
+          if grep -rn "ALPHAEDGE_PAPER=false" --include="*.py" --include="*.yaml" --include="*.yml" --include="*.env" --include="*.cfg" .; then
+            echo "❌ ALPHAEDGE_PAPER=false found in committed files — BLOCKED"
+            exit 1
+          fi
+          echo "✅ Paper trading guard passed"
+
+      # Hard stop: .env (credentials) must never be committed
+      - name: No .env credentials guard
+        run: |
+          if git ls-files | grep -E "^\.env$"; then
+            echo "❌ .env file committed — credentials leak risk — BLOCKED"
+            exit 1
+          fi
+          echo "✅ No .env credentials committed"
+
+      # Hard stop: no # type: ignore shortcuts per project rules
+      - name: "No type-ignore guard"
+        run: |
+          if grep -rn "# type: ignore" --include="*.py" alphaedge/; then
+            echo "❌ # type: ignore found — fix the root cause — BLOCKED"
+            exit 1
+          fi
+          echo "✅ No type: ignore shortcuts found"
+
+      # Secret scanning — only on pushes where a before-SHA exists
+      - name: Secret scanning (TruffleHog)
+        if: github.event_name == 'pull_request'
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+          extra_args: --only-verified
+
+  # ----------------------------------------------------------------
+  # QA — lint, types, Cython build, smoke check, tests + coverage
+  # ----------------------------------------------------------------
+  qa:
+    name: QA (Python 3.11.9)
+    needs: safety
+    runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Python ${{ matrix.python-version }}
+      # Pin to exact version per project rules (Python 3.11.9 strictly)
+      - name: Set up Python 3.11.9
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11.9"
+
+      # Cache pip to avoid re-downloading on every run
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: pip-${{ runner.os }}-
 
       - name: Install dependencies
         run: |
@@ -32,33 +91,51 @@ jobs:
           python -m ruff check alphaedge/ --config pyproject.toml
           python -m ruff format --check alphaedge/
 
-      - name: Type checking (Pyright / Pylance)
-        run: |
-          python -m pyright alphaedge/
+      - name: Type checking (Pyright)
+        run: python -m pyright alphaedge/
 
+      # Build Cython → produces .so on Linux (equivalent of .pyd on Windows)
       - name: Build Cython extensions
-        run: |
-          python setup.py build_ext --inplace
+        run: python setup.py build_ext --inplace
 
-      - name: Secret scanning (TruffleHog)
-        uses: trufflesecurity/trufflehog@main
-        with:
-          path: ./
-          base: ${{ github.event.pull_request.base.sha || github.event.before }}
-          head: ${{ github.event.pull_request.head.sha || github.event.after }}
-          extra_args: --only-verified
-
+      # Verify all 5 compiled modules import cleanly after build
       - name: Compiled core smoke check
         env:
           ALPHAEDGE_CORE_BACKEND: compiled
         run: |
-          python -c "from alphaedge.core import engulfing_detector, fcr_detector, gap_detector, order_manager, risk_manager; print(engulfing_detector.__name__); print(fcr_detector.__name__); print(gap_detector.__name__); print(order_manager.__name__); print(risk_manager.__name__)"
+          python -c "
+          from alphaedge.core import (
+              engulfing_detector, fcr_detector, gap_detector,
+              order_manager, risk_manager, get_backend_name, get_fallback_modules,
+          )
+          backend = get_backend_name()
+          fallback = get_fallback_modules()
+          print(f'Backend: {backend}')
+          if fallback:
+              print(f'Fallbacks: {fallback}')
+              raise SystemExit('Compiled modules expected — got stubs')
+          print('All 5 Cython modules loaded from compiled .so')
+          "
 
-      - name: Tests (Pytest)
+      # Tests run with stubs (no IB Gateway needed in CI)
+      # Coverage threshold ≥80% on config/, utils/, core/ per project rules
+      - name: Tests + Coverage (Pytest)
         env:
           ALPHAEDGE_CORE_BACKEND: stubs
         run: |
-          python -m pytest alphaedge/tests/ -v --tb=short \
+          python -m pytest alphaedge/tests/ \
+            --tb=short \
             --cov=alphaedge \
             --cov-report=term-missing \
-            --cov-fail-under=80
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=80 \
+            -q
+
+      # Upload coverage XML so GitHub PRs can show coverage diff
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 14
