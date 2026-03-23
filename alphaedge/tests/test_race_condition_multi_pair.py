@@ -54,7 +54,9 @@ def _build_strategy(config: AppConfig | None = None) -> FCRStrategy:
         def _check_pair_limit(
             pair: str, open_pairs: list[str], max_open_pairs: int
         ) -> dict[str, Any]:
-            return {"allowed": len(open_pairs) < max_open_pairs}
+            return {
+                "allowed": pair not in open_pairs and len(open_pairs) < max_open_pairs
+            }
 
         risk_mock.check_pair_limit.side_effect = _check_pair_limit
 
@@ -155,6 +157,10 @@ class TestConcurrentSignalsOnlyOneExecutes:
             signal: dict[str, Any],
             pip_size: float,
         ) -> bool:
+            del (
+                signal,
+                pip_size,
+            )  # test mock — matches SessionLifecycle._check_spread_and_execute
             nonlocal execution_count
             # Simulate IB network delay
             await asyncio.sleep(0.05)

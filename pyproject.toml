@@ -59,17 +59,28 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 
 # --- Coverage Configuration ---
-# Note: Cython .pyx modules (core/) are compiled to C extensions and cannot
-# be measured by pytest-cov. Engine modules require IB Gateway for
-# integration testing. Coverage scope includes config/ and utils/ which
-# are testable without external dependencies.
+# Coverage should represent the deterministic contract exercised in CI:
+# config/, utils/, core/__init__.py, core/_stubs/, and the pure-Python live
+# control-plane modules covered without a real IB Gateway. IB-coupled feed /
+# broker adapters and reporting-heavy backtest tooling are validated by focused
+# tests, but are excluded from the percentage gate to avoid a misleading global
+# number.
 [tool.coverage.run]
 source = ["alphaedge"]
 omit = [
-    "alphaedge/engine/*",
     "alphaedge/logs/*",
     "alphaedge/tests/*",
-    "alphaedge/core/_stubs/*",
+    "alphaedge/engine/_experimental/*",
+    "alphaedge/engine/backtest*.py",
+    "alphaedge/engine/bayesian_optimizer.py",
+    "alphaedge/engine/broker.py",
+    "alphaedge/engine/dashboard.py",
+    "alphaedge/engine/data_feed.py",
+    "alphaedge/engine/monte_carlo.py",
+    "alphaedge/engine/sensitivity.py",
+    "alphaedge/engine/strategy.py",
+    "alphaedge/engine/walk_forward.py",
+    "alphaedge/engine/web_dashboard.py",
 ]
 
 [tool.coverage.report]
@@ -80,3 +91,8 @@ exclude_lines = [
 
 # --- Type checking : Pyright (Pylance engine) ---
 # Config lives in pyrightconfig.json at project root
+
+# --- Bandit Security Configuration ---
+[tool.bandit]
+exclude_dirs = ["alphaedge/tests", "alphaedge/core/_stubs", ".venv", "build"]
+skips = ["B101"]  # assert is fine in test helpers

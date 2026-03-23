@@ -27,7 +27,7 @@ def _build_executor() -> tuple[Any, list[Any]]:
     """Build an OrderExecutor with mocked broker, return (executor, placed)."""
     from alphaedge.engine.broker import BrokerConnection, OrderExecutor
 
-    with patch.object(BrokerConnection, "__init__", lambda self, *a, **kw: None):
+    with patch.object(BrokerConnection, "__init__", lambda _s, *_a, **_kw: None):
         broker = BrokerConnection.__new__(BrokerConnection)
         mock_ib = MagicMock()
         object.__setattr__(broker, "_ib", mock_ib)
@@ -35,7 +35,7 @@ def _build_executor() -> tuple[Any, list[Any]]:
 
         placed: list[Any] = []
 
-        def _capture(contract: Any, order: Any) -> MagicMock:
+        def _capture(_contract: Any, order: Any) -> MagicMock:
             placed.append(order)
             return MagicMock()
 

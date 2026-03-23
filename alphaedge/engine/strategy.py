@@ -20,12 +20,15 @@ from datetime import datetime
 from types import ModuleType
 from typing import Any
 
+from alphaedge.config.constants import IB_LIVE_PORT, IB_PAPER_PORT
 from alphaedge.config.loader import AppConfig, load_config
 from alphaedge.engine.broker import BrokerConnection, OrderExecutor
 from alphaedge.engine.data_feed import HistoricalDataFeed, RealtimeDataFeed
 from alphaedge.engine.position_manager import PositionManager
+from alphaedge.engine.regime_filter import DailyRegimeFilter
 from alphaedge.engine.session_lifecycle import SessionLifecycle
 from alphaedge.engine.signal_pipeline import SignalPipeline
+from alphaedge.utils.alerting import AlertManager, build_alert_config
 from alphaedge.utils.logger import get_logger, setup_logging
 from alphaedge.utils.news_filter import EconomicNewsFilter, build_news_filter
 
@@ -48,6 +51,7 @@ class StrategyState:
     current_equity: float = 0.0
     is_position_open: bool = False
     m5_candles: list[dict[str, Any]] = field(default_factory=list)
+    pre_session_m1_candles: list[dict[str, Any]] = field(default_factory=list)
     m1_candles: list[dict[str, Any]] = field(default_factory=list)
     max_candles: int = 200
 
@@ -83,11 +87,22 @@ def _import_core_modules() -> CoreModules:
             engulfing_detector,
             fcr_detector,
             gap_detector,
+            get_backend_name,
+            get_fallback_modules,
             order_manager,
             risk_manager,
         )
 
-        logger.info("ALPHAEDGE: Cython core modules loaded successfully")
+        backend_name = get_backend_name()
+        fallback_modules = get_fallback_modules()
+        if fallback_modules:
+            logger.warning(
+                "ALPHAEDGE: core backend=%s with fallback on %s",
+                backend_name,
+                ", ".join(fallback_modules),
+            )
+        else:
+            logger.info("ALPHAEDGE: core backend=%s", backend_name)
         return CoreModules(
             fcr_detector=fcr_detector,
             gap_detector=gap_detector,
@@ -159,11 +174,19 @@ class FCRStrategy:
         self._signal_pipeline = SignalPipeline()
         self._position_manager = PositionManager()
 
+        # Regime filter — observation mode only (logs regime, never blocks trades)
+        self._regime_filter: DailyRegimeFilter = DailyRegimeFilter()
+
+        # Alert manager — dispatches Telegram/Discord notifications
+        self._alert_manager: AlertManager = AlertManager(
+            build_alert_config(config.alerting_raw)
+        )
+
         # Session loop, execution, reconnect logic
         self._lifecycle = SessionLifecycle(self)
 
         # Wire IB disconnect event for auto-reconnection
-        self._broker.ib.disconnectedEvent += self._lifecycle._on_ib_disconnect
+        self._broker.add_disconnect_handler(self._lifecycle._on_ib_disconnect)
 
     async def graceful_shutdown(self) -> None:
         """Initiate graceful shutdown (called by signal handler)."""
@@ -179,13 +202,22 @@ class FCRStrategy:
         self,
         pair: str,
         session_start: datetime,
-    ) -> list[dict[str, Any]]:
-        """Fetch M5 candles before session open for FCR scan."""
-        return await self._hist_feed.fetch_m5_pre_session(
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Fetch M5 and M1 pre-session candles needed by the live pipeline."""
+        fcr_lookback_minutes = max(5, self._config.trading.fcr_lookback_candles * 5)
+        atr_baseline_minutes = max(30, self._config.trading.atr_period)
+        m5_candles = await self._hist_feed.fetch_m5_pre_session(
             pair=pair,
             session_start_utc=session_start,
-            lookback_minutes=30,
+            lookback_minutes=fcr_lookback_minutes,
         )
+        pre_session_m1 = await self._hist_feed.fetch_bars(
+            pair=pair,
+            timeframe=self._config.trading.entry_timeframe,
+            duration=f"{atr_baseline_minutes * 60} S",
+            end_dt=session_start,
+        )
+        return m5_candles, pre_session_m1
 
     def _detect_fcr(
         self,
@@ -193,7 +225,21 @@ class FCRStrategy:
         pip_size: float,
     ) -> dict[str, Any] | None:
         """Run FCR detection on buffered M5 candles."""
-        return self._signal_pipeline.detect_fcr(state, self._modules, pip_size)
+        # Observation-only regime log — does NOT block the trade
+        from datetime import date as _date
+
+        regime_filter = getattr(self, "_regime_filter", None)
+        regime = "unknown"
+        if regime_filter is not None:
+            regime = regime_filter.predict(_date.today(), state.m5_candles)
+        logger.info(
+            "ALPHAEDGE: regime=%s pair=%s [observation only]",
+            regime,
+            state.pair,
+        )
+        return self._signal_pipeline.detect_fcr(
+            state, self._modules, self._config, pip_size
+        )
 
     def _detect_gap(
         self,
@@ -203,7 +249,7 @@ class FCRStrategy:
     ) -> dict[str, Any] | None:
         """Run gap/volatility-expansion detection."""
         return self._signal_pipeline.detect_gap(
-            state, self._modules, pre_close, session_open
+            state, self._modules, self._config, pre_close, session_open
         )
 
     def _detect_engulfing(
@@ -283,6 +329,19 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _apply_cli_mode(config: AppConfig, mode: str) -> None:
+    """Apply an explicit CLI trading mode to the loaded config."""
+    if mode == "paper":
+        config.ib.is_paper = True
+        config.ib.port = IB_PAPER_PORT
+        config.mode = "paper"
+        return
+
+    config.ib.is_paper = False
+    config.ib.port = IB_LIVE_PORT
+    config.mode = "live"
+
+
 async def _main() -> None:
     """Async main entry point."""
     args = _parse_args()
@@ -304,13 +363,17 @@ async def _main() -> None:
 
     setup_logging()
     config = load_config(config_path=args.config)
+    _apply_cli_mode(config, args.mode)
 
     if args.mode == "paper":
-        config.ib.is_paper = True
-        config.ib.port = 4002
         print("=" * 60)
         print("📝  ALPHAEDGE — PAPER TRADING MODE")
-        print("📝  No real money at risk. IB Gateway port 4002.")
+        print(f"📝  No real money at risk. IB Gateway port {IB_PAPER_PORT}.")
+        print("=" * 60)
+    else:
+        print("=" * 60)
+        print("⚠️  ALPHAEDGE — LIVE TRADING MODE")
+        print(f"⚠️  IB Gateway live port {IB_LIVE_PORT} selected.")
         print("=" * 60)
 
     strategy = FCRStrategy(config)

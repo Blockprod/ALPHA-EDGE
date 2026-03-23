@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
@@ -169,11 +171,21 @@ class AlertConfig:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     events: list[str] = field(default_factory=lambda: [e.value for e in AlertEvent])
+    paper_mode: bool = True
 
 
 def _is_event_enabled(event: AlertEvent, config: AlertConfig) -> bool:
     """Check whether a specific event type is enabled."""
     return event.value in config.events
+
+
+# Per-event cooldown in seconds (prevents alert storms)
+_COOLDOWN_SECONDS: dict[AlertEvent, int] = {
+    AlertEvent.IB_DISCONNECTED: 120,
+    AlertEvent.IB_RECONNECTED: 60,
+    AlertEvent.KILL_SWITCH: 300,
+}
+_DEFAULT_COOLDOWN: int = 30
 
 
 # ------------------------------------------------------------------
@@ -205,12 +217,17 @@ def send_telegram(alert: Alert, config: TelegramConfig) -> bool:
     req = Request(url, data=payload, method="POST")
     req.add_header("Content-Type", "application/json")
 
-    try:
-        with urlopen(req, timeout=10) as resp:  # noqa: S310
-            return bool(resp.status == 200)
-    except (URLError, OSError) as exc:
-        logger.error(f"Telegram alert failed: {exc}")
-        return False
+    for attempt in range(1, 4):
+        try:
+            with urlopen(req, timeout=10) as resp:  # nosec B310 — URL from trusted config, not user input
+                return bool(resp.status == 200)
+        except (URLError, OSError) as exc:
+            if attempt == 3:
+                logger.error(f"Telegram alert failed after 3 attempts: {exc}")
+                return False
+            logger.warning(f"Telegram alert retry {attempt}/3: {exc}")
+            time.sleep(2 ** (attempt - 1))
+    return False
 
 
 def send_discord(alert: Alert, config: DiscordConfig) -> bool:
@@ -234,12 +251,17 @@ def send_discord(alert: Alert, config: DiscordConfig) -> bool:
     req = Request(config.webhook_url, data=payload, method="POST")
     req.add_header("Content-Type", "application/json")
 
-    try:
-        with urlopen(req, timeout=10) as resp:  # noqa: S310
-            return resp.status in (200, 204)
-    except (URLError, OSError) as exc:
-        logger.error(f"Discord alert failed: {exc}")
-        return False
+    for attempt in range(1, 4):
+        try:
+            with urlopen(req, timeout=10) as resp:  # nosec B310 — URL from trusted config, not user input
+                return resp.status in (200, 204)
+        except (URLError, OSError) as exc:
+            if attempt == 3:
+                logger.error(f"Discord alert failed after 3 attempts: {exc}")
+                return False
+            logger.warning(f"Discord alert retry {attempt}/3: {exc}")
+            time.sleep(2 ** (attempt - 1))
+    return False
 
 
 # ------------------------------------------------------------------
@@ -258,6 +280,7 @@ class AlertManager:
         self._config = config
         self._send_count: int = 0
         self._fail_count: int = 0
+        self._last_sent: dict[AlertEvent, datetime] = {}
 
     @property
     def config(self) -> AlertConfig:
@@ -288,6 +311,27 @@ class AlertManager:
         """
         if not _is_event_enabled(alert.event, self._config):
             return False
+
+        # Cooldown: suppress duplicate alerts within the configured window
+        cooldown = _COOLDOWN_SECONDS.get(alert.event, _DEFAULT_COOLDOWN)
+        now = datetime.now(tz=UTC)
+        last = self._last_sent.get(alert.event)
+        if last is not None and (now - last).total_seconds() < cooldown:
+            logger.debug(
+                f"Alert suppressed (cooldown {cooldown}s): {alert.event.value}"
+            )
+            return False
+        self._last_sent[alert.event] = now
+
+        # In paper mode, prefix the title so mobile notifications are unambiguous
+        if self._config.paper_mode:
+            alert = Alert(
+                event=alert.event,
+                level=alert.level,
+                title=f"[PAPER] {alert.title}",
+                message=alert.message,
+                timestamp=alert.timestamp,
+            )
 
         any_success = False
 
@@ -339,14 +383,17 @@ def alert_trade_executed(
     entry_price: float,
     stop_loss: float,
     take_profit: float,
+    lot_size: float = 0.0,
 ) -> Alert:
     """Build an alert for a trade execution."""
+    lot_str = f"\nLots: {lot_size:.2f}" if lot_size > 0 else ""
     return Alert(
         event=AlertEvent.TRADE_EXECUTED,
         level=AlertLevel.INFO,
         title=f"Trade Opened: {pair} {direction}",
         message=(
-            f"Entry: {entry_price:.5f}\nSL: {stop_loss:.5f}\nTP: {take_profit:.5f}"
+            f"Entry: {entry_price:.5f}\nSL: {stop_loss:.5f}"
+            f"\nTP: {take_profit:.5f}{lot_str}"
         ),
     )
 
@@ -378,8 +425,15 @@ def alert_signal_detected(pair: str, direction: str) -> Alert:
     )
 
 
-def alert_kill_switch(reason: str, daily_pnl_pct: float) -> Alert:
+def alert_kill_switch(
+    reason: str,
+    daily_pnl_pct: float,
+    traceback_str: str | None = None,
+) -> Alert:
     """Build an alert for kill-switch activation."""
+    tb_section = ""
+    if traceback_str:
+        tb_section = f"\n\n{traceback_str[:500]}"
     return Alert(
         event=AlertEvent.KILL_SWITCH,
         level=AlertLevel.CRITICAL,
@@ -387,18 +441,31 @@ def alert_kill_switch(reason: str, daily_pnl_pct: float) -> Alert:
         message=(
             f"Reason: {reason}\n"
             f"Daily P&L: {daily_pnl_pct:+.2f}%\n"
-            f"All orders cancelled. Trading halted."
+            f"All orders cancelled. Trading halted.{tb_section}"
         ),
     )
 
 
-def alert_ib_disconnected() -> Alert:
+def alert_ib_disconnected(
+    error_code: int | None = None,
+    error_msg: str | None = None,
+    traceback_str: str | None = None,
+) -> Alert:
     """Build an alert for IB Gateway disconnection."""
+    detail = ""
+    if error_code is not None:
+        detail = f"\nError {error_code}: {error_msg or ''}"
+    tb_section = ""
+    if traceback_str:
+        tb_section = f"\n\n{traceback_str[:500]}"
     return Alert(
         event=AlertEvent.IB_DISCONNECTED,
         level=AlertLevel.CRITICAL,
         title="IB Gateway DISCONNECTED",
-        message="Connection to Interactive Brokers lost. Attempting reconnection.",
+        message=(
+            f"Connection to Interactive Brokers lost."
+            f" Attempting reconnection.{detail}{tb_section}"
+        ),
     )
 
 
@@ -476,5 +543,8 @@ def build_alert_config(raw: dict[str, Any]) -> AlertConfig:
     )
     events_raw = raw.get("events", [e.value for e in AlertEvent])
     events = [str(e) for e in events_raw]
+    paper_mode = os.environ.get("ALPHAEDGE_PAPER", "true").lower() == "true"
 
-    return AlertConfig(telegram=telegram, discord=discord, events=events)
+    return AlertConfig(
+        telegram=telegram, discord=discord, events=events, paper_mode=paper_mode
+    )

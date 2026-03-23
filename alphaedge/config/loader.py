@@ -20,16 +20,31 @@ import yaml
 from dotenv import load_dotenv
 
 from alphaedge.config.constants import (
+    DEFAULT_ATR_PERIOD,
+    DEFAULT_FCR_LOOKBACK,
     DEFAULT_MAX_DAILY_LOSS_PCT,
     DEFAULT_MAX_SPREAD_PIPS,
     DEFAULT_MAX_TRADES_PER_SESSION,
     DEFAULT_MIN_ATR_RATIO,
     DEFAULT_MIN_RANGE_PIPS,
+    DEFAULT_MIN_VOLUME_RATIO,
     DEFAULT_RISK_PCT,
     DEFAULT_RR_RATIO,
+    DEFAULT_VOLUME_PERIOD,
     IB_HOST,
+    IB_LIVE_PORT,
     IB_PAPER_PORT,
+    LONDON_END_HOUR,
+    LONDON_END_MINUTE,
+    LONDON_START_HOUR,
+    LONDON_START_MINUTE,
+    LONDON_TZ,
     PIP_SIZES,
+    SESSION_END_HOUR,
+    SESSION_END_MINUTE,
+    SESSION_START_HOUR,
+    SESSION_START_MINUTE,
+    TZ_NEW_YORK,
 )
 
 
@@ -50,16 +65,70 @@ class SessionSpec:
 # Canonical defaults per pair (used when pair_sessions not in YAML)
 _PAIR_SESSION_DEFAULTS: dict[str, SessionSpec] = {
     # London Open 08:00–09:00 UTC — EUR/GBP/AUD/NZD/CHF pairs
-    "EURUSD": SessionSpec(8, 0, 9, 0, "UTC"),
-    "GBPUSD": SessionSpec(8, 0, 9, 0, "UTC"),
-    "AUDUSD": SessionSpec(8, 0, 9, 0, "UTC"),
-    "NZDUSD": SessionSpec(8, 0, 9, 0, "UTC"),
-    "USDCHF": SessionSpec(8, 0, 9, 0, "UTC"),
-    "EURJPY": SessionSpec(8, 0, 9, 0, "UTC"),
-    "GBPJPY": SessionSpec(8, 0, 9, 0, "UTC"),
+    "EURUSD": SessionSpec(
+        LONDON_START_HOUR,
+        LONDON_START_MINUTE,
+        LONDON_END_HOUR,
+        LONDON_END_MINUTE,
+        LONDON_TZ,
+    ),
+    "GBPUSD": SessionSpec(
+        LONDON_START_HOUR,
+        LONDON_START_MINUTE,
+        LONDON_END_HOUR,
+        LONDON_END_MINUTE,
+        LONDON_TZ,
+    ),
+    "AUDUSD": SessionSpec(
+        LONDON_START_HOUR,
+        LONDON_START_MINUTE,
+        LONDON_END_HOUR,
+        LONDON_END_MINUTE,
+        LONDON_TZ,
+    ),
+    "NZDUSD": SessionSpec(
+        LONDON_START_HOUR,
+        LONDON_START_MINUTE,
+        LONDON_END_HOUR,
+        LONDON_END_MINUTE,
+        LONDON_TZ,
+    ),
+    "USDCHF": SessionSpec(
+        LONDON_START_HOUR,
+        LONDON_START_MINUTE,
+        LONDON_END_HOUR,
+        LONDON_END_MINUTE,
+        LONDON_TZ,
+    ),
+    "EURJPY": SessionSpec(
+        LONDON_START_HOUR,
+        LONDON_START_MINUTE,
+        LONDON_END_HOUR,
+        LONDON_END_MINUTE,
+        LONDON_TZ,
+    ),
+    "GBPJPY": SessionSpec(
+        LONDON_START_HOUR,
+        LONDON_START_MINUTE,
+        LONDON_END_HOUR,
+        LONDON_END_MINUTE,
+        LONDON_TZ,
+    ),
     # NYSE Open 09:30–10:30 ET — USD-centric pairs
-    "USDJPY": SessionSpec(9, 30, 10, 30, "America/New_York"),
-    "USDCAD": SessionSpec(9, 30, 10, 30, "America/New_York"),
+    "USDJPY": SessionSpec(
+        SESSION_START_HOUR,
+        SESSION_START_MINUTE,
+        SESSION_END_HOUR,
+        SESSION_END_MINUTE,
+        TZ_NEW_YORK,
+    ),
+    "USDCAD": SessionSpec(
+        SESSION_START_HOUR,
+        SESSION_START_MINUTE,
+        SESSION_END_HOUR,
+        SESSION_END_MINUTE,
+        TZ_NEW_YORK,
+    ),
 }
 
 
@@ -73,7 +142,7 @@ class IBConfig:
     host: str = IB_HOST
     port: int = IB_PAPER_PORT
     client_id: int = 1
-    account_id: str = ""
+    account_id: str = field(default="", repr=False)
     account_type: str = "Individual"
     is_paper: bool = True
 
@@ -108,8 +177,12 @@ class TradingConfig:
     london_open_enabled: bool = False
     min_body_ratio: float = 0.3
     max_wick_ratio: float = 1.5
+    atr_period: int = DEFAULT_ATR_PERIOD
     min_atr_ratio: float = DEFAULT_MIN_ATR_RATIO
     min_range_pips: float = DEFAULT_MIN_RANGE_PIPS
+    volume_period: int = DEFAULT_VOLUME_PERIOD
+    min_volume_ratio: float = DEFAULT_MIN_VOLUME_RATIO
+    fcr_lookback_candles: int = DEFAULT_FCR_LOOKBACK
     max_lot_size: float = 1.0
     backtest_years: int = 3
     eur_usd_rate: float = 1.08
@@ -142,6 +215,7 @@ class AppConfig:
     log_level: str = "INFO"
     mode: str = "paper"
     news_filter_raw: dict[str, Any] = field(default_factory=dict)
+    alerting_raw: dict[str, Any] = field(default_factory=dict)
 
 
 # ------------------------------------------------------------------
@@ -179,13 +253,11 @@ def _build_ib_config(raw: dict[str, Any]) -> IBConfig:
     """Merge YAML ib section with env overrides."""
     ib_section: dict[str, Any] = raw.get("ib", {})
 
-    # Env vars override YAML
-    is_paper = os.getenv("ALPHAEDGE_PAPER", "true").lower() == "true"
-    default_port = IB_PAPER_PORT if is_paper else 4001
+    is_paper, port = _resolve_ib_mode_and_port(ib_section)
 
     return IBConfig(
         host=os.getenv("ALPHAEDGE_IB_HOST", ib_section.get("host", IB_HOST)),
-        port=int(os.getenv("ALPHAEDGE_IB_PORT", ib_section.get("port", default_port))),
+        port=port,
         client_id=int(
             os.getenv("ALPHAEDGE_IB_CLIENT_ID", ib_section.get("client_id", 1))
         ),
@@ -195,14 +267,56 @@ def _build_ib_config(raw: dict[str, Any]) -> IBConfig:
     )
 
 
+def _parse_env_bool(value: str) -> bool:
+    """Parse a permissive boolean env var value."""
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_ib_mode_and_port(ib_section: dict[str, Any]) -> tuple[bool, int]:
+    """Resolve IB mode and port from env/YAML while preventing ambiguity."""
+    env_paper = os.getenv("ALPHAEDGE_PAPER")
+    env_port = os.getenv("ALPHAEDGE_IB_PORT")
+    yaml_port = ib_section.get("port")
+
+    explicit_port: int | None = None
+    if env_port is not None:
+        explicit_port = int(env_port)
+    elif yaml_port is not None:
+        explicit_port = int(yaml_port)
+
+    if env_paper is not None:
+        is_paper = _parse_env_bool(env_paper)
+    elif explicit_port in (IB_LIVE_PORT, IB_PAPER_PORT):
+        is_paper = explicit_port == IB_PAPER_PORT
+    else:
+        is_paper = True
+
+    canonical_port = IB_PAPER_PORT if is_paper else IB_LIVE_PORT
+
+    if explicit_port is None:
+        return is_paper, canonical_port
+
+    if (
+        explicit_port in (IB_LIVE_PORT, IB_PAPER_PORT)
+        and explicit_port != canonical_port
+    ):
+        mode_label = "paper" if is_paper else "live"
+        raise ValueError(
+            "ALPHAEDGE IB config mismatch: "
+            f"mode={mode_label} requires port {canonical_port}, got {explicit_port}"
+        )
+
+    return is_paper, explicit_port
+
+
 def _check_ib_port(port: int) -> None:
     """Warn if IB port is not one of the standard Gateway ports."""
     from alphaedge.utils.logger import get_logger
 
-    if port not in (4001, 4002):
+    if port not in (IB_LIVE_PORT, IB_PAPER_PORT):
         get_logger().warning(
             f"ALPHAEDGE CONFIG: Non-standard IB port {port} "
-            f"(expected 4001 for live or 4002 for paper)"
+            f"(expected {IB_LIVE_PORT} for live or {IB_PAPER_PORT} for paper)"
         )
 
 
@@ -213,6 +327,7 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
     """Extract and validate trading parameters from the YAML section."""
     section: dict[str, Any] = raw.get("trading", {})
     eng_section: dict[str, Any] = raw.get("engulfing", {})
+    pattern_section: dict[str, Any] = raw.get("pattern", {})
     risk_section: dict[str, Any] = raw.get("risk", {})
     vol_section: dict[str, Any] = raw.get("volatility", {})
     struct_section: dict[str, Any] = raw.get("structure", {})
@@ -245,9 +360,17 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         london_open_enabled=bool(section.get("london_open_enabled", False)),
         min_body_ratio=float(eng_section.get("min_body_ratio", 0.3)),
         max_wick_ratio=float(eng_section.get("max_wick_ratio", 1.5)),
+        atr_period=int(vol_section.get("atr_period", DEFAULT_ATR_PERIOD)),
         min_atr_ratio=float(vol_section.get("min_atr_ratio", DEFAULT_MIN_ATR_RATIO)),
         min_range_pips=float(
             struct_section.get("min_range_pips", DEFAULT_MIN_RANGE_PIPS)
+        ),
+        volume_period=int(pattern_section.get("volume_period", DEFAULT_VOLUME_PERIOD)),
+        min_volume_ratio=float(
+            pattern_section.get("min_volume_ratio", DEFAULT_MIN_VOLUME_RATIO)
+        ),
+        fcr_lookback_candles=int(
+            struct_section.get("lookback_candles", DEFAULT_FCR_LOOKBACK)
         ),
         max_lot_size=float(section.get("max_lot_size", 1.0)),
         backtest_years=int(section.get("backtest_years", 3)),
@@ -283,7 +406,7 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
     }
     cfg.min_volume_ratio_by_pair = {
         k: float(v)
-        for k, v in raw.get("pattern", {}).get("min_volume_ratio_by_pair", {}).items()
+        for k, v in pattern_section.get("min_volume_ratio_by_pair", {}).items()
     }
     cfg.pair_aliases = {k: str(v) for k, v in section.get("pair_aliases", {}).items()}
     _validate_trading_config(cfg)
@@ -320,6 +443,16 @@ def _validate_trading_config(cfg: TradingConfig) -> None:
         )
     if cfg.max_spread_pips <= 0.0:
         raise ValueError(f"max_spread_pips must be > 0, got {cfg.max_spread_pips}")
+    if cfg.atr_period <= 0:
+        raise ValueError(f"atr_period must be > 0, got {cfg.atr_period}")
+    if cfg.volume_period <= 0:
+        raise ValueError(f"volume_period must be > 0, got {cfg.volume_period}")
+    if cfg.min_volume_ratio <= 0.0:
+        raise ValueError(f"min_volume_ratio must be > 0, got {cfg.min_volume_ratio}")
+    if cfg.fcr_lookback_candles <= 0:
+        raise ValueError(
+            f"fcr_lookback_candles must be > 0, got {cfg.fcr_lookback_candles}"
+        )
 
 
 # ------------------------------------------------------------------
@@ -361,6 +494,7 @@ def load_config(
         log_level=raw.get("log_level", "INFO"),
         mode="paper" if ib_cfg.is_paper else "live",
         news_filter_raw=raw.get("news_filter", {}),
+        alerting_raw=raw.get("alerting", {}),
     )
 
 

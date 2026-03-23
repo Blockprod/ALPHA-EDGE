@@ -37,7 +37,7 @@ def _mock_broker() -> MagicMock:
     broker = MagicMock()
     broker.ib = MagicMock()
     broker.ib.disconnectedEvent = MagicMock()
-    broker.ib.disconnectedEvent.__iadd__ = lambda self, h: self
+    broker.ib.disconnectedEvent.__iadd__ = lambda self, _h: self
     return broker
 
 
@@ -161,7 +161,7 @@ class TestDependencyInjection:
 
         mock_trade = MagicMock()
         mock_trade.filledEvent = MagicMock()
-        mock_trade.filledEvent.__iadd__ = lambda self, h: self
+        mock_trade.filledEvent.__iadd__ = lambda self, _h: self
         mock_trade.filledEvent.wait = AsyncMock()
         place_mock = AsyncMock(return_value=[mock_trade])
         monkeypatch.setattr(strategy._executor, "place_bracket_order", place_mock)

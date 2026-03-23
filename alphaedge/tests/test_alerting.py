@@ -364,6 +364,7 @@ class TestAlertManager:
         assert mgr.send(a) is True
         assert mgr.send_count == 1
         assert mgr.fail_count == 0
+        mock_tg.assert_called_once()
 
     @patch("alphaedge.utils.alerting.send_discord", return_value=True)
     def test_send_discord_success(self, mock_dc: MagicMock) -> None:
@@ -376,6 +377,7 @@ class TestAlertManager:
         )
         assert mgr.send(a) is True
         assert mgr.send_count == 1
+        mock_dc.assert_called_once()
 
     @patch("alphaedge.utils.alerting.send_telegram", return_value=True)
     @patch("alphaedge.utils.alerting.send_discord", return_value=True)
@@ -389,6 +391,8 @@ class TestAlertManager:
         )
         assert mgr.send(a) is True
         assert mgr.send_count == 2
+        mock_tg.assert_called_once()
+        mock_dc.assert_called_once()
 
     @patch("alphaedge.utils.alerting.send_telegram", return_value=False)
     def test_send_failure_counted(self, mock_tg: MagicMock) -> None:
@@ -402,6 +406,7 @@ class TestAlertManager:
         assert mgr.send(a) is False
         assert mgr.send_count == 0
         assert mgr.fail_count == 1
+        mock_tg.assert_called_once()
 
     def test_event_filtering(self) -> None:
         cfg = self._make_config(tg_enabled=True)
@@ -431,6 +436,7 @@ class TestAlertManager:
         result = await mgr.send_async(a)
         assert result is True
         assert mgr.send_count == 1
+        mock_tg.assert_called_once()
 
     def test_no_channels_enabled(self) -> None:
         mgr = AlertManager(self._make_config())

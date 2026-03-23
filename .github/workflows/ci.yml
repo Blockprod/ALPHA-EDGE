@@ -36,6 +36,10 @@ jobs:
         run: |
           python -m pyright alphaedge/
 
+      - name: Build Cython extensions
+        run: |
+          python setup.py build_ext --inplace
+
       - name: Secret scanning (TruffleHog)
         uses: trufflesecurity/trufflehog@main
         with:
@@ -44,7 +48,15 @@ jobs:
           head: ${{ github.event.pull_request.head.sha || github.event.after }}
           extra_args: --only-verified
 
+      - name: Compiled core smoke check
+        env:
+          ALPHAEDGE_CORE_BACKEND: compiled
+        run: |
+          python -c "from alphaedge.core import engulfing_detector, fcr_detector, gap_detector, order_manager, risk_manager; print(engulfing_detector.__name__); print(fcr_detector.__name__); print(gap_detector.__name__); print(order_manager.__name__); print(risk_manager.__name__)"
+
       - name: Tests (Pytest)
+        env:
+          ALPHAEDGE_CORE_BACKEND: stubs
         run: |
           python -m pytest alphaedge/tests/ -v --tb=short \
             --cov=alphaedge \

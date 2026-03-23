@@ -19,6 +19,7 @@ from alphaedge.engine.strategy import StrategyState
 def _make_state(**kw: Any) -> StrategyState:
     state = StrategyState(pair="EURUSD")
     state.m5_candles = kw.get("m5_candles", [{"close": 1.1000}])
+    state.pre_session_m1_candles = kw.get("pre_session_m1_candles", [{"close": 1.0999}])
     state.m1_candles = kw.get("m1_candles", [{"close": 1.1001}])
     state.fcr_result = kw.get("fcr_result", None)
     return state
@@ -45,6 +46,14 @@ def _make_config(
     cfg.trading.rr_ratio = rr
     cfg.trading.min_body_ratio = min_body
     cfg.trading.max_wick_ratio = max_wick
+    cfg.trading.atr_period = 14
+    cfg.trading.min_atr_ratio = 1.7
+    cfg.trading.min_range_pips = 8.0
+    cfg.trading.min_range_pips_by_pair = {}
+    cfg.trading.volume_period = 20
+    cfg.trading.min_volume_ratio = 1.0
+    cfg.trading.min_volume_ratio_by_pair = {}
+    cfg.trading.fcr_lookback_candles = 6
     return cfg
 
 
@@ -55,7 +64,8 @@ class TestSignalPipelineDetectFCR:
         pipeline = SignalPipeline()
         state = _make_state()
         modules = _make_modules(fcr_result=None)
-        result = pipeline.detect_fcr(state, modules, pip_size=0.0001)
+        cfg = _make_config()
+        result = pipeline.detect_fcr(state, modules, cfg, pip_size=0.0001)
         assert result is None
         assert state.fcr_result is None
 
@@ -64,7 +74,8 @@ class TestSignalPipelineDetectFCR:
         state = _make_state()
         fcr = {"range_high": 1.1050, "range_low": 1.1000}
         modules = _make_modules(fcr_result=fcr)
-        result = pipeline.detect_fcr(state, modules, pip_size=0.0001)
+        cfg = _make_config()
+        result = pipeline.detect_fcr(state, modules, cfg, pip_size=0.0001)
         assert result == fcr
         assert state.fcr_result == fcr
 
@@ -73,9 +84,29 @@ class TestSignalPipelineDetectFCR:
         candles = [{"open": 1.1, "close": 1.11}]
         state = _make_state(m5_candles=candles)
         modules = _make_modules()
-        pipeline.detect_fcr(state, modules, pip_size=0.0001)
+        cfg = _make_config()
+        pipeline.detect_fcr(state, modules, cfg, pip_size=0.0001)
         call_kwargs = modules.fcr_detector.detect_fcr.call_args.kwargs
-        assert call_kwargs["candles_data"] is candles
+        assert call_kwargs["candles_data"] == candles
+
+    def test_uses_pair_override_and_lookback(self) -> None:
+        pipeline = SignalPipeline()
+        candles = [
+            {"open": 1.1, "close": 1.1001},
+            {"open": 1.1001, "close": 1.1002},
+            {"open": 1.1002, "close": 1.1003},
+        ]
+        state = _make_state(m5_candles=candles)
+        modules = _make_modules()
+        cfg = _make_config()
+        cfg.trading.fcr_lookback_candles = 2
+        cfg.trading.min_range_pips_by_pair = {"EURUSD": 6.5}
+
+        pipeline.detect_fcr(state, modules, cfg, pip_size=0.0001)
+
+        call_kwargs = modules.fcr_detector.detect_fcr.call_args.kwargs
+        assert call_kwargs["candles_data"] == candles[-2:]
+        assert call_kwargs["min_range_pips"] == 6.5
 
 
 class TestSignalPipelineDetectGap:
@@ -85,8 +116,9 @@ class TestSignalPipelineDetectGap:
         pipeline = SignalPipeline()
         state = _make_state()
         modules = _make_modules(gap_result=None)
+        cfg = _make_config()
         result = pipeline.detect_gap(
-            state, modules, pre_close=1.1000, session_open=1.1001
+            state, modules, cfg, pre_close=1.1000, session_open=1.1001
         )
         assert result is None
         assert state.gap_result is None
@@ -96,11 +128,28 @@ class TestSignalPipelineDetectGap:
         state = _make_state()
         gap = {"detected": True, "atr_ratio": 2.5}
         modules = _make_modules(gap_result=gap)
+        cfg = _make_config()
         result = pipeline.detect_gap(
-            state, modules, pre_close=1.1000, session_open=1.1050
+            state, modules, cfg, pre_close=1.1000, session_open=1.1050
         )
         assert result == gap
         assert state.gap_result == gap
+
+    def test_uses_pre_session_m1_and_configured_gap_params(self) -> None:
+        pipeline = SignalPipeline()
+        pre_session_m1 = [{"close": 1.0998}, {"close": 1.0999}]
+        state = _make_state(pre_session_m1_candles=pre_session_m1)
+        modules = _make_modules(gap_result={"detected": True})
+        cfg = _make_config()
+        cfg.trading.atr_period = 21
+        cfg.trading.min_atr_ratio = 1.9
+
+        pipeline.detect_gap(state, modules, cfg, pre_close=1.1000, session_open=1.1010)
+
+        call_kwargs = modules.gap_detector.detect_gap.call_args.kwargs
+        assert call_kwargs["pre_session_m1"] == pre_session_m1
+        assert call_kwargs["atr_period"] == 21
+        assert call_kwargs["min_atr_ratio"] == 1.9
 
 
 class TestSignalPipelineDetectEngulfing:
@@ -137,3 +186,19 @@ class TestSignalPipelineDetectEngulfing:
         call_kwargs = modules.engulfing_detector.detect_engulfing.call_args.kwargs
         assert call_kwargs["fcr_high"] == 1.1100
         assert call_kwargs["fcr_low"] == 1.0900
+
+    def test_uses_configured_volume_settings(self) -> None:
+        pipeline = SignalPipeline()
+        fcr = {"range_high": 1.1100, "range_low": 1.0900}
+        state = _make_state(fcr_result=fcr)
+        modules = _make_modules(eng_result={"detected": True})
+        cfg = _make_config()
+        cfg.trading.volume_period = 34
+        cfg.trading.min_volume_ratio = 1.3
+        cfg.trading.min_volume_ratio_by_pair = {"EURUSD": 1.6}
+
+        pipeline.detect_engulfing(state, modules, cfg, pip_size=0.0001)
+
+        call_kwargs = modules.engulfing_detector.detect_engulfing.call_args.kwargs
+        assert call_kwargs["volume_period"] == 34
+        assert call_kwargs["min_volume_ratio"] == 1.6

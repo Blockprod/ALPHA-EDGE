@@ -56,6 +56,15 @@ def _make_strategy(pairs: list[str] | None = None) -> FCRStrategy:
     config.trading.max_spread_pips = 3.0
     config.trading.spread_spike_multiplier = 2.0
     config.trading.rr_ratio = 2.0
+    config.trading.atr_period = 14
+    config.trading.min_atr_ratio = 1.7
+    config.trading.min_range_pips = 8.0
+    config.trading.min_range_pips_by_pair = {}
+    config.trading.volume_period = 20
+    config.trading.min_volume_ratio = 1.0
+    config.trading.min_volume_ratio_by_pair = {}
+    config.trading.fcr_lookback_candles = 6
+    config.trading.entry_timeframe = "1 min"
     config.trading.min_body_ratio = 0.5
     config.trading.max_wick_ratio = 0.5
     config.trading.risk_pct = 1.0
@@ -214,7 +223,7 @@ class TestVolatilityRegimeGate:
 
         check_called: list[int] = []
 
-        def _track_vol_regime_call(*a: Any, **k: Any) -> VolatilityRegimeResult:
+        def _track_vol_regime_call(*_a: Any, **_k: Any) -> VolatilityRegimeResult:
             check_called.append(1)
             return VolatilityRegimeResult(allowed=True)
 
@@ -353,7 +362,7 @@ class TestCorrelationCheckInBar:
         captured: list[list[str]] = []
 
         def _capture_check(
-            pair: str, open_pairs: list[str], *args: Any, **kwargs: Any
+            _pair: str, open_pairs: list[str], *_args: Any, **_kwargs: Any
         ) -> CorrelationCheckResult:
             captured.append(list(open_pairs))
             return CorrelationCheckResult(

@@ -72,7 +72,10 @@ def export_results_csv(
     df = pd.DataFrame(rows)
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     df.to_csv(output_path, index=False)
-    logger.info(f"ALPHAEDGE backtest results exported to {output_path}")
+    logger.info(
+        f"ALPHAEDGE backtest results exported to {output_path} "
+        f"({stats.total_trades} trades \u00b7 ${stats.total_pnl_usd:+,.2f} P&L)"
+    )
 
 
 # ------------------------------------------------------------------

@@ -11,12 +11,18 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Generator
 from typing import Any
 
 import pytest
 
 from alphaedge.utils.state_persistence import clear_daily_state
+
+# Force the pure-Python Cython stubs during unit tests so collection and
+# assertions remain reproducible across environments with or without local
+# compiled artifacts.
+os.environ.setdefault("ALPHAEDGE_CORE_BACKEND", "stubs")
 
 
 # ------------------------------------------------------------------

@@ -102,7 +102,7 @@ IB Gateway
 | `detect_gap(...)` | `detected: False` | STOP — do not proceed to engulfing detection |
 | `detect_engulfing(...)` | `None` | STOP — do not place any order |
 | `calculate_position_size(...)` | `is_valid: False` | STOP — do not submit order, log WARNING |
-| `check_daily_limit(...)` | `halt_trading: True` | STOP ALL trading immediately — log CRITICAL |
+| `check_daily_limit(...)` | `limit_breached: True` or `can_trade: False` | STOP ALL trading immediately — log CRITICAL |
 | `create_bracket_order(...)` | `is_valid: False` | STOP — log rejection_reason, skip trade |
 
 **The pipeline is all-or-nothing: one STOP at any stage cancels the entire trade.**

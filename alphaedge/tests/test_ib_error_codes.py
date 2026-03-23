@@ -24,7 +24,7 @@ from alphaedge.engine.broker import BrokerConnection
 # Helpers
 # ------------------------------------------------------------------
 def _build_broker() -> BrokerConnection:
-    with patch.object(BrokerConnection, "__init__", lambda self, *a, **kw: None):
+    with patch.object(BrokerConnection, "__init__", lambda _s, *_a, **_kw: None):
         broker = BrokerConnection.__new__(BrokerConnection)
         mock_ib = MagicMock()
         object.__setattr__(broker, "_ib", mock_ib)

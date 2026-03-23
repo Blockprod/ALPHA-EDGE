@@ -109,6 +109,14 @@ python -m alphaedge.engine.dashboard
 
 Displays the Rich terminal dashboard with mock data for layout testing.
 
+### Web Dashboard
+
+```powershell
+make web-dashboard
+```
+
+Starts the FastAPI REST + WebSocket server on port 8080 (standalone process, run in parallel with the strategy). State is read from `alphaedge_daily_state.json` — no direct coupling to the live strategy process.
+
 ---
 
 ## License

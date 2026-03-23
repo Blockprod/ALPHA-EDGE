@@ -142,6 +142,69 @@ def _filter_bars_by_date(
     return filtered
 
 
+def _extract_data_range(m1_bars: list[dict[str, Any]]) -> tuple[date, date] | None:
+    """Return the first and last session dates represented by the M1 data."""
+    et_tz = ZoneInfo("America/New_York")
+    all_dates: list[date] = []
+    for bar in m1_bars:
+        dt_val = bar["datetime"]
+        if dt_val.tzinfo is None:
+            dt_val = dt_val.replace(tzinfo=ZoneInfo("UTC"))
+        all_dates.append(dt_val.astimezone(et_tz).date())
+
+    if not all_dates:
+        return None
+
+    return min(all_dates), max(all_dates)
+
+
+def _run_window_backtests(
+    wf_win: WalkForwardWindow,
+    m1_bars: list[dict[str, Any]],
+    m5_bars: list[dict[str, Any]],
+    pair: str,
+    config: AppConfig,
+) -> tuple[list[TradeRecord], list[TradeRecord]]:
+    """Run baseline IS/OOS backtests for one walk-forward window."""
+    from alphaedge.engine.backtest import _backtest_pair  # noqa: PLC0415
+
+    train_m1 = _filter_bars_by_date(m1_bars, wf_win.train_start, wf_win.train_end)
+    train_m5 = _filter_bars_by_date(m5_bars, wf_win.train_start, wf_win.train_end)
+    test_m1 = _filter_bars_by_date(m1_bars, wf_win.test_start, wf_win.test_end)
+    test_m5 = _filter_bars_by_date(m5_bars, wf_win.test_start, wf_win.test_end)
+
+    return (
+        _backtest_pair(pair, train_m1, train_m5, config),
+        _backtest_pair(pair, test_m1, test_m5, config),
+    )
+
+
+def _run_optimized_oos_fold(
+    wf_win: WalkForwardWindow,
+    m1_bars: list[dict[str, Any]],
+    m5_bars: list[dict[str, Any]],
+    pair: str,
+    config: AppConfig,
+    optimize_fn: Any | None,
+) -> tuple[BacktestStats | None, dict[str, float], list[TradeRecord]]:
+    """Run optional IS optimisation and return OOS optimised trades."""
+    if optimize_fn is None:
+        return None, {}, []
+
+    from alphaedge.engine.sensitivity import _run_with_params_trades  # noqa: PLC0415
+
+    train_m1 = _filter_bars_by_date(m1_bars, wf_win.train_start, wf_win.train_end)
+    train_m5 = _filter_bars_by_date(m5_bars, wf_win.train_start, wf_win.train_end)
+    test_m1 = _filter_bars_by_date(m1_bars, wf_win.test_start, wf_win.test_end)
+    test_m5 = _filter_bars_by_date(m5_bars, wf_win.test_start, wf_win.test_end)
+
+    best_params = optimize_fn(train_m1, train_m5, pair, config)
+    opt_trades = _run_with_params_trades(test_m1, test_m5, pair, config, best_params)
+    for trade in opt_trades:
+        trade.sample_type = "OOS_OPT"
+    return compute_stats(opt_trades), best_params, opt_trades
+
+
 def run_walk_forward(  # pylint: disable=too-many-locals
     m1_bars: list[dict[str, Any]],
     m5_bars: list[dict[str, Any]],
@@ -190,24 +253,11 @@ def run_walk_forward(  # pylint: disable=too-many-locals
         ``aggregated_oos_optimized`` is populated only when ``optimize_fn``
         is not None.
     """
-    # Lazy import avoids circular dependency: walk_forward → backtest → walk_forward
-    from alphaedge.engine.backtest import _backtest_pair  # noqa: PLC0415
-
-    et_tz = ZoneInfo("America/New_York")
-
-    # Determine data date range
-    all_dates: list[date] = []
-    for bar in m1_bars:
-        dt_val = bar["datetime"]
-        if dt_val.tzinfo is None:
-            dt_val = dt_val.replace(tzinfo=ZoneInfo("UTC"))
-        all_dates.append(dt_val.astimezone(et_tz).date())
-
-    if not all_dates:
+    data_range = _extract_data_range(m1_bars)
+    if data_range is None:
         return WalkForwardReport()
 
-    data_start = min(all_dates)
-    data_end = max(all_dates)
+    data_start, data_end = data_range
 
     windows = generate_wf_windows(
         data_start, data_end, train_months, test_months, step_months
@@ -218,14 +268,13 @@ def run_walk_forward(  # pylint: disable=too-many-locals
     all_optimized_test_trades: list[TradeRecord] = []
 
     for wf_win in windows:
-        # Filter bars for train and test periods
-        train_m1 = _filter_bars_by_date(m1_bars, wf_win.train_start, wf_win.train_end)
-        train_m5 = _filter_bars_by_date(m5_bars, wf_win.train_start, wf_win.train_end)
-        test_m1 = _filter_bars_by_date(m1_bars, wf_win.test_start, wf_win.test_end)
-        test_m5 = _filter_bars_by_date(m5_bars, wf_win.test_start, wf_win.test_end)
-
-        train_trades = _backtest_pair(pair, train_m1, train_m5, config)
-        test_trades = _backtest_pair(pair, test_m1, test_m5, config)
+        train_trades, test_trades = _run_window_backtests(
+            wf_win,
+            m1_bars,
+            m5_bars,
+            pair,
+            config,
+        )
 
         train_stats = compute_stats(train_trades)
         test_stats = compute_stats(test_trades)
@@ -236,24 +285,15 @@ def run_walk_forward(  # pylint: disable=too-many-locals
 
         all_test_trades.extend(test_trades)
 
-        # --- IS grid-search → OOS re-evaluation ---
-        optimized_test_stats: BacktestStats | None = None
-        best_params: dict[str, float] = {}
-
-        if optimize_fn is not None:
-            # Lazy import avoids circular dependency: sensitivity → backtest
-            from alphaedge.engine.sensitivity import (  # noqa: PLC0415
-                _run_with_params_trades,
-            )
-
-            best_params = optimize_fn(train_m1, train_m5, pair, config)
-            opt_trades = _run_with_params_trades(
-                test_m1, test_m5, pair, config, best_params
-            )
-            for t in opt_trades:
-                t.sample_type = "OOS_OPT"
-            optimized_test_stats = compute_stats(opt_trades)
-            all_optimized_test_trades.extend(opt_trades)
+        optimized_test_stats, best_params, opt_trades = _run_optimized_oos_fold(
+            wf_win,
+            m1_bars,
+            m5_bars,
+            pair,
+            config,
+            optimize_fn,
+        )
+        all_optimized_test_trades.extend(opt_trades)
 
         report.windows.append(
             WalkForwardResult(

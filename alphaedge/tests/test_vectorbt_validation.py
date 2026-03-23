@@ -79,7 +79,7 @@ class TestValidateWithVectorbt:
             pd.Series,
             "vbt",
             create=True,
-            new_callable=lambda: property(lambda self: FakeVbt()),
+            new_callable=lambda: property(lambda _s: FakeVbt()),
         ):
             _validate_with_vectorbt(trades, manual_sharpe=1.5)
 

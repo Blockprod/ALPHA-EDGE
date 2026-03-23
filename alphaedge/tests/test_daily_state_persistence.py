@@ -118,6 +118,37 @@ class TestDailyStateRoundTrip:
         loaded = load_daily_state()
         assert loaded is None
 
+    def test_load_rejects_invalid_schema(self) -> None:
+        Path("alphaedge_daily_state.json").write_text(
+            (
+                '{"date": "' + date.today().isoformat() + '", '
+                '"starting_equity": "oops", '
+                '"trades_today": 1, '
+                '"shutdown_triggered": false}'
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_daily_state()
+
+        assert loaded is None
+
+    def test_load_rejects_invalid_open_pairs(self) -> None:
+        Path("alphaedge_daily_state.json").write_text(
+            (
+                '{"date": "' + date.today().isoformat() + '", '
+                '"starting_equity": 10000.0, '
+                '"trades_today": 1, '
+                '"shutdown_triggered": false, '
+                '"open_pairs": ["EURUSD", 42]}'
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_daily_state()
+
+        assert loaded is None
+
 
 # ==================================================================
 # Tests — Shutdown persistence blocks restart

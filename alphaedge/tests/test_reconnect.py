@@ -11,12 +11,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
+from alphaedge.engine.broker import BrokerConnection
 from alphaedge.engine.strategy import CoreModules, FCRStrategy, StrategyState
 
 
@@ -68,7 +69,7 @@ class TestDisconnectTriggersReconnect:
     """Verify that IB disconnect fires the reconnect handler."""
 
     def test_disconnect_event_wired(self) -> None:
-        """disconnectedEvent callback is registered at init."""
+        """disconnect handler is registered through BrokerConnection."""
         cfg = _make_config()
         with (
             patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,
@@ -78,14 +79,6 @@ class TestDisconnectTriggersReconnect:
             patch("alphaedge.engine.strategy._import_core_modules") as mock_mods,
         ):
             mock_ib = MagicMock()
-            # Use a list to capture += calls
-            handlers: list[Any] = []
-
-            def _capture_handler(self_event: Any, handler: Any) -> Any:
-                handlers.append(handler)
-                return self_event
-
-            mock_ib.disconnectedEvent.__iadd__ = _capture_handler
             mock_broker_cls.return_value.ib = mock_ib
             mock_mods.return_value = CoreModules(
                 fcr_detector=MagicMock(),
@@ -96,8 +89,40 @@ class TestDisconnectTriggersReconnect:
             )
             strategy = FCRStrategy(cfg)
 
-        assert len(handlers) == 1
-        assert handlers[0] == strategy._lifecycle._on_ib_disconnect  # pylint: disable=W0143
+        mock_broker_cls.return_value.add_disconnect_handler.assert_called_once_with(
+            strategy._lifecycle._on_ib_disconnect
+        )
+
+    def test_broker_rebinds_disconnect_handlers_on_client_reset(self) -> None:
+        """Custom disconnect handlers survive IB client replacement."""
+
+        class _Event:
+            def __init__(self) -> None:
+                self.handlers: list[Any] = []
+
+            def __iadd__(self, handler: Any) -> _Event:
+                self.handlers.append(handler)
+                return self
+
+        class _IBStub:
+            def __init__(self) -> None:
+                self.errorEvent = _Event()
+                self.disconnectedEvent = _Event()
+
+            def isConnected(self) -> bool:  # noqa: N802
+                return False
+
+        with patch("alphaedge.engine.broker.IB", side_effect=[_IBStub(), _IBStub()]):
+            broker = BrokerConnection(IBConfig(is_paper=True))
+            handler = MagicMock()
+
+            broker.add_disconnect_handler(handler)
+            first_client = cast(_IBStub, broker.ib)
+            broker._on_disconnect()
+            rebound_client = cast(_IBStub, broker.ib)
+
+        assert handler in first_client.disconnectedEvent.handlers
+        assert handler in rebound_client.disconnectedEvent.handlers
 
     @pytest.mark.asyncio()
     async def test_disconnect_calls_reconnect(

@@ -18,7 +18,7 @@ FCRStrategy becomes a thin orchestrator.
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from alphaedge.config.constants import (
@@ -26,6 +26,13 @@ from alphaedge.config.constants import (
     PIP_SIZES,
     RISK_CHECK_INTERVAL_IDLE,
     RISK_CHECK_INTERVAL_POSITION,
+)
+from alphaedge.utils.alerting import (
+    Alert,
+    AlertEvent,
+    AlertLevel,
+    alert_ib_disconnected,
+    alert_kill_switch,
 )
 from alphaedge.utils.logger import get_logger
 from alphaedge.utils.pair_correlation import (
@@ -52,11 +59,6 @@ if TYPE_CHECKING:
 logger = get_logger()
 
 
-def _get_pip_size(pair: str) -> float:
-    """Return pip size for a currency pair (0.0001 default, 0.01 for JPY)."""
-    return PIP_SIZES.get(pair, 0.0001)
-
-
 class SessionLifecycle:
     """
     Manages the FCR strategy session loop, trade execution, and IB reconnection.
@@ -78,7 +80,102 @@ class SessionLifecycle:
         self._persist_daily_state()
 
     # ------------------------------------------------------------------
-    # Trade execution
+    # Trade execution — helpers
+    # ------------------------------------------------------------------
+    def _prepare_bracket(
+        self,
+        signal: dict[str, Any],
+        lot_size: float,
+        pip_size: float,
+        spread_pips: float,
+    ) -> dict[str, Any] | None:
+        """Validate bracket order, apply slippage buffer, and compute units."""
+        bracket = self._s._build_validated_order(
+            signal,
+            lot_size,
+            pip_size,
+            spread_pips,
+        )
+        if bracket is None:
+            return None
+
+        risk_mod = self._s._modules.risk_manager
+        bracket["stop_loss"] = risk_mod.apply_slippage_buffer(
+            stop_loss=bracket["stop_loss"],
+            direction=bracket["direction"],
+            slippage_pips=DEFAULT_MARKET_SLIPPAGE_PIPS,
+            pip_size=pip_size,
+        )
+
+        order_mod = self._s._modules.order_manager
+        bracket["units"] = order_mod.lots_to_units(
+            bracket["lot_size"],
+            self._s._config.trading.lot_type,
+        )
+        return bracket
+
+    async def _submit_and_await_fill(
+        self,
+        state: StrategyState,
+        bracket: dict[str, Any],
+    ) -> list | None:
+        """Place bracket order and wait for parent fill (10 s timeout)."""
+        trades_placed = await self._s._executor.place_bracket_order(
+            pair=state.pair,
+            direction=bracket["direction"],
+            quantity=bracket["units"],
+            entry_price=bracket["entry_price"],
+            stop_loss=bracket["stop_loss"],
+            take_profit=bracket["take_profit"],
+        )
+        if not trades_placed:
+            logger.error(f"ALPHAEDGE: Bracket order returned empty — {state.pair}")
+            return None
+
+        parent_trade = trades_placed[0]
+        fill_event = getattr(parent_trade, "filledEvent", None)
+        if fill_event is not None:
+            try:
+                await asyncio.wait_for(fill_event.wait(), timeout=10.0)
+            except TimeoutError:
+                logger.error(
+                    f"ALPHAEDGE: Parent order not filled "
+                    f"within 10s — {state.pair} — "
+                    f"cancelling bracket"
+                )
+                asyncio.ensure_future(
+                    self._s._alert_manager.send_async(
+                        Alert(
+                            event=AlertEvent.TRADE_EXECUTED,
+                            level=AlertLevel.WARNING,
+                            title=f"⏱️ Fill timeout — {state.pair}",
+                            message="Order not filled within 10s. Bracket cancelled.",
+                        )
+                    )
+                ).add_done_callback(self._on_task_done)
+                await self._s._executor.cancel_all_orders()
+                return None
+
+        return trades_placed
+
+    def _record_fill(
+        self,
+        state: StrategyState,
+        trades_placed: list,
+    ) -> None:
+        """Register fill callbacks and update in-memory position state."""
+        for trade_obj in trades_placed:
+            trade_obj.filledEvent += lambda _t, _pair=state.pair: self._on_trade_closed(
+                _pair
+            )
+
+        state.trades_today += 1
+        self._s._global_trades_today += 1
+        state.is_position_open = True
+        self._persist_daily_state()
+
+    # ------------------------------------------------------------------
+    # Trade execution — orchestrator
     # ------------------------------------------------------------------
     async def _execute_signal(
         self,
@@ -100,12 +197,7 @@ class SessionLifecycle:
                     return False
                 exchange_rate = mid
 
-            pos_result = self._s._size_position(
-                state,
-                signal,
-                pip_size,
-                exchange_rate,
-            )
+            pos_result = self._s._size_position(state, signal, pip_size, exchange_rate)
             if pos_result is None:
                 return False
 
@@ -117,7 +209,7 @@ class SessionLifecycle:
                 return False
             spread_pips = spread / pip_size
 
-            bracket = self._s._build_validated_order(
+            bracket = self._prepare_bracket(
                 signal,
                 pos_result["lot_size"],
                 pip_size,
@@ -126,64 +218,11 @@ class SessionLifecycle:
             if bracket is None:
                 return False
 
-            # Widen SL for market order slippage
-            risk_mod = self._s._modules.risk_manager
-            bracket["stop_loss"] = risk_mod.apply_slippage_buffer(
-                stop_loss=bracket["stop_loss"],
-                direction=bracket["direction"],
-                slippage_pips=DEFAULT_MARKET_SLIPPAGE_PIPS,
-                pip_size=pip_size,
-            )
-
-            order_mod = self._s._modules.order_manager
-            units = order_mod.lots_to_units(
-                bracket["lot_size"],
-                self._s._config.trading.lot_type,
-            )
-            trades_placed = await self._s._executor.place_bracket_order(
-                pair=state.pair,
-                direction=bracket["direction"],
-                quantity=units,
-                entry_price=bracket["entry_price"],
-                stop_loss=bracket["stop_loss"],
-                take_profit=bracket["take_profit"],
-            )
-
-            if not trades_placed:
-                logger.error(f"ALPHAEDGE: Bracket order returned empty — {state.pair}")
+            trades_placed = await self._submit_and_await_fill(state, bracket)
+            if trades_placed is None:
                 return False
 
-            # Wait for parent order fill with timeout
-            parent_trade = trades_placed[0]
-            fill_event = getattr(parent_trade, "filledEvent", None)
-            if fill_event is not None:
-                try:
-                    await asyncio.wait_for(
-                        fill_event.wait(),
-                        timeout=10.0,
-                    )
-                except TimeoutError:
-                    logger.error(
-                        f"ALPHAEDGE: Parent order not filled "
-                        f"within 10s — {state.pair} — "
-                        f"cancelling bracket"
-                    )
-                    await self._s._executor.cancel_all_orders()
-                    return False
-
-            # Register fill callback to reset position flag on SL/TP exit
-            for trade_obj in trades_placed:
-                trade_obj.filledEvent += lambda _t, _pair=state.pair: (
-                    self._on_trade_closed(_pair)
-                )
-
-            state.trades_today += 1
-            self._s._global_trades_today += 1
-            state.is_position_open = True
-
-            # Persist state after each trade
-            self._persist_daily_state()
-
+            self._record_fill(state, trades_placed)
             return True
         except Exception:
             logger.exception(f"ALPHAEDGE _execute_signal failed: {state.pair}")
@@ -210,6 +249,9 @@ class SessionLifecycle:
     def _on_ib_disconnect(self) -> None:
         """Handle IB Gateway disconnection event."""
         logger.critical("ALPHAEDGE: IB Gateway DISCONNECTED")
+        asyncio.ensure_future(
+            self._s._alert_manager.send_async(alert_ib_disconnected())
+        ).add_done_callback(self._on_task_done)
         if self._s._reconnecting:
             return
         self._s._reconnecting = True
@@ -232,6 +274,19 @@ class SessionLifecycle:
                 logger.critical(
                     "ALPHAEDGE: Reconnection FAILED after all retries — shutting down"
                 )
+                asyncio.ensure_future(
+                    self._s._alert_manager.send_async(
+                        Alert(
+                            event=AlertEvent.IB_DISCONNECTED,
+                            level=AlertLevel.CRITICAL,
+                            title="IB Gateway Reconnection FAILED",
+                            message=(
+                                "Reconnection failed after all retries"
+                                " \u2014 manual intervention required."
+                            ),
+                        )
+                    )
+                ).add_done_callback(self._on_task_done)
                 self._s._shutdown_requested = True
         finally:
             self._s._reconnecting = False
@@ -328,7 +383,7 @@ class SessionLifecycle:
         state.m1_candles.append(candle)
         if len(state.m1_candles) > state.max_candles:
             state.m1_candles = state.m1_candles[-state.max_candles :]
-        pip_size = _get_pip_size(pair)
+        pip_size = PIP_SIZES.get(pair, 0.0001)
 
         # Skip if global trade limit reached across all pairs
         if (
@@ -371,6 +426,10 @@ class SessionLifecycle:
             max_open_pairs=1,
         )
         if not pair_check["allowed"]:
+            return
+
+        # The live pipeline is all-or-nothing: no FCR means no gap stage.
+        if state.fcr_result is None:
             return
 
         # Detect gap/ATR spike on first M1 bars (once per session)
@@ -465,7 +524,7 @@ class SessionLifecycle:
     async def _monitor_spread_spike(self, pair: str) -> None:
         """Log WARNING if spread spikes beyond the configured multiplier."""
         try:
-            pip_size = _get_pip_size(pair)
+            pip_size = PIP_SIZES.get(pair, 0.0001)
             spread = await self._s._rt_feed.get_live_spread(pair)
             if spread is None:
                 return  # Cannot monitor — skip silently
@@ -498,11 +557,19 @@ class SessionLifecycle:
                 logger.exception("ALPHAEDGE daily-loss check failed")
                 continue
             if risk_result.get("limit_breached"):
-                logger.warning(
+                logger.critical(
                     f"ALPHAEDGE: Daily loss limit breached — "
                     f"PnL {risk_result.get('daily_pnl_pct', 0):.2f}%. "
                     f"Shutting down."
                 )
+                asyncio.ensure_future(
+                    self._s._alert_manager.send_async(
+                        alert_kill_switch(
+                            reason=str(risk_result.get("reason", "daily_loss_limit")),
+                            daily_pnl_pct=float(risk_result.get("daily_pnl_pct", 0.0)),
+                        )
+                    )
+                ).add_done_callback(self._on_task_done)
                 self._s._shutdown_requested = True
                 await self._s._executor.cancel_all_orders()
 
@@ -574,9 +641,85 @@ class SessionLifecycle:
         save_daily_state(daily)
 
     # ------------------------------------------------------------------
+    # Session pair initialisation
+    # ------------------------------------------------------------------
+    async def _init_session_pairs(
+        self,
+        starting_equity: float,
+        live_equity: float,
+        persisted: DailyState | None,
+        session_start: datetime,
+    ) -> list[str]:
+        """
+        Check regime gate, detect FCR, and init state for each configured pair.
+
+        Returns the list of active pairs that passed the regime filter.
+        Also builds and stores the pairwise correlation matrix.
+        """
+        active_pairs: list[str] = []
+        pair_closes: dict[str, list[float]] = {}
+        for pair in self._s._config.trading.pairs:
+            # Fetch pre-session M5 data for FCR and regime check
+            m5_candles, pre_session_m1 = await self._s._fetch_pre_session_data(
+                pair, session_start
+            )
+            pip_size = PIP_SIZES.get(pair, 0.0001)
+
+            # Fetch daily bars for volatility regime (30 trading days)
+            daily_bars = await self._s._hist_feed.fetch_bars(
+                pair=pair,
+                timeframe="1 day",
+                duration="30 D",
+                end_dt=session_start,
+            )
+
+            # Build today's partial bar from pre-session M5 data
+            current_day_bar: dict[str, Any] = {}
+            if m5_candles:
+                current_day_bar = {
+                    "high": max(c.get("high", 0.0) for c in m5_candles),
+                    "low": min(c.get("low", 0.0) for c in m5_candles),
+                }
+
+            # Volatility regime gate: skip pair if session is too quiet/violent
+            if daily_bars and current_day_bar:
+                regime = check_volatility_regime(daily_bars, current_day_bar)
+                if not regime.allowed:
+                    logger.warning(
+                        f"ALPHAEDGE REGIME: {pair} session SKIPPED "
+                        f"\u2014 {regime.reason}"
+                    )
+                    continue
+
+            # Init pair state and store candles
+            state = self._s._init_pair_state(pair)
+            state.starting_equity = starting_equity
+            state.current_equity = live_equity
+            state.m5_candles = m5_candles
+            state.pre_session_m1_candles = pre_session_m1
+            if persisted:
+                state.trades_today = persisted.trades_today
+                self._s._global_trades_today = persisted.trades_today
+
+            # Collect closes for correlation matrix
+            pair_closes[pair] = [c["close"] for c in m5_candles if "close" in c]
+
+            # Detect FCR
+            fcr = self._s._detect_fcr(state, pip_size)
+            if fcr:
+                logger.info(
+                    f"ALPHAEDGE FCR: {pair} high={fcr['range_high']} "
+                    f"low={fcr['range_low']}"
+                )
+            active_pairs.append(pair)
+
+        self._s._correlation_matrix = build_correlation_matrix(pair_closes)
+        return active_pairs
+
+    # ------------------------------------------------------------------
     # Main session loop
     # ------------------------------------------------------------------
-    async def run_session(self) -> None:  # pylint: disable=too-many-branches,too-many-statements
+    async def run_session(self) -> None:
         """
         Run a single trading session for all configured pairs.
 
@@ -620,63 +763,13 @@ class SessionLifecycle:
                 starting_equity = live_equity
             session_start, _session_end = get_session_window_utc()
 
-            # Process each pair — volatility regime gate + FCR detection
-            active_pairs: list[str] = []
-            pair_closes: dict[str, list[float]] = {}
-            for pair in self._s._config.trading.pairs:
-                # Fetch pre-session M5 data for FCR and regime check
-                m5_candles = await self._s._fetch_pre_session_data(pair, session_start)
-                pip_size = _get_pip_size(pair)
-
-                # Fetch daily bars for volatility regime (30 trading days)
-                daily_bars = await self._s._hist_feed.fetch_bars(
-                    pair=pair,
-                    timeframe="1 day",
-                    duration="30 D",
-                    end_dt=session_start,
-                )
-
-                # Build today's partial bar from pre-session M5 data
-                current_day_bar: dict[str, Any] = {}
-                if m5_candles:
-                    current_day_bar = {
-                        "high": max(c.get("high", 0.0) for c in m5_candles),
-                        "low": min(c.get("low", 0.0) for c in m5_candles),
-                    }
-
-                # Volatility regime gate: skip pair if session is too quiet/violent
-                if daily_bars and current_day_bar:
-                    regime = check_volatility_regime(daily_bars, current_day_bar)
-                    if not regime.allowed:
-                        logger.warning(
-                            f"ALPHAEDGE REGIME: {pair} session SKIPPED "
-                            f"— {regime.reason}"
-                        )
-                        continue
-
-                # Init pair state and store candles
-                state = self._s._init_pair_state(pair)
-                state.starting_equity = starting_equity
-                state.current_equity = live_equity
-                state.m5_candles = m5_candles
-                if persisted:
-                    state.trades_today = persisted.trades_today
-                    self._s._global_trades_today = persisted.trades_today
-
-                # Collect closes for correlation matrix
-                pair_closes[pair] = [c["close"] for c in m5_candles if "close" in c]
-
-                # Detect FCR
-                fcr = self._s._detect_fcr(state, pip_size)
-                if fcr:
-                    logger.info(
-                        f"ALPHAEDGE FCR: {pair} high={fcr['range_high']} "
-                        f"low={fcr['range_low']}"
-                    )
-                active_pairs.append(pair)
-
-            # Build pairwise correlation matrix from pre-session closes
-            self._s._correlation_matrix = build_correlation_matrix(pair_closes)
+            # Process each pair — regime gate, FCR detection, state init
+            active_pairs = await self._init_session_pairs(
+                starting_equity,
+                live_equity,
+                persisted,
+                session_start,
+            )
 
             # Reconcile position state with IB at startup
             await self._reconcile_positions()

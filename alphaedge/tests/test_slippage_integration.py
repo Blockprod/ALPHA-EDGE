@@ -134,7 +134,7 @@ class TestSlippageBufferInExecuteSignal:
         # Executor place_bracket_order with fillable trades
         mock_trade = MagicMock()
         mock_trade.filledEvent = MagicMock()
-        mock_trade.filledEvent.__iadd__ = lambda self, h: self
+        mock_trade.filledEvent.__iadd__ = lambda self, _h: self
         mock_trade.filledEvent.wait = AsyncMock()
         place_mock = AsyncMock(return_value=[mock_trade])
         monkeypatch.setattr(strategy._executor, "place_bracket_order", place_mock)
@@ -224,7 +224,7 @@ class TestSlippageBufferInExecuteSignal:
 
         mock_trade = MagicMock()
         mock_trade.filledEvent = MagicMock()
-        mock_trade.filledEvent.__iadd__ = lambda self, h: self
+        mock_trade.filledEvent.__iadd__ = lambda self, _h: self
         mock_trade.filledEvent.wait = AsyncMock()
         place_mock = AsyncMock(return_value=[mock_trade])
         monkeypatch.setattr(strategy._executor, "place_bracket_order", place_mock)
@@ -248,7 +248,7 @@ class TestReconnectBackoff:
         """reconnect() should sleep with exponential delay + jitter."""
         from alphaedge.engine.broker import BrokerConnection
 
-        with patch.object(BrokerConnection, "__init__", lambda self, *a, **kw: None):
+        with patch.object(BrokerConnection, "__init__", lambda _s, *_a, **_kw: None):
             broker = BrokerConnection.__new__(BrokerConnection)
             mock_ib = MagicMock()
             mock_ib.isConnected.return_value = True
@@ -288,7 +288,7 @@ class TestReconnectBackoff:
         """Delay should be capped at 30 seconds even for high attempt."""
         from alphaedge.engine.broker import BrokerConnection
 
-        with patch.object(BrokerConnection, "__init__", lambda self, *a, **kw: None):
+        with patch.object(BrokerConnection, "__init__", lambda _s, *_a, **_kw: None):
             broker = BrokerConnection.__new__(BrokerConnection)
             mock_ib = MagicMock()
             mock_ib.isConnected.return_value = True

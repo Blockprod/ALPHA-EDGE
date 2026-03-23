@@ -15,6 +15,7 @@ import asyncio
 import logging
 import random
 import time
+from collections.abc import Callable
 from typing import Any
 
 from ib_insync import (
@@ -37,6 +38,8 @@ from alphaedge.config.loader import IBConfig
 from alphaedge.utils.logger import get_logger
 
 logger = get_logger()
+
+DisconnectHandler = Callable[[], object]
 
 
 # ------------------------------------------------------------------
@@ -99,10 +102,11 @@ class BrokerConnection:
     def __init__(self, config: IBConfig) -> None:
         """Initialize broker with IB configuration."""
         self._config = config
-        self._ib = IB()
         self._throttler = RequestThrottler()
         self._connected = False
         self._consecutive_failures: int = 0
+        self._disconnect_handlers: list[DisconnectHandler] = []
+        self._ib = self._build_ib_client()
 
     @property
     def is_connected(self) -> bool:
@@ -113,6 +117,43 @@ class BrokerConnection:
     def ib(self) -> IB:
         """Return the underlying ib_insync IB instance."""
         return self._ib
+
+    def add_disconnect_handler(self, handler: DisconnectHandler) -> None:
+        """Register a disconnect handler and bind it to the current IB client."""
+        self._disconnect_handlers.append(handler)
+        self._ib.disconnectedEvent += handler
+
+    def _mark_connection_failure(
+        self,
+        message: str,
+        *,
+        log_exception: bool = False,
+    ) -> bool:
+        """Record a failed IB connection attempt and return False."""
+        self._consecutive_failures += 1
+        formatted = (
+            f"{message} (failure {self._consecutive_failures}/"
+            f"{IB_CIRCUIT_BREAKER_MAX_FAILURES})"
+        )
+        if log_exception:
+            logger.exception(formatted)
+        else:
+            logger.error(formatted)
+        self._connected = False
+        return False
+
+    def _build_ib_client(self) -> IB:
+        """Create a fresh IB client and bind internal/external handlers."""
+        ib_client = IB()
+        ib_client.errorEvent += self._on_ib_error
+        ib_client.disconnectedEvent += self._on_disconnect
+        for handler in getattr(self, "_disconnect_handlers", []):
+            ib_client.disconnectedEvent += handler
+        return ib_client
+
+    def _reset_ib_client(self) -> None:
+        """Replace the current IB client with a fresh handler-bound instance."""
+        self._ib = self._build_ib_client()
 
     async def connect(self) -> bool:
         """
@@ -143,8 +184,6 @@ class BrokerConnection:
             )
             self._connected = True
             self._consecutive_failures = 0
-            self._ib.errorEvent += self._on_ib_error
-            self._ib.disconnectedEvent += self._on_disconnect
             # Silence ib_insync's own console output (Timeout /
             # Error 162 lines) — our _on_ib_error handler takes over.
             logging.getLogger("ib_insync").setLevel(logging.CRITICAL)
@@ -154,15 +193,20 @@ class BrokerConnection:
                 f"(paper={self._config.is_paper})"
             )
             return True
-        except Exception:
-            self._consecutive_failures += 1
-            logger.exception(
-                f"ALPHAEDGE IB Gateway connection failed "
-                f"(failure {self._consecutive_failures}/"
-                f"{IB_CIRCUIT_BREAKER_MAX_FAILURES})"
+        except TimeoutError:
+            return self._mark_connection_failure(
+                "ALPHAEDGE IB Gateway connection timed out"
             )
-            self._connected = False
-            return False
+        except (ConnectionError, OSError):
+            return self._mark_connection_failure(
+                "ALPHAEDGE IB Gateway connection transport failed",
+                log_exception=True,
+            )
+        except Exception:
+            return self._mark_connection_failure(
+                "ALPHAEDGE IB Gateway connection failed unexpectedly",
+                log_exception=True,
+            )
 
     async def disconnect(self) -> None:
         """Disconnect from IB Gateway gracefully."""
@@ -179,6 +223,7 @@ class BrokerConnection:
         """
         for attempt in range(1, max_retries + 1):
             await self.disconnect()
+            self._reset_ib_client()
             base_delay = min(2**attempt, 30.0)
             jitter = base_delay * 0.1 * random.uniform(-1.0, 1.0)
             delay = base_delay + jitter
@@ -200,7 +245,7 @@ class BrokerConnection:
             "next _ensure_connected() call will reconnect"
         )
         self._connected = False
-        self._ib = IB()  # fresh instance — old one is dead
+        self._reset_ib_client()
 
     def _on_ib_error(  # pylint: disable=invalid-name
         self,
@@ -233,7 +278,11 @@ class BrokerConnection:
                 f"ALPHAEDGE IB CONNECTION: code={errorCode} — {errorString}"
             )
         else:
-            logger.warning(f"ALPHAEDGE IB error {errorCode}: {errorString}")
+            contract_info = f" [{contract.symbol}]" if contract is not None else ""
+            logger.warning(
+                f"ALPHAEDGE IB error req={reqId} code={errorCode}"
+                f"{contract_info}: {errorString}"
+            )
 
     def _ensure_connected(self) -> None:
         """Raise if not currently connected."""
@@ -315,7 +364,7 @@ class OrderExecutor:
         """Return True if available margin is sufficient for this trade.
 
         Uses a conservative estimate: nominal_value / leverage * 1.2 safety factor.
-        Returns True on any failure (fail-open) to avoid blocking paper trading.
+        Returns False on any failure (fail-closed) to avoid unsafe submissions.
         """
         try:
             account_values = self._broker.ib.accountSummary()
@@ -327,9 +376,9 @@ class OrderExecutor:
             if available_funds <= 0.0:
                 logger.warning(
                     "ALPHAEDGE: AvailableFunds not found in account summary — "
-                    "margin check skipped"
+                    "trade blocked"
                 )
-                return True
+                return False
             required = (quantity * entry_price / leverage_estimate) * 1.2
             if available_funds < required:
                 logger.warning(
@@ -339,9 +388,22 @@ class OrderExecutor:
                 )
                 return False
             return True
+        except (TypeError, ValueError):
+            logger.exception(
+                "ALPHAEDGE margin check received malformed account summary "
+                "— blocking trade"
+            )
+            return False
+        except RuntimeError:
+            logger.exception(
+                "ALPHAEDGE margin check IB runtime failure — blocking trade"
+            )
+            return False
         except Exception:
-            logger.exception("ALPHAEDGE margin check failed — allowing trade")
-            return True
+            logger.exception(
+                "ALPHAEDGE margin check unexpected failure — blocking trade"
+            )
+            return False
 
     async def place_bracket_order(
         self,
@@ -377,8 +439,16 @@ class OrderExecutor:
                 f"SL={stop_loss} TP={take_profit}"
             )
             return trades
+        except ValueError:
+            logger.exception(
+                f"ALPHAEDGE bracket order rejected before submission: {pair}"
+            )
+            return []
+        except RuntimeError:
+            logger.exception(f"ALPHAEDGE bracket order IB runtime failure: {pair}")
+            return []
         except Exception:
-            logger.exception(f"ALPHAEDGE bracket order failed: {pair}")
+            logger.exception(f"ALPHAEDGE bracket order failed unexpectedly: {pair}")
             return []
 
     async def cancel_all_orders(self) -> None:
@@ -387,8 +457,10 @@ class OrderExecutor:
         try:
             self._broker.ib.reqGlobalCancel()
             logger.warning("ALPHAEDGE: All open orders cancelled")
+        except RuntimeError:
+            logger.exception("ALPHAEDGE cancel_all_orders IB runtime failure")
         except Exception:
-            logger.exception("ALPHAEDGE cancel_all_orders failed")
+            logger.exception("ALPHAEDGE cancel_all_orders failed unexpectedly")
 
     async def get_open_positions(self) -> list[Any]:
         """
@@ -403,8 +475,11 @@ class OrderExecutor:
         await self._throttler.acquire()
         try:
             return list(self._broker.ib.positions())
+        except RuntimeError:
+            logger.exception("ALPHAEDGE get_open_positions IB runtime failure")
+            return []
         except Exception:
-            logger.exception("ALPHAEDGE get_open_positions failed")
+            logger.exception("ALPHAEDGE get_open_positions failed unexpectedly")
             return []
 
     async def get_open_orders(self) -> list[Any]:
@@ -420,8 +495,11 @@ class OrderExecutor:
         await self._throttler.acquire()
         try:
             return list(self._broker.ib.openOrders())
+        except RuntimeError:
+            logger.exception("ALPHAEDGE get_open_orders IB runtime failure")
+            return []
         except Exception:
-            logger.exception("ALPHAEDGE get_open_orders failed")
+            logger.exception("ALPHAEDGE get_open_orders failed unexpectedly")
             return []
 
     async def get_account_equity(self) -> float:
@@ -447,10 +525,18 @@ class OrderExecutor:
                 if av.tag == "NetLiquidation":
                     return float(av.value)
             raise ValueError("ALPHAEDGE: NetLiquidation not found in account summary")
-        except ValueError:
+        except ValueError as exc:
+            if "NetLiquidation not found" in str(exc):
+                raise
+            logger.exception(
+                "ALPHAEDGE get_account_equity invalid NetLiquidation value"
+            )
+            raise
+        except RuntimeError:
+            logger.exception("ALPHAEDGE get_account_equity IB runtime failure")
             raise
         except Exception:
-            logger.exception("ALPHAEDGE get_account_equity failed")
+            logger.exception("ALPHAEDGE get_account_equity failed unexpectedly")
             raise
 
 

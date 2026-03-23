@@ -249,7 +249,7 @@ class TestDashboardStore:
         # Use a mock WebSocket for unit test
         class FakeWS:
             async def send_text(self, data: str) -> None:
-                pass
+                del data  # test stub — no real socket; matches WSClient protocol
 
         ws = FakeWS()
         store.register_ws(ws)
@@ -260,7 +260,7 @@ class TestDashboardStore:
     def test_unregister_nonexistent(self, store: DashboardStore) -> None:
         class FakeWS:
             async def send_text(self, data: str) -> None:
-                pass
+                del data  # test stub — no real socket; matches WSClient protocol
 
         ws = FakeWS()
         store.unregister_ws(ws)
@@ -380,6 +380,7 @@ class TestBroadcastState:
     async def test_broadcast_removes_dead_clients(self, store: DashboardStore) -> None:
         class DeadWS:
             async def send_text(self, data: str) -> None:
+                del data  # not transmitted — always raises; matches WSClient protocol
                 raise ConnectionError("dead")
 
         store.register_ws(DeadWS())

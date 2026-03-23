@@ -77,6 +77,8 @@ def check_pair_limit(
     max_open_pairs: int = 1,
 ) -> dict[str, Any]:
     """Enforce per-pair risk cap: max N pairs open at a time."""
+    if not pair:
+        raise ValueError("pair must be a non-empty string")
     count = len(open_pairs)
     if count >= max_open_pairs:
         return {
@@ -112,6 +114,8 @@ def _compute_pip_value(
     pair: str, pip_size: float, lot_type: str, exchange_rate: float
 ) -> float:
     """Calculate pip value in USD for the given lot type."""
+    if not pair:
+        raise ValueError("pair must be a non-empty string")
     lot_units = {"standard": 100000.0, "mini": 10000.0, "micro": 1000.0}
     units = lot_units.get(lot_type, 100000.0)
     raw = units * pip_size

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Generator
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -173,7 +174,7 @@ class TestFillTimeoutCancels:
         )
         strategy._executor.cancel_all_orders = AsyncMock()
 
-        async def _timeout_and_close(coro: Any, *args: Any, **kwargs: Any) -> None:
+        async def _timeout_and_close(coro: Any, *_args: Any, **_kwargs: Any) -> None:
             # Close the coroutine so CPython does not emit
             # "coroutine was never awaited" when it is GC'd.
             coro.close()
@@ -217,3 +218,152 @@ class TestSuccessfulFill:
         assert result is True
         assert state.is_position_open is True
         assert state.trades_today == 1
+
+
+class TestMockedLiveCycle:
+    """Verify one mocked live cycle from session init through close."""
+
+    @pytest.mark.asyncio()
+    async def test_session_init_fill_and_close_cycle(self) -> None:
+        strategy = _build_strategy()
+        session_start = datetime(2026, 3, 20, 13, 30, tzinfo=UTC)
+
+        pre_session_m5 = [
+            {
+                "open": 1.2450,
+                "high": 1.2470,
+                "low": 1.2440,
+                "close": 1.2460,
+                "volume": 100.0,
+                "timestamp": 1710939000,
+                "datetime": datetime(2026, 3, 20, 13, 0, tzinfo=UTC),
+            },
+            {
+                "open": 1.2460,
+                "high": 1.2480,
+                "low": 1.2450,
+                "close": 1.2470,
+                "volume": 120.0,
+                "timestamp": 1710939300,
+                "datetime": datetime(2026, 3, 20, 13, 5, tzinfo=UTC),
+            },
+        ]
+        pre_session_m1 = [
+            {
+                "open": 1.2460,
+                "high": 1.2462,
+                "low": 1.2458,
+                "close": 1.2461,
+                "volume": 80.0,
+                "timestamp": 1710939600,
+                "datetime": datetime(2026, 3, 20, 13, 10, tzinfo=UTC),
+            },
+            {
+                "open": 1.2461,
+                "high": 1.2463,
+                "low": 1.2459,
+                "close": 1.2462,
+                "volume": 85.0,
+                "timestamp": 1710939660,
+                "datetime": datetime(2026, 3, 20, 13, 11, tzinfo=UTC),
+            },
+            {
+                "open": 1.2462,
+                "high": 1.2464,
+                "low": 1.2460,
+                "close": 1.2463,
+                "volume": 90.0,
+                "timestamp": 1710939720,
+                "datetime": datetime(2026, 3, 20, 13, 12, tzinfo=UTC),
+            },
+        ]
+
+        async def _fetch_bars(*_args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+            timeframe = kwargs.get("timeframe")
+            if timeframe == "1 day":
+                return []
+            return pre_session_m1
+
+        strategy._hist_feed.fetch_m5_pre_session = AsyncMock(
+            return_value=pre_session_m5
+        )
+        strategy._hist_feed.fetch_bars = AsyncMock(side_effect=_fetch_bars)
+        strategy._rt_feed.get_live_spread = AsyncMock(return_value=0.00008)
+        strategy._executor.place_bracket_order = AsyncMock(
+            return_value=[_MockTrade(_FilledEvent(preset=True))]
+        )
+
+        strategy._modules.fcr_detector.detect_fcr.return_value = {
+            "detected": True,
+            "range_high": 1.2480,
+            "range_low": 1.2440,
+        }
+        strategy._modules.gap_detector.detect_gap.return_value = {
+            "detected": True,
+            "atr_ratio": 2.1,
+        }
+        strategy._modules.engulfing_detector.detect_engulfing.return_value = {
+            **_make_signal(),
+            "detected": True,
+        }
+        strategy._modules.risk_manager.check_pair_limit.return_value = {"allowed": True}
+
+        active_pairs = await strategy._lifecycle._init_session_pairs(
+            starting_equity=10_000.0,
+            live_equity=10_000.0,
+            persisted=None,
+            session_start=session_start,
+        )
+
+        assert active_pairs == ["EURUSD"]
+        state = strategy._states["EURUSD"]
+        assert state.fcr_result is not None
+        assert state.pre_session_m1_candles == pre_session_m1
+
+        live_m1_bars = [
+            {
+                "open": 1.2470,
+                "high": 1.2475,
+                "low": 1.2468,
+                "close": 1.2472,
+                "volume": 110.0,
+                "timestamp": 1710941400,
+                "datetime": datetime(2026, 3, 20, 13, 50, tzinfo=UTC),
+            },
+            {
+                "open": 1.2472,
+                "high": 1.2478,
+                "low": 1.2470,
+                "close": 1.2476,
+                "volume": 115.0,
+                "timestamp": 1710941460,
+                "datetime": datetime(2026, 3, 20, 13, 51, tzinfo=UTC),
+            },
+            {
+                "open": 1.2476,
+                "high": 1.2482,
+                "low": 1.2473,
+                "close": 1.2480,
+                "volume": 140.0,
+                "timestamp": 1710941520,
+                "datetime": datetime(2026, 3, 20, 13, 52, tzinfo=UTC),
+            },
+        ]
+
+        for candle in live_m1_bars:
+            strategy._lifecycle._on_new_m1_bar("EURUSD", candle)
+
+        await asyncio.sleep(0.1)
+
+        assert state.gap_result is not None
+        assert state.gap_result.get("detected") is True
+        assert state.is_position_open is True
+        assert state.trades_today == 1
+        strategy._executor.place_bracket_order.assert_awaited_once()
+        strategy._modules.risk_manager.calculate_position_size.assert_called_once()
+        strategy._modules.order_manager.create_bracket_order.assert_called_once()
+
+        strategy._lifecycle._on_trade_closed("EURUSD")
+        await asyncio.sleep(0.1)
+
+        assert state.is_position_open is False

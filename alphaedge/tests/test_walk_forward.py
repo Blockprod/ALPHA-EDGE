@@ -206,9 +206,9 @@ class TestRunWalkForward:
 
         def fake_backtest(
             pair: str,
-            m1: list[dict[str, Any]],
-            m5: list[dict[str, Any]],
-            cfg: AppConfig,
+            _m1: list[dict[str, Any]],
+            _m5: list[dict[str, Any]],
+            _cfg: AppConfig,
         ) -> list[TradeRecord]:
             nonlocal call_count
             call_count += 1
@@ -271,10 +271,10 @@ class TestRunWalkForwardOptimization:
         optimize_calls: list[int] = []
 
         def fake_optimize(
-            m1: list[dict[str, Any]],
-            m5: list[dict[str, Any]],
-            pair: str,
-            cfg: Any,
+            _m1: list[dict[str, Any]],
+            _m5: list[dict[str, Any]],
+            _pair: str,
+            _cfg: Any,
         ) -> dict[str, float]:
             optimize_calls.append(1)
             return {}

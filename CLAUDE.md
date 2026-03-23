@@ -314,7 +314,9 @@ detect_gap(
 is_in_gap_zone(
     price: float,
     gap_high: float,
-    gap_low: float
+    gap_low: float,
+    tolerance_pips: float,
+    pip_size: float
 ) -> bool
 
 # engulfing_detector
@@ -322,15 +324,19 @@ detect_engulfing(
     candles_data,
     fcr_high, fcr_low,
     rr_ratio, pip_size,
-    volume_period, min_volume_ratio
+    volume_period, min_volume_ratio,
+    min_body_ratio=0.3,
+    max_wick_ratio=2.0
 ) -> dict | None
-# Returns: {direction, entry, stop_loss, take_profit, rr_ratio} | None
+# Returns: {detected, signal, entry_price, stop_loss, take_profit, risk_pips, reward_pips} | None
 
 # risk_manager
 calculate_position_size(
     account_equity, risk_pct,
-    sl_pips, pair, pip_size,
-    lot_type, min_lots, max_lots
+    sl_pips, pair,
+    pip_size, lot_type,
+    min_lots, max_lots,
+    exchange_rate=0.0
 ) -> dict
 # Returns: {lot_size, risk_amount, pip_value, sl_pips, is_valid}
 
@@ -339,7 +345,7 @@ check_daily_limit(
     max_daily_loss_pct,
     trades_today, max_trades
 ) -> dict
-# Returns: {halt_trading, daily_pnl_pct, trades_remaining, reason}
+# Returns: {daily_pnl, daily_pnl_pct, limit_breached, trades_today, max_trades, can_trade}
 
 # order_manager
 create_bracket_order(

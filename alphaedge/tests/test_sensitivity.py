@@ -48,9 +48,9 @@ def _make_trade(pnl: float = 10.0) -> TradeRecord:
 
 
 def _fake_backtest(
-    pair: str,
-    m1: list[dict[str, Any]],
-    m5: list[dict[str, Any]],
+    _pair: str,
+    _m1: list[dict[str, Any]],
+    _m5: list[dict[str, Any]],
     cfg: AppConfig,
 ) -> list[TradeRecord]:
     """Return trades that vary based on config parameters."""
@@ -129,7 +129,7 @@ class TestRunWithParams:
         param = SENSITIVITY_PARAMS["min_atr_ratio"]
         original = _get_original_constant(param)
 
-        def raise_error(*args: Any, **kwargs: Any) -> list[TradeRecord]:
+        def raise_error(*_args: Any, **_kwargs: Any) -> list[TradeRecord]:
             raise RuntimeError("test")
 
         with (

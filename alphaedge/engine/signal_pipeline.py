@@ -13,14 +13,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from alphaedge.config.constants import (
-    DEFAULT_ATR_PERIOD,
-    DEFAULT_MIN_ATR_RATIO,
-    DEFAULT_MIN_RANGE_PIPS,
-    DEFAULT_MIN_VOLUME_RATIO,
-    DEFAULT_VOLUME_PERIOD,
-)
-
 if TYPE_CHECKING:
     from alphaedge.config.loader import AppConfig
     from alphaedge.engine.strategy import CoreModules, StrategyState
@@ -42,6 +34,7 @@ class SignalPipeline:
         self,
         state: StrategyState,
         modules: CoreModules,
+        config: AppConfig,
         pip_size: float,
     ) -> dict[str, Any] | None:
         """
@@ -49,9 +42,14 @@ class SignalPipeline:
 
         Writes ``state.fcr_result`` and returns the result.
         """
+        lookback = config.trading.fcr_lookback_candles
+        candles = state.m5_candles[-lookback:] if lookback > 0 else state.m5_candles
+        min_range_pips = config.trading.min_range_pips_by_pair.get(
+            state.pair, config.trading.min_range_pips
+        )
         result: dict[str, Any] | None = modules.fcr_detector.detect_fcr(
-            candles_data=state.m5_candles,
-            min_range_pips=DEFAULT_MIN_RANGE_PIPS,
+            candles_data=candles,
+            min_range_pips=min_range_pips,
             pip_size=pip_size,
         )
         state.fcr_result = result
@@ -64,6 +62,7 @@ class SignalPipeline:
         self,
         state: StrategyState,
         modules: CoreModules,
+        config: AppConfig,
         pre_close: float,
         session_open: float,
     ) -> dict[str, Any] | None:
@@ -73,12 +72,12 @@ class SignalPipeline:
         Writes ``state.gap_result`` and returns the result.
         """
         result: dict[str, Any] | None = modules.gap_detector.detect_gap(
-            pre_session_m1=state.m5_candles,
+            pre_session_m1=state.pre_session_m1_candles,
             session_m1=state.m1_candles,
             pre_close=pre_close,
             session_open=session_open,
-            atr_period=DEFAULT_ATR_PERIOD,
-            min_atr_ratio=DEFAULT_MIN_ATR_RATIO,
+            atr_period=config.trading.atr_period,
+            min_atr_ratio=config.trading.min_atr_ratio,
         )
         state.gap_result = result
         return result
@@ -102,14 +101,18 @@ class SignalPipeline:
         if state.fcr_result is None:
             return None
 
+        min_volume_ratio = config.trading.min_volume_ratio_by_pair.get(
+            state.pair, config.trading.min_volume_ratio
+        )
+
         result: dict[str, Any] | None = modules.engulfing_detector.detect_engulfing(
             candles_data=state.m1_candles,
             fcr_high=state.fcr_result["range_high"],
             fcr_low=state.fcr_result["range_low"],
             rr_ratio=config.trading.rr_ratio,
             pip_size=pip_size,
-            volume_period=DEFAULT_VOLUME_PERIOD,
-            min_volume_ratio=DEFAULT_MIN_VOLUME_RATIO,
+            volume_period=config.trading.volume_period,
+            min_volume_ratio=min_volume_ratio,
             min_body_ratio=config.trading.min_body_ratio,
             max_wick_ratio=config.trading.max_wick_ratio,
         )

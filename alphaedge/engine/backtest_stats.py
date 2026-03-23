@@ -244,7 +244,7 @@ def _apply_equity_sizing(
     trades: list[TradeRecord],
     starting_equity: float,
     risk_pct: float,
-    max_lot_size: float = 10.0,  # unused — kept for call-site compatibility
+    _max_lot_size: float = 10.0,  # kept for call-site compatibility
 ) -> None:
     """
     Recompute pnl_usd using compound fixed-fraction position sizing.
@@ -422,9 +422,9 @@ def _log_per_pair_report(trades: list[TradeRecord], eur_usd_rate: float = 1.08) 
     logger.info("-" * 58)
     logger.info(
         f"  {'Pair':<8} {'N':>4} {'W':>4} {'WR%':>6} {'PF':>5} "
-        f"{'Expect':>8} {'P&L pip':>9} {'P&L USD':>10}"
+        f"{'Expect':>8} {'P&L pip':>9} {'P&L USD':>10} {'P&L EUR':>10}"
     )
-    logger.info(f"  {'-' * 54}")
+    logger.info(f"  {'-' * 65}")
     for pair in sorted(by_pair):
         pts = by_pair[pair]
         wins = [t for t in pts if t.pnl_pips > 0]
@@ -433,13 +433,15 @@ def _log_per_pair_report(trades: list[TradeRecord], eur_usd_rate: float = 1.08) 
         pf = _compute_profit_factor(wins, losses)
         pnl_pips = sum(t.pnl_pips for t in pts)
         pnl_usd = sum(t.pnl_usd for t in pts)
+        pnl_eur = pnl_usd / eur_usd_rate
         avg_w = float(np.mean([t.pnl_pips for t in wins])) if wins else 0.0
         avg_l = float(np.mean([t.pnl_pips for t in losses])) if losses else 0.0
         expect = wr / 100.0 * avg_w + (1.0 - wr / 100.0) * avg_l
         pf_str = f"{pf:.2f}" if pf != float("inf") else "  inf"
         logger.info(
             f"  {pair:<8} {len(pts):>4} {len(wins):>4} {wr:>5.1f}% {pf_str:>5} "
-            f"{expect:>+7.2f}p {pnl_pips:>+8.1f}p ${pnl_usd:>+9.2f}"
+            f"{expect:>+7.2f}p {pnl_pips:>+8.1f}p"
+            f" ${pnl_usd:>+9.2f} €{pnl_eur:>+9.2f}"
         )
     logger.info(sep)
 
@@ -554,6 +556,7 @@ def print_rich_summary(
     pair_tbl.add_column("Expect", justify="right")
     pair_tbl.add_column("P&L pips", justify="right")
     pair_tbl.add_column("P&L USD", justify="right")
+    pair_tbl.add_column("P&L EUR", justify="right")
 
     for pair in sorted(by_pair):
         pts = by_pair[pair]
@@ -563,6 +566,7 @@ def print_rich_summary(
         pf = _compute_profit_factor(pw, pl)
         pnl_pips = sum(t.pnl_pips for t in pts)
         pnl_usd = sum(t.pnl_usd for t in pts)
+        pnl_eur = pnl_usd / eur_usd_rate
         avg_w = float(np.mean([t.pnl_pips for t in pw])) if pw else 0.0
         avg_l = float(np.mean([t.pnl_pips for t in pl])) if pl else 0.0
         exp = wr / 100.0 * avg_w + (1.0 - wr / 100.0) * avg_l
@@ -578,6 +582,7 @@ def print_rich_summary(
             f"[{c}]{exp:+.2f}p[/{c}]",
             f"[{c}]{pnl_pips:+.1f}p[/{c}]",
             f"[{c}]${pnl_usd:+,.2f}[/{c}]",
+            f"[{c}]€{pnl_eur:+,.2f}[/{c}]",
         )
 
     title = Text(f"⚡ {PROJECT_TITLE} — BACKTEST RESULTS", style="bold yellow")
