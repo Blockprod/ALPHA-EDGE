@@ -66,6 +66,7 @@ reports/ALPHAEDGE_coverage_report.html
 htmlcov/
 reports/backtest_result.txt
 reports/backtest_run.log
+reports/live_trades_*.csv
 .coverage
 
 # --- OS ---
