@@ -24,6 +24,7 @@ from alphaedge.config.constants import IB_LIVE_PORT, IB_PAPER_PORT
 from alphaedge.config.loader import AppConfig, load_config
 from alphaedge.engine.broker import BrokerConnection, OrderExecutor
 from alphaedge.engine.data_feed import HistoricalDataFeed, RealtimeDataFeed
+from alphaedge.engine.live_types import LiveTradeRecord
 from alphaedge.engine.position_manager import PositionManager
 from alphaedge.engine.regime_filter import DailyRegimeFilter
 from alphaedge.engine.session_lifecycle import SessionLifecycle
@@ -54,6 +55,7 @@ class StrategyState:
     pre_session_m1_candles: list[dict[str, Any]] = field(default_factory=list)
     m1_candles: list[dict[str, Any]] = field(default_factory=list)
     max_candles: int = 200
+    live_record: LiveTradeRecord | None = None
 
 
 # ------------------------------------------------------------------

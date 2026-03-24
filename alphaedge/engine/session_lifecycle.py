@@ -29,6 +29,8 @@ from alphaedge.config.constants import (
     RISK_CHECK_INTERVAL_IDLE,
     RISK_CHECK_INTERVAL_POSITION,
 )
+from alphaedge.engine.live_journal import append_live_trade_csv
+from alphaedge.engine.live_types import LiveTradeRecord
 from alphaedge.utils.alerting import (
     Alert,
     AlertEvent,
@@ -164,11 +166,51 @@ class SessionLifecycle:
         self,
         state: StrategyState,
         trades_placed: list,
+        bracket: dict[str, Any],
+        signal: dict[str, Any],
+        spread_pips: float,
+        pip_size: float,
+        exchange_rate: float,
     ) -> None:
         """Register fill callbacks and update in-memory position state."""
+        entry_time = now_utc()
+        parent = trades_placed[0]
+        raw_fill = getattr(getattr(parent, "orderStatus", None), "avgFillPrice", None)
+        fill_price = float(raw_fill) if raw_fill else bracket["entry_price"]
+        slippage = abs(fill_price - bracket["entry_price"]) / pip_size
+
+        state.live_record = LiveTradeRecord(
+            pair=state.pair,
+            direction=bracket["direction"],
+            entry_price=bracket["entry_price"],
+            fill_price=fill_price,
+            stop_loss=bracket["stop_loss"],
+            take_profit=bracket["take_profit"],
+            lot_size=bracket["units"],
+            sl_pips=signal["risk_pips"],
+            spread_pips=spread_pips,
+            exchange_rate=exchange_rate,
+            entry_time=entry_time,
+            slippage_pips=slippage,
+        )
+        logger.info(
+            "TRADE_ENTRY | pair={} | dir={} | entry={} | fill={} | sl={} | tp={}"
+            " | lots={} | sl_pips={:.1f} | spread={:.1f} | slip={:.2f}",
+            state.pair,
+            "LONG" if bracket["direction"] == 1 else "SHORT",
+            bracket["entry_price"],
+            fill_price,
+            bracket["stop_loss"],
+            bracket["take_profit"],
+            bracket["units"],
+            signal["risk_pips"],
+            spread_pips,
+            slippage,
+        )
+
         for trade_obj in trades_placed:
             trade_obj.filledEvent += lambda _t, _pair=state.pair: self._on_trade_closed(
-                _pair
+                _pair, _t
             )
 
         state.trades_today += 1
@@ -227,7 +269,15 @@ class SessionLifecycle:
             if trades_placed is None:
                 return False
 
-            self._record_fill(state, trades_placed)
+            self._record_fill(
+                state,
+                trades_placed,
+                bracket,
+                signal,
+                spread_pips,
+                pip_size,
+                exchange_rate,
+            )
             logger.debug(
                 "LATENCE spread={:.1f}ms order_submit={:.1f}ms total={:.1f}ms — {}",
                 (_t_spread_end - _t0) / 1e6,
@@ -240,7 +290,7 @@ class SessionLifecycle:
             logger.exception(f"ALPHAEDGE _execute_signal failed: {state.pair}")
             return False
 
-    def _on_trade_closed(self, pair: str) -> None:
+    def _on_trade_closed(self, pair: str, ib_trade: Any = None) -> None:
         """Reset position flag when a bracket child (SL/TP) fills."""
 
         async def _reset_position() -> None:
@@ -249,6 +299,62 @@ class SessionLifecycle:
                 if state:
                     state.is_position_open = False
                     logger.info(f"ALPHAEDGE: Position closed for {pair}")
+
+                    record = state.live_record
+                    if record is not None:
+                        exit_time = now_utc()
+                        pip_size = PIP_SIZES.get(pair, 0.0001)
+
+                        raw_exit = None
+                        if ib_trade is not None:
+                            raw_exit = getattr(
+                                getattr(ib_trade, "orderStatus", None),
+                                "avgFillPrice",
+                                None,
+                            )
+                        exit_price = float(raw_exit) if raw_exit else 0.0
+
+                        pnl_pips = (
+                            (exit_price - record.entry_price)
+                            * record.direction
+                            / pip_size
+                            if exit_price
+                            else 0.0
+                        )
+                        pnl_usd = pnl_pips * pip_size * record.lot_size * 100_000
+
+                        record.exit_price = exit_price
+                        record.exit_time = exit_time
+                        record.pnl_pips = round(pnl_pips, 2)
+                        record.pnl_usd = round(pnl_usd, 2)
+                        if not exit_price:
+                            record.outcome = "unknown"
+                        elif pnl_pips > 0:
+                            record.outcome = "win"
+                        elif pnl_pips == 0.0:
+                            record.outcome = "breakeven"
+                        else:
+                            record.outcome = "loss"
+
+                        append_live_trade_csv(record)
+
+                        duration_s = (
+                            int((exit_time - record.entry_time).total_seconds())
+                            if record.entry_time
+                            else "?"
+                        )
+                        logger.info(
+                            "TRADE_CLOSE | pair={} | exit={} | pnl_pips={:+.1f}"
+                            " | pnl_usd={:+.2f} | outcome={} | duration={}s",
+                            pair,
+                            exit_price,
+                            record.pnl_pips,
+                            record.pnl_usd,
+                            record.outcome,
+                            duration_s,
+                        )
+                        state.live_record = None
+
                     # Persist state so open_pairs reflects the closed position
                     self._persist_daily_state()
 
