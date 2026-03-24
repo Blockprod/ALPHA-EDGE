@@ -85,6 +85,19 @@ make bandit      = sécurité Medium+ uniquement
 
 ---
 
+## Règle Anti-Hallucination
+
+```xml
+<investigate_before_answering>
+Never speculate about code or files you have not opened. Read relevant files
+before answering questions about the codebase. If the user references a prompt
+or result file, read it first to detect any changes before assuming its current
+state matches a previous version.
+</investigate_before_answering>
+```
+
+---
+
 ## Interdictions Absolues
 
 - ❌ `ALPHAEDGE_PAPER=false` dans n'importe quel fichier

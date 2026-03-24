@@ -156,8 +156,10 @@ NYSE_OPEN_SPREAD_PIPS: float = 1.5  # NYSE open window
 NEWS_SPREAD_PIPS: float = 3.0  # High-impact news events
 
 # Per-pair base spread in pips (normal market conditions)
+# EURUSD: IB ECN raw spread is 0.1–0.2 pips; 0.2 is conservative and realistic.
+# Higher pairs reflect lower liquidity / wider market-maker spreads.
 BASE_SPREAD_BY_PAIR: dict[str, float] = {
-    "EURUSD": 0.8,
+    "EURUSD": 0.2,
     "GBPUSD": 1.2,
     "USDJPY": 0.9,
     "AUDUSD": 1.0,

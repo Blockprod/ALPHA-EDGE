@@ -31,10 +31,10 @@ ET = ZoneInfo("America/New_York")
 # ------------------------------------------------------------------
 class TestComputeVariableSlippage:
     def test_normal_conditions(self) -> None:
-        """Outside NYSE open window → base slippage + base spread."""
+        """Outside NYSE open window → base slippage + EURUSD per-pair spread (default pair)."""
         bar_time = datetime(2024, 1, 2, 10, 15, tzinfo=ET)  # 10:15 ET
         cost = compute_variable_slippage(bar_time)
-        assert cost == pytest.approx(BASE_SLIPPAGE_PIPS + BASE_SPREAD_PIPS)
+        assert cost == pytest.approx(BASE_SLIPPAGE_PIPS + BASE_SPREAD_BY_PAIR["EURUSD"])
 
     def test_nyse_open_window(self) -> None:
         """9:30 ET → elevated slippage and spread."""
@@ -64,10 +64,10 @@ class TestComputeVariableSlippage:
         assert cost == pytest.approx(expected)
 
     def test_after_nyse_open_window(self) -> None:
-        """9:35 ET → back to normal conditions."""
+        """9:35 ET → back to normal conditions (EURUSD default pair)."""
         bar_time = datetime(2024, 1, 2, 9, 35, tzinfo=ET)
         cost = compute_variable_slippage(bar_time)
-        assert cost == pytest.approx(BASE_SLIPPAGE_PIPS + BASE_SPREAD_PIPS)
+        assert cost == pytest.approx(BASE_SLIPPAGE_PIPS + BASE_SPREAD_BY_PAIR["EURUSD"])
 
     def test_news_event_highest_cost(self) -> None:
         """News event → highest slippage and spread."""
@@ -84,9 +84,9 @@ class TestComputeVariableSlippage:
         assert cost_news > cost_nyse
 
     def test_none_bar_time(self) -> None:
-        """None bar_time → base slippage + base spread."""
+        """None bar_time → base slippage + EURUSD per-pair spread (default pair)."""
         cost = compute_variable_slippage(None)
-        assert cost == pytest.approx(BASE_SLIPPAGE_PIPS + BASE_SPREAD_PIPS)
+        assert cost == pytest.approx(BASE_SLIPPAGE_PIPS + BASE_SPREAD_BY_PAIR["EURUSD"])
 
     def test_variable_higher_than_fixed(self) -> None:
         """NYSE open slippage should exceed the old fixed 0.8 total."""
@@ -104,8 +104,8 @@ class TestComputeVariableSlippage:
         assert cost == pytest.approx(news_slippage + NEWS_SPREAD_PIPS)
 
     def test_different_hours_normal(self) -> None:
-        """Various non-NYSE-open hours → all return base cost."""
-        base_cost = BASE_SLIPPAGE_PIPS + BASE_SPREAD_PIPS
+        """Various non-NYSE-open hours → all return EURUSD base cost (default pair)."""
+        base_cost = BASE_SLIPPAGE_PIPS + BASE_SPREAD_BY_PAIR["EURUSD"]
         for hour in [8, 10, 11, 14, 16]:
             bar_time = datetime(2024, 1, 2, hour, 0, tzinfo=ET)
             assert compute_variable_slippage(bar_time) == pytest.approx(base_cost)

@@ -21,7 +21,6 @@
     "ruff.enable": true,
 
     // --- Type Checking (Pylance) ---
-    "python.analysis.typeCheckingMode": "basic",
     "python.analysis.autoImportCompletions": true,
 
     // --- Testing (Pytest) ---

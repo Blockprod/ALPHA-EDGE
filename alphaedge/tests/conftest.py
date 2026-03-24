@@ -13,16 +13,37 @@ from __future__ import annotations
 
 import os
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+import alphaedge.utils.state_persistence as _state_mod
 from alphaedge.utils.state_persistence import clear_daily_state
 
 # Force the pure-Python Cython stubs during unit tests so collection and
 # assertions remain reproducible across environments with or without local
 # compiled artifacts.
 os.environ.setdefault("ALPHAEDGE_CORE_BACKEND", "stubs")
+
+
+# ------------------------------------------------------------------
+# Per-test state file isolation: redirect STATE_FILE to a unique
+# tmp_path so concurrent test runners and AV scanners cannot
+# interfere with each other through the shared working directory.
+# Must be defined BEFORE _global_clear_daily_state so it is set up
+# first and torn down last, guaranteeing all clear_daily_state()
+# calls inside other fixtures see the patched path.
+# ------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _isolate_state_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Generator[None, None, None]:
+    """Redirect STATE_FILE to a per-test temp directory."""
+    monkeypatch.setattr(
+        _state_mod, "STATE_FILE", str(tmp_path / "alphaedge_daily_state.json")
+    )
+    yield
 
 
 # ------------------------------------------------------------------

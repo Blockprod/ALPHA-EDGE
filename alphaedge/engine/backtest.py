@@ -26,7 +26,6 @@ from alphaedge.config.constants import (
     DEFAULT_MIN_RANGE_PIPS,
     DEFAULT_MIN_VOLUME_RATIO,
     DEFAULT_VOLUME_PERIOD,
-    MAX_LOTS,
     MIN_LOTS,
     PIP_SIZES,
     PROJECT_TITLE,
@@ -38,14 +37,11 @@ from alphaedge.engine.backtest_filters import (  # noqa: F401
     _apply_usd_correlation_filter,
     _group_bars_by_session,
 )
-from alphaedge.engine.backtest_simulation import (  # noqa: F401
-    _check_sl_tp_hit,
-    _close_trade,
+from alphaedge.engine.backtest_simulation import (
     _simulate_partial_exit_fast,
     _simulate_trade_exit,
     _simulate_trade_exit_fast,
     _simulate_trailing_partial_exit_fast,
-    _sl_hit_first,
     compute_variable_slippage,
 )
 from alphaedge.engine.backtest_stats import (
@@ -165,7 +161,9 @@ async def _fetch_pair_trades(
         entry_bars,
         fcr_bars,
         config,
-        min_atr_ratio=config.trading.min_atr_ratio,
+        min_atr_ratio=config.trading.min_atr_ratio_by_pair.get(
+            pair, config.trading.min_atr_ratio
+        ),
         min_range_pips=pair_min_range,
         min_volume_ratio=pair_min_volume,
         session_spec=config.trading.pair_sessions.get(pair),
@@ -381,7 +379,7 @@ def _validate_backtest_signal(
         max_spread_pips=config.trading.max_spread_pips,
         min_rr=config.trading.rr_ratio * 0.9,
         min_lots=MIN_LOTS,
-        max_lots=MAX_LOTS,
+        max_lots=config.trading.max_lot_size,
         adjust_for_spread=True,
     )
     if not bracket.get("is_valid", False):

@@ -192,6 +192,7 @@ class TradingConfig:
     # Per-pair parameter overrides (empty dict = use global defaults)
     min_range_pips_by_pair: dict[str, float] = field(default_factory=dict)
     min_volume_ratio_by_pair: dict[str, float] = field(default_factory=dict)
+    min_atr_ratio_by_pair: dict[str, float] = field(default_factory=dict)
     pair_aliases: dict[str, str] = field(default_factory=dict)  # virtual → real IB pair
     fcr_timeframe: str = "5 mins"  # Timeframe for FCR detection (pre-session bars)
     entry_timeframe: str = "1 min"  # Timeframe for engulfing entry signals
@@ -407,6 +408,9 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
     cfg.min_volume_ratio_by_pair = {
         k: float(v)
         for k, v in pattern_section.get("min_volume_ratio_by_pair", {}).items()
+    }
+    cfg.min_atr_ratio_by_pair = {
+        k: float(v) for k, v in vol_section.get("min_atr_ratio_by_pair", {}).items()
     }
     cfg.pair_aliases = {k: str(v) for k, v in section.get("pair_aliases", {}).items()}
     _validate_trading_config(cfg)

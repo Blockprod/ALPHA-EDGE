@@ -68,6 +68,19 @@ Identifier les régressions, les violations de conventions, les problèmes de s�
 
 ---
 
+## Règle Anti-Hallucination
+
+```xml
+<investigate_before_answering>
+Never speculate about code or files you have not opened. Read relevant files
+before answering questions about the codebase. If the user references a prompt
+or result file, read it first to detect any changes before assuming its current
+state matches a previous version.
+</investigate_before_answering>
+```
+
+---
+
 ## Checklist Avant Merge
 
 1. `ruff check alphaedge/` → 0 erreur

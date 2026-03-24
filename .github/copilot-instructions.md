@@ -48,16 +48,16 @@ IB Gateway
 
 ## Hard Stops — Never Do These
 
-- Never set `ALPHAEDGE_PAPER=false` in any file, ever
-- Never modify `core/*.pyx` without explicit instruction from the user
+- Never set `ALPHAEDGE_PAPER=false` in any file, ever *(silences the paper/live guard — no recovery path exists)*
+- Never modify `core/*.pyx` without explicit instruction from the user *(proprietary FCR logic — changes invalidate all backtest results)*
 - Never commit `.env`, `*.log`, or any proprietary action plan files
-- Never run `make build` unless a `.pyx` file was intentionally modified
-- Never use `# type: ignore` or `# pyright: ignore` as a fix — find and fix the root cause
-- Never use `Any` as a type annotation shortcut — it is a rustine, not a solution
-- Never hardcode pip values, RR ratios, session times, or risk parameters outside `alphaedge/config/constants.py`
+- Never run `make build` unless a `.pyx` file was intentionally modified *(slow and irreversible mid-session — triggers full recompilation)*
+- Never use `# type: ignore` or `# pyright: ignore` as a fix — find and fix the root cause *(silences real type errors — fix the root cause instead)*
+- Never use `Any` as a type annotation shortcut — it is a rustine, not a solution *(Any poisons downstream type inference — use proper union or protocol)*
+- Never hardcode pip values, RR ratios, session times, or risk parameters outside `alphaedge/config/constants.py` *(breaks single source of truth — silent divergence between backtest and live)*
 - Never touch `alphaedge/utils/timezone.py` or `session_manager.py` without re-running DST edge case tests
-- Never mark a task complete without running `make qa` and confirm all tests pass
-- Never push a `.pyx` edit without running `make build` followed by `make qa`
+- Never mark a task complete without running `make qa` and confirm all tests pass *(partial passes hide regressions — 504 tests is the contract)*
+- Never push a `.pyx` edit without running `make build` followed by `make qa` *(runtime module is the .pyd/.so — the .pyx source alone does nothing)*
 
 ---
 

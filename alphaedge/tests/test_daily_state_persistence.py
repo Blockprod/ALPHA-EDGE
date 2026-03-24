@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import alphaedge.utils.state_persistence as _state_mod
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
 from alphaedge.engine.strategy import CoreModules, FCRStrategy
 from alphaedge.utils.state_persistence import (
@@ -111,7 +112,7 @@ class TestDailyStateRoundTrip:
         assert loaded is None
 
     def test_load_handles_corrupt_file(self) -> None:
-        Path("alphaedge_daily_state.json").write_text(
+        Path(_state_mod.STATE_FILE).write_text(
             "not valid json",
             encoding="utf-8",
         )
@@ -119,7 +120,7 @@ class TestDailyStateRoundTrip:
         assert loaded is None
 
     def test_load_rejects_invalid_schema(self) -> None:
-        Path("alphaedge_daily_state.json").write_text(
+        Path(_state_mod.STATE_FILE).write_text(
             (
                 '{"date": "' + date.today().isoformat() + '", '
                 '"starting_equity": "oops", '
@@ -134,7 +135,7 @@ class TestDailyStateRoundTrip:
         assert loaded is None
 
     def test_load_rejects_invalid_open_pairs(self) -> None:
-        Path("alphaedge_daily_state.json").write_text(
+        Path(_state_mod.STATE_FILE).write_text(
             (
                 '{"date": "' + date.today().isoformat() + '", '
                 '"starting_equity": 10000.0, '

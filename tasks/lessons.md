@@ -1,4 +1,5 @@
 # ALPHAEDGE — AI Lessons Learned
+**Créé le :** 2026-03-12 à 12:34
 
 > Updated after every user correction. Review at session start.
 > Format: `[date] [file/module] — mistake → correct pattern`

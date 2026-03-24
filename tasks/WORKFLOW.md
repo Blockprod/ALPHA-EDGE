@@ -4,6 +4,7 @@ projet: ALPHAEDGE
 broker: Interactive Brokers (IB Gateway)
 stack: Python 3.11.9 · Cython 3.0 · ib_insync · Windows
 derniere_revision: 2026-03-22
+creation: 2026-03-20 à 15:29
 ---
 
 # WORKFLOW — Audit → Plan → Corrections
@@ -13,8 +14,8 @@ Chaque audit suit le même pipeline en **3 étapes** :
 
 | Étape | Prompt | Mode | Produit |
 |:---:|---|:---:|---|
-| **A** | `audit_<type>_prompt.md` | Ask / Agent | `tasks/audits/audit_<type>_alphaedge.md` |
-| **B** | `generate_action_plan_prompt.md` | Agent | `tasks/plans/PLAN_ACTION_<type>_[DATE].md` |
+| **A** | `audit_<type>_prompt.md` | Ask / Agent | `tasks/audits/resultats/audit_<type>_alphaedge.md` |
+| **B** | `generate_action_plan_prompt.md` | Agent | `tasks/corrections/plans/PLAN_ACTION_<type>_[DATE].md` |
 | **C** | `execute_corrections_prompt.md` | Agent | corrections appliquées · ⏳ → ✅ |
 
 > Toujours exécuter **A → B → C** dans l'ordre strict.
@@ -36,6 +37,7 @@ Chaque audit suit le même pipeline en **3 étapes** :
 | 8 | [Master](#8--master) | Audit complet toutes dimensions | Agent |
 | 9 | [Modernisation Python](#9--modernisation-python-syntax) | Ruff · Pyright · syntaxe 3.11.9 · annotations | Agent |
 | 10 | [Latence Institutionnel](#10--latence-institutionnel) | Chemin critique · Cython vs stubs · Latence IBKR · asyncio · I/O synchrones | Agent |
+| 11 | [Best Practices AI](#11--best-practices-ai) | Claude · Copilot Pro+ · VSCode · fichiers contexte · patterns prompts | Agent |
 
 ---
 
@@ -43,23 +45,23 @@ Chaque audit suit le même pipeline en **3 étapes** :
 
 > Pipeline FCR · Couplage modules · SRP · Dépendances Cython ↔ Python
 
-**Produit A** : `tasks/audits/audit_structural_alphaedge.md`
+**Produit A** : `tasks/audits/resultats/audit_structural_alphaedge.md`
 
 **A — Audit**
 ```
-#file:tasks/prompts/audit_structural_prompt.md
+#file:tasks/audits/code/audit_structural_prompt.md
 Lance cet audit sur le workspace.
 ```
 
 **B — Plan d'action**
 ```
-#file:tasks/prompts/generate_action_plan_prompt.md
+#file:tasks/corrections/generate_action_plan_prompt.md
 Génère le plan d'action depuis l'audit disponible.
 ```
 
 **C — Exécution**
 ```
-#file:tasks/prompts/execute_corrections_prompt.md
+#file:tasks/corrections/execute_corrections_prompt.md
 Démarre l'exécution du plan d'action disponible.
 ```
 
@@ -69,23 +71,23 @@ Démarre l'exécution du plan d'action disponible.
 
 > État des fichiers AI-Driven · copilot-instructions · CLAUDE.md · agents/ · architecture/ · knowledge/ · Plan de migration
 
-**Produit A** : `tasks/audits/audit_ai_driven_alphaedge.md`
+**Produit A** : `tasks/audits/resultats/audit_ai_driven_alphaedge.md`
 
 **A — Audit & restructuration**
 ```
-#file:tasks/prompts/audit_ai_driven_prompt.md
+#file:tasks/audits/methode/audit_ai_driven_prompt.md
 Lance cet audit et cette restructuration sur le workspace.
 ```
 
 **B — Plan d'action**
 ```
-#file:tasks/prompts/generate_action_plan_prompt.md
+#file:tasks/corrections/generate_action_plan_prompt.md
 Génère le plan d'action depuis l'audit disponible.
 ```
 
 **C — Exécution**
 ```
-#file:tasks/prompts/execute_corrections_prompt.md
+#file:tasks/corrections/execute_corrections_prompt.md
 Démarre l'exécution du plan d'action disponible.
 ```
 
@@ -95,23 +97,23 @@ Démarre l'exécution du plan d'action disponible.
 
 > Système d'envoi (email · Telegram · Discord) · couverture des événements · protection contre les tempêtes · sécurité du contenu
 
-**Produit A** : `tasks/audits/audit_email_alerts_alphaedge.md`
+**Produit A** : `tasks/audits/resultats/audit_email_alerts_alphaedge.md`
 
 **A — Audit**
 ```
-#file:tasks/prompts/audit_email_alerts_prompt.md
+#file:tasks/audits/code/audit_email_alerts_prompt.md
 Lance cet audit sur le workspace.
 ```
 
 **B — Plan d'action**
 ```
-#file:tasks/prompts/generate_action_plan_prompt.md
+#file:tasks/corrections/generate_action_plan_prompt.md
 Génère le plan d'action depuis l'audit disponible.
 ```
 
 **C — Exécution**
 ```
-#file:tasks/prompts/execute_corrections_prompt.md
+#file:tasks/corrections/execute_corrections_prompt.md
 Démarre l'exécution du plan d'action disponible.
 ```
 
@@ -121,23 +123,23 @@ Démarre l'exécution du plan d'action disponible.
 
 > Pertinence ML sur signal FCR · Régime de marché · Sizing adaptatif · Agents IB · SHAP backtest
 
-**Produit A** : `tasks/audits/audit_ia_ml_alphaedge.md`
+**Produit A** : `tasks/audits/resultats/audit_ia_ml_alphaedge.md`
 
 **A — Audit**
 ```
-#file:tasks/prompts/audit_ia_ml_prompt.md
+#file:tasks/audits/methode/audit_ia_ml_prompt.md
 Lance cet audit sur le workspace.
 ```
 
 **B — Plan d'action**
 ```
-#file:tasks/prompts/generate_action_plan_prompt.md
+#file:tasks/corrections/generate_action_plan_prompt.md
 Génère le plan d'action depuis l'audit disponible.
 ```
 
 **C — Exécution**
 ```
-#file:tasks/prompts/execute_corrections_prompt.md
+#file:tasks/corrections/execute_corrections_prompt.md
 Démarre l'exécution du plan d'action disponible.
 ```
 
@@ -147,23 +149,23 @@ Démarre l'exécution du plan d'action disponible.
 
 > Sécurité credentials IB · Séparation paper/live · Robustesse IB Gateway · Gestion erreurs asyncio
 
-**Produit A** : `tasks/audits/audit_technical_alphaedge.md`
+**Produit A** : `tasks/audits/resultats/audit_technical_alphaedge.md`
 
 **A — Audit**
 ```
-#file:tasks/prompts/audit_technical_prompt.md
+#file:tasks/audits/code/audit_technical_prompt.md
 Lance cet audit sur le workspace.
 ```
 
 **B — Plan d'action**
 ```
-#file:tasks/prompts/generate_action_plan_prompt.md
+#file:tasks/corrections/generate_action_plan_prompt.md
 Génère le plan d'action depuis l'audit disponible.
 ```
 
 **C — Exécution**
 ```
-#file:tasks/prompts/execute_corrections_prompt.md
+#file:tasks/corrections/execute_corrections_prompt.md
 Démarre l'exécution du plan d'action disponible.
 ```
 
@@ -173,23 +175,23 @@ Démarre l'exécution du plan d'action disponible.
 
 > Intégrité .pyx ↔ .pyd · Stubs · Reproductibilité build · setup.py
 
-**Produit A** : `tasks/audits/audit_cython_alphaedge.md`
+**Produit A** : `tasks/audits/resultats/audit_cython_alphaedge.md`
 
 **A — Audit**
 ```
-#file:tasks/prompts/audit_cython_prompt.md
+#file:tasks/audits/code/audit_cython_prompt.md
 Lance cet audit sur le workspace.
 ```
 
 **B — Plan d'action**
 ```
-#file:tasks/prompts/generate_action_plan_prompt.md
+#file:tasks/corrections/generate_action_plan_prompt.md
 Génère le plan d'action depuis l'audit disponible.
 ```
 
 **C — Exécution**
 ```
-#file:tasks/prompts/execute_corrections_prompt.md
+#file:tasks/corrections/execute_corrections_prompt.md
 Démarre l'exécution du plan d'action disponible.
 ```
 
@@ -197,23 +199,23 @@ Démarre l'exécution du plan d'action disponible.
 
 > Intégrité signal FCR · Walk-forward · Cohérence backtest ↔ live · RR ratio · Gestion risque DST
 
-**Produit A** : `tasks/audits/audit_strategic_alphaedge.md`
+**Produit A** : `tasks/audits/resultats/audit_strategic_alphaedge.md`
 
 **A — Audit**
 ```
-#file:tasks/prompts/audit_strategic_prompt.md
+#file:tasks/audits/code/audit_strategic_prompt.md
 Lance cet audit sur le workspace.
 ```
 
 **B — Plan d'action**
 ```
-#file:tasks/prompts/generate_action_plan_prompt.md
+#file:tasks/corrections/generate_action_plan_prompt.md
 Génère le plan d'action depuis l'audit disponible.
 ```
 
 **C — Exécution**
 ```
-#file:tasks/prompts/execute_corrections_prompt.md
+#file:tasks/corrections/execute_corrections_prompt.md
 Démarre l'exécution du plan d'action disponible.
 ```
 
@@ -223,23 +225,23 @@ Démarre l'exécution du plan d'action disponible.
 
 > Audit complet couvrant toutes les dimensions du projet en une seule passe
 
-**Produit A** : `tasks/audits/audit_master_alphaedge.md`
+**Produit A** : `tasks/audits/resultats/audit_master_alphaedge.md`
 
 **A — Audit**
 ```
-#file:tasks/prompts/audit_master_prompt.md
+#file:tasks/audits/code/audit_master_prompt.md
 Lance cet audit sur le workspace.
 ```
 
 **B — Plan d'action**
 ```
-#file:tasks/prompts/generate_action_plan_prompt.md
+#file:tasks/corrections/generate_action_plan_prompt.md
 Génère le plan d'action depuis l'audit disponible.
 ```
 
 **C — Exécution**
 ```
-#file:tasks/prompts/execute_corrections_prompt.md
+#file:tasks/corrections/execute_corrections_prompt.md
 Démarre l'exécution du plan d'action disponible.
 ```
 
@@ -253,7 +255,7 @@ Démarre l'exécution du plan d'action disponible.
 
 **A — Audit & corrections**
 ```
-#file:tasks/prompts/audit_modernize_python_syntax_prompt.md
+#file:tasks/audits/code/audit_modernize_python_syntax_prompt.md
 Lance cet audit sur le workspace.
 ```
 
@@ -268,22 +270,48 @@ Lance cet audit sur le workspace.
 
 > Chemin critique signal→ordre · Cython vs stubs · Latence IBKR · Event loop asyncio · I/O synchrones · Fraîcheur données · Résilience
 
-**Produit A** : `tasks/audits/audit_latence_prompt.md`
+**Produit A** : `tasks/audits/resultats/audit_latence_alphaedge.md`
 
 **A — Audit**
 ```
-#file:tasks/prompts/audit_latence_prompt.md
+#file:tasks/audits/code/audit_latence_prompt.md
 Lance cet audit sur le workspace.
 ```
 
 **B — Plan d'action**
 ```
-#file:tasks/prompts/generate_action_plan_prompt.md
+#file:tasks/corrections/generate_action_plan_prompt.md
 Génère le plan d'action depuis l'audit disponible.
 ```
 
 **C — Exécution**
 ```
-#file:tasks/prompts/execute_corrections_prompt.md
+#file:tasks/corrections/execute_corrections_prompt.md
+Démarre l'exécution du plan d'action disponible.
+```
+
+---
+
+## `11 · BEST PRACTICES AI`
+
+> Best practices Claude · Copilot Pro+ · VSCode · fichiers contexte AI-Driven · patterns prompts réutilisables
+
+**Produit A** : `tasks/audits/resultats/audit_best_practices_alphaedge.md`
+
+**A — Audit**
+```
+#file:tasks/audits/methode/best practices_prompt.md
+Lance cet audit sur le workspace.
+```
+
+**B — Plan d'action**
+```
+#file:tasks/corrections/generate_action_plan_prompt.md
+Génère le plan d'action depuis l'audit disponible.
+```
+
+**C — Exécution**
+```
+#file:tasks/corrections/execute_corrections_prompt.md
 Démarre l'exécution du plan d'action disponible.
 ```

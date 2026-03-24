@@ -49,9 +49,10 @@ trading:
   # Maximum acceptable spread in pips (skip trade if exceeded)
   max_spread_pips: 2.0
 
-  # Safety cap on position size — dynamic sizing cannot exceed this value
-  # 10.0 = MAX_LOTS in constants.py; allows 3% risk sizing up to ~$33k equity (EURUSD)
-  max_lot_size: 10.0
+  # Safety cap on position size — dynamic sizing cannot exceed this value.
+  # 1000 micro lots = 10 standard lots; covers EURUSD 3%-risk sizing on a $10k
+  # account (909 lots needed for 3.3-pip SL at $0.10/pip/micro-lot).
+  max_lot_size: 1000.0
 
   # Spread spike multiplier (spread > N× max → WARNING during open position)
   spread_spike_multiplier: 3.0
@@ -100,6 +101,11 @@ volatility:
   atr_period: 14            # Number of candles for ATR calculation
   min_atr_ratio: 1.7        # ATR spike threshold (1.5=225 bruts; 2.0=10 nets; trying midpoint)
   tolerance_pips: 5.0       # Buffer zone around boundaries
+  # Per-pair ATR override — allows lower threshold for pairs with lower institutional spike
+  # EURUSD at London Open (08:00-09:00 UTC): Frankfurt→London transition; weaker spike than NYSE
+  # Diagnostic: London at 1.0 → 26 gap sessions/3y; NYSE at 1.2 → 23 but FCR stale (5h lag)
+  min_atr_ratio_by_pair:
+    EURUSD: 1.0
 
 # --- Pattern Detection ---
 pattern:
