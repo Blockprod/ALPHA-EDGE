@@ -31,7 +31,7 @@ ET = ZoneInfo("America/New_York")
 # ------------------------------------------------------------------
 class TestComputeVariableSlippage:
     def test_normal_conditions(self) -> None:
-        """Outside NYSE open window → base slippage + EURUSD per-pair spread (default pair)."""
+        """Outside NYSE open window → base slippage + EURUSD per-pair spread."""
         bar_time = datetime(2024, 1, 2, 10, 15, tzinfo=ET)  # 10:15 ET
         cost = compute_variable_slippage(bar_time)
         assert cost == pytest.approx(BASE_SLIPPAGE_PIPS + BASE_SPREAD_BY_PAIR["EURUSD"])
