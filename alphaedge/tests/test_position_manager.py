@@ -56,7 +56,7 @@ def _make_config(
 
 def _make_signal(risk_pips: float = 15.0) -> dict[str, Any]:
     return {
-        "signal": 1,
+        "direction": 1,
         "entry_price": 1.1050,
         "stop_loss": 1.1035,
         "take_profit": 1.1080,
@@ -133,7 +133,7 @@ class TestPositionManagerBuildOrder:
         modules = _make_modules()
         cfg = _make_config()
         signal = _make_signal()
-        signal["signal"] = -1  # SELL
+        signal["direction"] = -1  # SELL
         pm.build_validated_order(signal, 0.1, 0.0001, 1.0, modules, cfg)
         call_kwargs = modules.order_manager.create_bracket_order.call_args.kwargs
         assert call_kwargs["direction"] == -1

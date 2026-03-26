@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
-from alphaedge.engine.strategy import CoreModules, FCRStrategy
+from alphaedge.engine.strategy import CoreModules, SwingStrategy
 from alphaedge.utils.state_persistence import clear_daily_state, load_daily_state
 
 
@@ -29,7 +29,7 @@ def _make_config(pairs: list[str] | None = None) -> AppConfig:
     )
 
 
-def _build_strategy(pairs: list[str] | None = None) -> FCRStrategy:
+def _build_strategy(pairs: list[str] | None = None) -> SwingStrategy:
     cfg = _make_config(pairs)
     with (
         patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,
@@ -42,13 +42,11 @@ def _build_strategy(pairs: list[str] | None = None) -> FCRStrategy:
         mock_ib.disconnectedEvent = MagicMock()
         mock_broker_cls.return_value.ib = mock_ib
         mock_modules.return_value = CoreModules(
-            fcr_detector=MagicMock(),
-            gap_detector=MagicMock(),
-            engulfing_detector=MagicMock(),
+            momentum_detector=MagicMock(),
             order_manager=MagicMock(),
             risk_manager=MagicMock(),
         )
-        strategy = FCRStrategy(cfg)
+        strategy = SwingStrategy(cfg)
     return strategy
 
 
@@ -154,15 +152,15 @@ class TestStartupReconcile:
         strategy = _build_strategy(["EURUSD"])
 
         strategy._broker.connect = AsyncMock(return_value=True)
+        strategy._broker.refresh_account_funds = AsyncMock()
         strategy._executor.get_account_equity = AsyncMock(return_value=10_000.0)
-        strategy._hist_feed.fetch_m5_pre_session = AsyncMock(return_value=[])
         strategy._hist_feed.fetch_bars = AsyncMock(return_value=[])
         strategy._rt_feed.on_bar = MagicMock()
         strategy._rt_feed.subscribe = AsyncMock()
         strategy._rt_feed.unsubscribe_all = AsyncMock()
         strategy._broker.disconnect = AsyncMock()
         strategy._executor.get_open_positions = AsyncMock(return_value=[])
-        strategy._modules.fcr_detector.detect_fcr.return_value = None
+        strategy._modules.momentum_detector.detect_momentum.return_value = None
 
         reconcile_calls: list[int] = []
 
@@ -194,15 +192,14 @@ class TestStartupReconcile:
         strategy = _build_strategy(["EURUSD"])
 
         strategy._broker.connect = AsyncMock(return_value=True)
+        strategy._broker.refresh_account_funds = AsyncMock()
         strategy._executor.get_account_equity = AsyncMock(return_value=10_000.0)
-        strategy._hist_feed.fetch_m5_pre_session = AsyncMock(return_value=[])
         strategy._hist_feed.fetch_bars = AsyncMock(return_value=[])
         strategy._rt_feed.on_bar = MagicMock()
         strategy._rt_feed.subscribe = AsyncMock()
         strategy._rt_feed.unsubscribe_all = AsyncMock()
         strategy._broker.disconnect = AsyncMock()
-        strategy._modules.fcr_detector.detect_fcr.return_value = None
-
+        strategy._modules.momentum_detector.detect_momentum.return_value = None
         # Simulate IB position open on EURUSD
         mock_pos = MagicMock()
         mock_pos.position = 1000

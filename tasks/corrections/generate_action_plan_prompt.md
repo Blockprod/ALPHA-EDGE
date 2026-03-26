@@ -2,7 +2,7 @@
 modele: sonnet-4.6
 mode: agent
 contexte: codebase
-produit: tasks/plans/PLAN_ACTION_[NOM_AUDIT]_[DATE].md
+produit: tasks/corrections/plans/PLAN_ACTION_[NOM_AUDIT]_[DATE].md
 derniere_revision: 2026-03-20
 creation: 2026-03-20 à 15:34
 ---
@@ -18,15 +18,15 @@ NON CONFORME, fichier:ligne) et affiche-les numérotés.
 Demande : "Quel(s) audit(s) utiliser ?
 [TOUS] ou [1][2]..."
 
-Puis génère dans `tasks/plans/` le fichier plan en nommant
+Puis génère dans `tasks/corrections/plans/` le fichier plan en nommant
 le fichier d'après l'audit source (sans extension) :
   PLAN_ACTION_[NOM_AUDIT]_[DATE].md
 
 Exemple : audit source = `audit_structural_alphaedge.md`
-  → `tasks/plans/PLAN_ACTION_audit_structural_alphaedge_2026-03-20.md`
+  → `tasks/corrections/plans/PLAN_ACTION_audit_structural_alphaedge_2026-03-20.md`
 
 Exemple : audit source = `audit_master_alphaedge.md`
-  → `tasks/plans/PLAN_ACTION_audit_master_alphaedge_2026-03-20.md`
+  → `tasks/corrections/plans/PLAN_ACTION_audit_master_alphaedge_2026-03-20.md`
 
 ─────────────────────────────────────────────
 STRUCTURE OBLIGATOIRE DU FICHIER
@@ -80,6 +80,6 @@ RÈGLES
 - Nommer le fichier plan d'après l'audit source
 
 Confirme dans le chat uniquement :
-"✅ tasks/plans/PLAN_ACTION_[NOM_AUDIT]_[DATE].md créé
+"✅ tasks/corrections/plans/PLAN_ACTION_[NOM_AUDIT]_[DATE].md créé
  🔴 X · 🟠 X · 🟡 X · Effort : X jours
  👉 Lance execute_corrections_prompt.md pour démarrer."

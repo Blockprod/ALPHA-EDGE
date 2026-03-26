@@ -31,7 +31,7 @@ def _make_config() -> AppConfig:
 
 def _make_signal() -> dict[str, float | int]:
     return {
-        "signal": 1,
+        "direction": 1,
         "entry_price": 1.1000,
         "stop_loss": 1.0980,
         "take_profit": 1.1040,

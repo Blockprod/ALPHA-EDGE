@@ -49,15 +49,14 @@ def _make_trade(pnl: float = 10.0) -> TradeRecord:
 
 def _fake_backtest(
     _pair: str,
-    _m1: list[dict[str, Any]],
-    _m5: list[dict[str, Any]],
+    _bars: list[dict[str, Any]],
     cfg: AppConfig,
-) -> list[TradeRecord]:
+) -> tuple[list[TradeRecord], dict[str, int]]:
     """Return trades that vary based on config parameters."""
     rr = cfg.trading.rr_ratio
     # More trades with lower RR, fewer with higher
     n_trades = max(1, int(10 / rr))
-    return [_make_trade(pnl=rr * 5.0) for _ in range(n_trades)]
+    return ([_make_trade(pnl=rr * 5.0) for _ in range(n_trades)], {})
 
 
 # ------------------------------------------------------------------
@@ -78,20 +77,20 @@ class TestSensitivityParam:
 
     def test_all_params_defined(self) -> None:
         expected = {
-            "min_atr_ratio",
-            "min_volume_ratio",
-            "min_range_pips",
+            "adx_threshold",
             "rr_ratio",
             "min_body_ratio",
+            "momentum_fast_period",
+            "momentum_slow_period",
         }
         assert set(SENSITIVITY_PARAMS.keys()) == expected
 
     def test_param_ranges_match_spec(self) -> None:
-        assert SENSITIVITY_PARAMS["min_atr_ratio"].min_val == 1.0
-        assert SENSITIVITY_PARAMS["min_atr_ratio"].max_val == 2.5
+        assert SENSITIVITY_PARAMS["adx_threshold"].min_val == 20.0
+        assert SENSITIVITY_PARAMS["adx_threshold"].max_val == 30.0
         assert SENSITIVITY_PARAMS["rr_ratio"].min_val == 2.0
         assert SENSITIVITY_PARAMS["rr_ratio"].max_val == 4.0
-        assert SENSITIVITY_PARAMS["min_range_pips"].step == 1.0
+        assert SENSITIVITY_PARAMS["adx_threshold"].step == 1.0
 
 
 # ------------------------------------------------------------------
@@ -104,21 +103,21 @@ class TestRunWithParams:
             "alphaedge.engine.sensitivity._backtest_pair",
             side_effect=_fake_backtest,
         ):
-            stats = _run_with_params([], [], "EURUSD", AppConfig(), {"rr_ratio": 3.5})
+            stats = _run_with_params([], "EURUSD", AppConfig(), {"rr_ratio": 3.5})
         assert isinstance(stats, BacktestStats)
 
     def test_constant_override_restored(self) -> None:
         """Module constants should be restored after run."""
         from alphaedge.engine.sensitivity import _get_original_constant
 
-        param = SENSITIVITY_PARAMS["min_atr_ratio"]
+        param = SENSITIVITY_PARAMS["adx_threshold"]
         original = _get_original_constant(param)
 
         with patch(
             "alphaedge.engine.sensitivity._backtest_pair",
             side_effect=_fake_backtest,
         ):
-            _run_with_params([], [], "EURUSD", AppConfig(), {"min_atr_ratio": 99.0})
+            _run_with_params([], "EURUSD", AppConfig(), {"adx_threshold": 99.0})
 
         assert _get_original_constant(param) == original
 
@@ -126,7 +125,7 @@ class TestRunWithParams:
         """Constants restored even if backtest raises."""
         from alphaedge.engine.sensitivity import _get_original_constant
 
-        param = SENSITIVITY_PARAMS["min_atr_ratio"]
+        param = SENSITIVITY_PARAMS["adx_threshold"]
         original = _get_original_constant(param)
 
         def raise_error(*_args: Any, **_kwargs: Any) -> list[TradeRecord]:
@@ -139,7 +138,7 @@ class TestRunWithParams:
             ),
             pytest.raises(RuntimeError),
         ):
-            _run_with_params([], [], "EURUSD", AppConfig(), {"min_atr_ratio": 99.0})
+            _run_with_params([], "EURUSD", AppConfig(), {"adx_threshold": 99.0})
 
         assert _get_original_constant(param) == original
 
@@ -154,7 +153,7 @@ class TestRunSensitivity2D:
             side_effect=_fake_backtest,
         ):
             result = run_sensitivity_2d(
-                [], [], "EURUSD", AppConfig(), "rr_ratio", "min_body_ratio"
+                [], "EURUSD", AppConfig(), "rr_ratio", "min_body_ratio"
             )
 
         assert isinstance(result, Sensitivity2DResult)
@@ -171,7 +170,7 @@ class TestRunSensitivity2D:
             side_effect=_fake_backtest,
         ):
             result = run_sensitivity_2d(
-                [], [], "EURUSD", AppConfig(), "rr_ratio", "min_body_ratio"
+                [], "EURUSD", AppConfig(), "rr_ratio", "min_body_ratio"
             )
 
         assert result.x_values == SENSITIVITY_PARAMS["rr_ratio"].values()

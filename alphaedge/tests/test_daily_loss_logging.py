@@ -13,10 +13,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
-from alphaedge.engine.strategy import CoreModules, FCRStrategy, StrategyState
+from alphaedge.engine.strategy import CoreModules, StrategyState, SwingStrategy
 
 
-def _build_strategy() -> FCRStrategy:
+def _build_strategy() -> SwingStrategy:
     cfg = AppConfig(ib=IBConfig(is_paper=True), trading=TradingConfig())
     with (
         patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,
@@ -30,13 +30,11 @@ def _build_strategy() -> FCRStrategy:
         mock_ib.disconnectedEvent.__iadd__ = lambda self, _handler: self
         mock_broker_cls.return_value.ib = mock_ib
         mock_mods.return_value = CoreModules(
-            fcr_detector=MagicMock(),
-            gap_detector=MagicMock(),
-            engulfing_detector=MagicMock(),
+            momentum_detector=MagicMock(),
             order_manager=MagicMock(),
             risk_manager=MagicMock(),
         )
-        return FCRStrategy(cfg)
+        return SwingStrategy(cfg)
 
 
 class TestDailyLossLogging:

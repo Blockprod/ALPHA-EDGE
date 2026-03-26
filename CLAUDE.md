@@ -20,6 +20,8 @@ Execute in this exact order before touching any file:
 
 > Full rules + rationales: [.github/copilot-instructions.md](.github/copilot-instructions.md)
 
+<important if="modifying any file">
+
 - **Never** set `ALPHAEDGE_PAPER=false` in any file, ever
 - **Never** modify `core/*.pyx` without explicit user instruction
 - **Never** commit `.env`, `*.log`, or proprietary action plan files
@@ -28,8 +30,10 @@ Execute in this exact order before touching any file:
 - **Never** use `Any` as a type annotation — it is a rustine
 - **Never** hardcode pip values, RR ratios, session times, or risk parameters outside `alphaedge/config/constants.py`
 - **Never** touch `timezone.py` or `session_manager.py` without re-running DST edge case tests (CET / CEST / EU-switch / US-switch)
-- **Never** mark a task complete without `make qa` green (504 tests)
+- **Never** mark a task complete without `make qa` green (602 tests)
 - **Never** push a `.pyx` edit without `make build` followed by `make qa`
+
+</important>
 
 ---
 
@@ -50,10 +54,29 @@ Execute in this exact order before touching any file:
 
 ## Architecture
 
-> Pipeline complet + modules : [.github/copilot-instructions.md](.github/copilot-instructions.md)
-> Tableau des modules : [architecture/module_responsibilities.md](architecture/module_responsibilities.md)
+> Contrats complets + signatures : [docs/ALPHAEDGE_INTERFACES.md](docs/ALPHAEDGE_INTERFACES.md)
+> Modules + responsabilités : [architecture/module_responsibilities.md](architecture/module_responsibilities.md)
 
 `engine/` → `core/` → `config/` → `utils/` — top-down uniquement, aucun import circulaire.
+
+```
+alphaedge/
+  config/      — constantes + loader YAML (toujours éditer constants.py, jamais hardcoder)
+  core/        — détecteurs Cython (.pyx) + stubs Python (_stubs/) — ne jamais éditer sans instruction
+  engine/      — orchestration live + backtest (exclu de la couverture tests)
+  tests/       — pytest (602 tests, couverture ≥80% sur config/utils/core/)
+.github/
+  skills/      — workflows réutilisables (audit-workflow · cython-build · run-qa · run-backtest)
+  prompts/     — templates tâches récurrentes (add-test · cython-build · new-util)
+  specs/       — contrats comportement fonctions critiques (fcr · order · risk · backtest)
+tasks/
+  audits/      — prompts code/ et methode/ + resultats/ (rapports d'audit)
+  corrections/ — plans d'action datés + prompts d'exécution (generate · execute)
+  lessons.md   — leçons IA accumulées — LIRE EN PREMIER
+agents/        — rôles spécialisés (#file:agents/<role>.md pour activer)
+architecture/  — ADR + responsabilités modules
+knowledge/     — contraintes IBKR + marché Forex
+```
 
 ---
 
@@ -76,7 +99,7 @@ Les `.pyd`/`.so` sont le runtime — un `.pyx` sans `make build` est silencieuse
 | `detect_gap(...)` | `detected: False` | STOP — do not proceed |
 | `detect_engulfing(...)` | `None` | STOP — no order |
 | `calculate_position_size(...)` | `is_valid: False` | STOP — log WARNING |
-| `check_daily_limit(...)` | `halt_trading: True` | STOP ALL — log CRITICAL |
+| `check_daily_limit(...)` | `limit_breached: True` | STOP ALL — log CRITICAL |
 | `create_bracket_order(...)` | `is_valid: False` | STOP — log rejection_reason |
 
 ---
@@ -104,10 +127,17 @@ make build   # après modification .pyx uniquement
 ## Workflow Orchestration
 
 - **Plan mode obligatoire** pour toute tâche ≥ 3 étapes — STOP et re-plan si ça dévie
+- **Avant toute modification de code — 4 questions :**
+  1. Ai-je lu tous les fichiers que je vais modifier ? (citer fichier:ligne avant d'agir)
+  2. Ai-je un plan en N étapes validé avant d'agir ?
+  3. Y a-t-il des informations manquantes ? (explorer d'abord, modifier ensuite)
+  4. Comment vais-je valider le changement ? (`make qa` suffit ? test dédié requis ?)
+- **Agents spécialisés disponibles :** invoquer via `#file:agents/<role>.md`
+  (`code_auditor` · `dev_engineer` · `quant_researcher` · `risk_manager`)
 - **Subagent `Explore`** pour toute exploration — garde le contexte principal propre
 - **Après toute correction** : mettre à jour `tasks/lessons.md` — non-négociable
 - **Bug report reçu** → corriger directement, sans demander de guidage
-- **Jamais marquer terminé** sans `make qa` vert (504 tests)
+- **Jamais marquer terminé** sans `make qa` vert (574 tests)
 
 ---
 
@@ -120,11 +150,36 @@ make build   # après modification .pyx uniquement
 
 ---
 
+## Convention de fichiers `tasks/` — Règle absolue
+
+Tout fichier créé dans `tasks/` doit commencer par ce frontmatter exact :
+
+```yaml
+---
+modele: sonnet-4.6
+mode: agent
+contexte: codebase
+produit: <nom_du_fichier_résultat>
+derniere_revision: YYYY-MM-DD
+creation: YYYY-MM-DD à HH:MM
+---
+```
+
+Les prompts d'audit (`tasks/audits/code/`) doivent se terminer par un bloc `SORTIE OBLIGATOIRE` avec instruction de création du fichier résultat + confirmation chat. Modèle de référence : `tasks/audits/code/audit_trade_journal_prompt.md`.
+
+**Ne jamais créer un fichier `tasks/` sans ce template.**
+
+---
+
 ## Core Principles
 
 - **Simplicity First** — impact minimal de code
 - **No Laziness** — causes racines, pas de fix temporaires
 - **Audit Before Modify** — lire + citer fichier:ligne avant toute modification
+- **Git workflow :** committer dès qu'une correction passe `make qa` — ne pas attendre la fin du plan multi-étapes
+  - Format : `fix(scope): description` · `feat(scope): description` · `cython: description`
+  - Ex : `fix(journal): atomic CSV write`, `feat(backtest): add sl_pips column`
+  - PRs focalisées : une correction / un audit par PR · squash merge
 
 ---
 
@@ -146,4 +201,4 @@ make build   # après modification .pyx uniquement
 | `docs/ALPHAEDGE_MASTER_AUDIT.md` | Last full technical audit |
 | `tasks/lessons.md` | AI agent lessons (read every session) |
 
-> Baseline : **504 tests — 100% pass · Coverage ≥80%** sur `config/`, `utils/`, `core/`
+> Baseline : **574 tests — 100% pass · Coverage ≥80%** sur `config/`, `utils/`, `core/`

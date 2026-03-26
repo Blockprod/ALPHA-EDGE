@@ -41,40 +41,24 @@ def _make_bar(
     }
 
 
-def _make_synthetic_bars() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Build a minimal but valid M1/M5 synthetic dataset for optimization."""
-    start = datetime(2025, 1, 2, 8, 0, tzinfo=UTC)
+def _make_synthetic_bars() -> list[dict[str, Any]]:
+    """Build a minimal but valid daily synthetic dataset for optimization."""
+    start = datetime(2025, 1, 2, 0, 0, tzinfo=UTC)
 
-    m5_bars: list[dict[str, Any]] = []
-    for i in range(12):
+    daily_bars: list[dict[str, Any]] = []
+    for i in range(60):
         base = 1.1000 + i * 0.0002
-        m5_bars.append(
+        daily_bars.append(
             _make_bar(
-                start + timedelta(minutes=5 * i),
+                start + timedelta(days=i),
                 open_=base,
-                high=base + 0.0012,
-                low=base - 0.0010,
-                close=base + 0.0005,
+                high=base + 0.0050,
+                low=base - 0.0040,
+                close=base + 0.0020,
             )
         )
 
-    m1_start = datetime(2025, 1, 2, 9, 30, tzinfo=UTC)
-    m1_bars: list[dict[str, Any]] = []
-    for i in range(20):
-        base = 1.1020 + i * 0.0001
-        body = 0.0003 if i % 2 == 0 else -0.0002
-        m1_bars.append(
-            _make_bar(
-                m1_start + timedelta(minutes=i),
-                open_=base,
-                high=base + 0.0006,
-                low=base - 0.0005,
-                close=base + body,
-                volume=1000 + i * 25,
-            )
-        )
-
-    return m1_bars, m5_bars
+    return daily_bars
 
 
 @pytest.fixture()
@@ -88,29 +72,26 @@ class TestOptunaSearchBest:
 
     def test_returns_valid_param_dict(self, app_config) -> None:
         """The optimizer must return a dict with the requested keys."""
-        m1_bars, m5_bars = _make_synthetic_bars()
+        daily_bars = _make_synthetic_bars()
         result = optuna_search_best(
-            m1_bars,
-            m5_bars,
+            daily_bars,
             "EURUSD",
             app_config,
             n_trials=2,
         )
         assert isinstance(result, dict)
         assert set(result) == {
-            "min_atr_ratio",
-            "min_volume_ratio",
-            "min_range_pips",
+            "adx_threshold",
+            "momentum_fast_period",
+            "momentum_slow_period",
             "rr_ratio",
-            "min_body_ratio",
         }
 
     def test_param_values_in_range(self, app_config) -> None:
         """Every returned value must stay inside the configured bounds."""
-        m1_bars, m5_bars = _make_synthetic_bars()
+        daily_bars = _make_synthetic_bars()
         result = optuna_search_best(
-            m1_bars,
-            m5_bars,
+            daily_bars,
             "EURUSD",
             app_config,
             n_trials=2,
@@ -136,10 +117,9 @@ class TestOptunaSearchBest:
 
         monkeypatch.setattr(optuna.study.Study, "optimize", wrapped_optimize)
 
-        m1_bars, m5_bars = _make_synthetic_bars()
+        daily_bars = _make_synthetic_bars()
         optuna_search_best(
-            m1_bars,
-            m5_bars,
+            daily_bars,
             "EURUSD",
             app_config,
             n_trials=3,
@@ -148,19 +128,17 @@ class TestOptunaSearchBest:
 
     def test_metric_sharpe_vs_pf(self, app_config) -> None:
         """Both supported metrics must execute without raising."""
-        m1_bars, m5_bars = _make_synthetic_bars()
+        daily_bars = _make_synthetic_bars()
 
         sharpe_result = optuna_search_best(
-            m1_bars,
-            m5_bars,
+            daily_bars,
             "EURUSD",
             app_config,
             n_trials=2,
             metric="sharpe",
         )
         pf_result = optuna_search_best(
-            m1_bars,
-            m5_bars,
+            daily_bars,
             "EURUSD",
             app_config,
             n_trials=2,
@@ -171,11 +149,10 @@ class TestOptunaSearchBest:
 
     def test_invalid_metric_raises(self, app_config) -> None:
         """An invalid metric must raise ValueError."""
-        m1_bars, m5_bars = _make_synthetic_bars()
+        daily_bars = _make_synthetic_bars()
         with pytest.raises(ValueError, match="metric must be 'sharpe' or 'pf'"):
             optuna_search_best(
-                m1_bars,
-                m5_bars,
+                daily_bars,
                 "EURUSD",
                 app_config,
                 n_trials=1,

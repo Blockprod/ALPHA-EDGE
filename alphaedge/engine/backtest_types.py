@@ -66,6 +66,11 @@ class BacktestStats:
     expectancy_pips: float = 0.0
     max_consec_wins: int = 0
     max_consec_losses: int = 0
+    best_day_pnl_pct: float = 0.0  # % of net P&L produced by single best calendar day
+    best_day_date: str = ""  # YYYY-MM-DD of that peak day
+    filter_rejection_counts: dict[str, int] = field(
+        default_factory=dict
+    )  # per-filter rejection stats
 
 
 # ------------------------------------------------------------------

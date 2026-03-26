@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
-from alphaedge.engine.strategy import CoreModules, FCRStrategy
+from alphaedge.engine.strategy import CoreModules, SwingStrategy
 from alphaedge.utils.state_persistence import clear_daily_state
 
 
@@ -70,7 +70,7 @@ def _make_config() -> AppConfig:
     )
 
 
-def _build_strategy() -> FCRStrategy:
+def _build_strategy() -> SwingStrategy:
     with (
         patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,
         patch("alphaedge.engine.strategy.OrderExecutor"),
@@ -102,20 +102,18 @@ def _build_strategy() -> FCRStrategy:
         order_mock.lots_to_units.return_value = 1000
 
         mock_modules.return_value = CoreModules(
-            fcr_detector=MagicMock(),
-            gap_detector=MagicMock(),
-            engulfing_detector=MagicMock(),
+            momentum_detector=MagicMock(),
             order_manager=order_mock,
             risk_manager=risk_mock,
         )
-        strategy = FCRStrategy(_make_config())
+        strategy = SwingStrategy(_make_config())
     return strategy
 
 
 def _make_signal() -> dict[str, Any]:
     return {
         "detected": True,
-        "signal": 1,
+        "direction": 1,
         "entry_price": 1.2500,
         "stop_loss": 1.2450,
         "take_profit": 1.2600,
@@ -228,83 +226,20 @@ class TestMockedLiveCycle:
         strategy = _build_strategy()
         session_start = datetime(2026, 3, 20, 13, 30, tzinfo=UTC)
 
-        pre_session_m5 = [
-            {
-                "open": 1.2450,
-                "high": 1.2470,
-                "low": 1.2440,
-                "close": 1.2460,
-                "volume": 100.0,
-                "timestamp": 1710939000,
-                "datetime": datetime(2026, 3, 20, 13, 0, tzinfo=UTC),
-            },
-            {
-                "open": 1.2460,
-                "high": 1.2480,
-                "low": 1.2450,
-                "close": 1.2470,
-                "volume": 120.0,
-                "timestamp": 1710939300,
-                "datetime": datetime(2026, 3, 20, 13, 5, tzinfo=UTC),
-            },
-        ]
-        pre_session_m1 = [
-            {
-                "open": 1.2460,
-                "high": 1.2462,
-                "low": 1.2458,
-                "close": 1.2461,
-                "volume": 80.0,
-                "timestamp": 1710939600,
-                "datetime": datetime(2026, 3, 20, 13, 10, tzinfo=UTC),
-            },
-            {
-                "open": 1.2461,
-                "high": 1.2463,
-                "low": 1.2459,
-                "close": 1.2462,
-                "volume": 85.0,
-                "timestamp": 1710939660,
-                "datetime": datetime(2026, 3, 20, 13, 11, tzinfo=UTC),
-            },
-            {
-                "open": 1.2462,
-                "high": 1.2464,
-                "low": 1.2460,
-                "close": 1.2463,
-                "volume": 90.0,
-                "timestamp": 1710939720,
-                "datetime": datetime(2026, 3, 20, 13, 12, tzinfo=UTC),
-            },
-        ]
-
-        async def _fetch_bars(*_args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-            timeframe = kwargs.get("timeframe")
-            if timeframe == "1 day":
-                return []
-            return pre_session_m1
-
-        strategy._hist_feed.fetch_m5_pre_session = AsyncMock(
-            return_value=pre_session_m5
-        )
-        strategy._hist_feed.fetch_bars = AsyncMock(side_effect=_fetch_bars)
+        strategy._hist_feed.fetch_bars = AsyncMock(return_value=[])
         strategy._rt_feed.get_live_spread = AsyncMock(return_value=0.00008)
         strategy._executor.place_bracket_order = AsyncMock(
             return_value=[_MockTrade(_FilledEvent(preset=True))]
         )
 
-        strategy._modules.fcr_detector.detect_fcr.return_value = {
+        strategy._modules.momentum_detector.detect_momentum.return_value = {
             "detected": True,
-            "range_high": 1.2480,
-            "range_low": 1.2440,
-        }
-        strategy._modules.gap_detector.detect_gap.return_value = {
-            "detected": True,
-            "atr_ratio": 2.1,
-        }
-        strategy._modules.engulfing_detector.detect_engulfing.return_value = {
-            **_make_signal(),
-            "detected": True,
+            "direction": 1,
+            "strength": 0.75,
+            "ema_fast": 1.2500,
+            "ema_slow": 1.2400,
+            "adx": 28.0,
+            "timestamp": 1710941400,
         }
         strategy._modules.risk_manager.check_pair_limit.return_value = {"allowed": True}
 
@@ -317,8 +252,7 @@ class TestMockedLiveCycle:
 
         assert active_pairs == ["EURUSD"]
         state = strategy._states["EURUSD"]
-        assert state.fcr_result is not None
-        assert state.pre_session_m1_candles == pre_session_m1
+        assert state.signal_result is not None
 
         _now = datetime.now(UTC)
         live_m1_bars = [
@@ -356,8 +290,6 @@ class TestMockedLiveCycle:
 
         await asyncio.sleep(0.1)
 
-        assert state.gap_result is not None
-        assert state.gap_result.get("detected") is True
         assert state.is_position_open is True
         assert state.trades_today == 1
         strategy._executor.place_bracket_order.assert_awaited_once()

@@ -35,3 +35,8 @@ class LiveTradeRecord:
     pnl_usd: float = 0.0
     outcome: str = ""  # 'win' | 'loss' | 'breakeven' | 'unknown'
     slippage_pips: float = 0.0  # abs(fill_price - entry_price) / pip_size
+    exit_reason: str = ""  # 'sl_hit' | 'tp_hit' | 'session_end' | 'unknown'
+    adx_at_entry: float = 0.0  # ADX value at signal detection time
+    strength_at_entry: float = 0.0  # momentum strength score at entry
+    duration_s: float = 0.0  # trade duration in seconds (exit_time - entry_time)
+    pnl_eur: float = 0.0  # pnl_usd converted to EUR for accounting

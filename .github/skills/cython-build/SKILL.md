@@ -107,3 +107,9 @@ cdef struct FCRResult:
 make build
 make qa
 ```
+
+## Gotchas (from tasks/lessons.md)
+
+- Après tout edit `.pyx`, vérifier `_stubs/<module>.py` — une divergence de signature (nom de paramètre, ordre, clé du dict retourné) est silencieuse au chargement du `.pyd` et produit des bugs runtime subtils (2026-03-22)
+- `make build` ne doit JAMAIS être lancé sans modification `.pyx` intentionnelle — lent et irréversible mid-session
+- Nommer le commit `cython: <description>` après chaque edit `.pyx` réussi

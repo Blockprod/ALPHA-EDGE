@@ -2,5 +2,13 @@
     "venvPath": ".",
     "venv": ".venv",
     "typeCheckingMode": "standard",
-    "reportMissingModuleSource": false
+    "reportMissingModuleSource": false,
+    "exclude": [
+        ".venv",
+        "build/",
+        "scripts/",
+        "**/node_modules",
+        "**/__pycache__",
+        "**/.*"
+    ]
 }

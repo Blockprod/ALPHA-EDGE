@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Swing Trading Bot
 # FILE         : alphaedge/engine/position_manager.py
 # DESCRIPTION  : Stateless position sizing and bracket order building
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: position sizing and order building."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: position sizing and order building."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from alphaedge.config.constants import MAX_LOTS, MIN_LOTS
 from alphaedge.utils.logger import get_logger
 
 if TYPE_CHECKING:
+    # NOTE: import cycle with strategy.py mitigated by TYPE_CHECKING
     from alphaedge.config.loader import AppConfig
     from alphaedge.engine.strategy import CoreModules, StrategyState
 
@@ -28,7 +29,7 @@ class PositionManager:
     Stateless container for position sizing and bracket order building.
 
     All state is held in the ``StrategyState`` instance.  Core modules
-    and config are passed per call so that ``FCRStrategy`` remains the
+    and config are passed per call so that ``SwingStrategy`` remains the
     single owner of those dependencies.
     """
 
@@ -94,7 +95,7 @@ class PositionManager:
         R:R too low, lot size out of range, etc.).
         """
         bracket: dict[str, Any] = modules.order_manager.create_bracket_order(
-            direction=signal["signal"],
+            direction=signal["direction"],
             entry_price=signal["entry_price"],
             stop_loss=signal["stop_loss"],
             take_profit=signal["take_profit"],

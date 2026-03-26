@@ -1,506 +1,184 @@
+Voici la **version finale optimisée** du prompt, intégrant strictement vos exigences non négociables tout en conservant la structure XML-like légère, le raisonnement renforcé et les bonnes pratiques pour Claude Sonnet 4.6.
+
+```markdown
 ---
 modele: claude-sonnet-4.6
 mode: agent
 contexte: codebase
-produit: corrections appliquées · ruff OK · pyright OK · 504 tests pass
-derniere_revision: 2026-03-23
-creation: 2026-03-22 à 15:54
+produit: corrections appliquées · ruff OK · Pylance OK · 2787 tests pass
+derniere_revision: 2026-03-26
+creation: 2026-03-21 à 14:12
 ---
 
 #codebase
 
-Je suis le chef de projet ALPHAEDGE.
+Je suis le chef de projet EDGECORE.
 
-─────────────────────────────────────────────
-OBJECTIF PRINCIPAL
-─────────────────────────────────────────────
-Corriger **tous les fichiers Python** du projet
-(chaque dossier et sous-dossier) pour que :
+<instructions>
+Tu es un agent de refactoring Python rigoureux, méthodique et extrêmement prudent.
 
-1. Zéro erreur ruff (y compris paramètres orphelins ARG)
-2. Zéro erreur Pyright
-3. Tous les fichiers Python sont parfaitement alignés
-   avec l'implémentation Cython correspondante
-   (signatures, paramètres, types, clés de retour)
-4. 504 tests passent · coverage ≥ 80%
+**Raisonnement obligatoire (Chain-of-Thought structuré) avant toute action :**
+Pour chaque étape ou commande :
+1. **ANALYSE** — Lis les fichiers, le panneau PROBLEMS via `get_errors`, les résultats ruff, et le fichier Cython si pertinent.
+2. **PLAN** — Décris brièvement ton plan (fichiers à ouvrir, corrections attendues, ordre des vérifications).
+3. **EXÉCUTION** — Applique les corrections une par une.
+4. **VÉRIFICATION** — Relance immédiatement `get_errors` + `ruff check` (incluant `--select ARG`).
 
-L'alignement Cython est une contrainte transversale —
-elle s'applique à TOUS les fichiers Python du projet,
-pas uniquement aux stubs.
+Affiche toujours ce raisonnement de manière visible dans ta réponse interne. Ne suppose jamais : vérifie toujours par lecture directe.
 
-─────────────────────────────────────────────
-RÈGLE D'ALIGNEMENT CYTHON (transversale)
-─────────────────────────────────────────────
-Pour tout fichier Python qui appelle, wrap, fallback
-ou interagit avec un module Cython (`alphaedge/core/*.pyx`) :
+**Règle anti-hallucination** : N’ouvre jamais un fichier pour modification sans l’avoir ouvert dans VSCode via PowerShell et lu dans son contexte complet. Lis `models/cointegration_fast.pyx` avant toute vérification d’alignement Cython.
+</instructions>
 
-- Les signatures de fonctions doivent correspondre
-  exactement à la définition Cython (`cdef`, `cpdef`)
-- L'ordre et les noms des paramètres doivent être identiques
-- Les types des paramètres doivent être cohérents
-  (Python type hints vs Cython types)
-- Les clés des dicts retournés doivent être identiques
-- Toute divergence dans un fichier Python = erreur critique
+<objectif_principal>
+Corriger **tous** les fichiers Python du projet (chaque dossier et sous-dossier) pour atteindre :
+- Zéro erreur ruff (y compris paramètres orphelins ARG)
+- Zéro erreur Pylance / Pyright
+- Alignement parfait avec le module Cython `models/cointegration_fast.pyx`
+- 2787 tests (ou plus) qui passent
+</objectif_principal>
 
-Corrige toujours le fichier Python, jamais le `.pyx`.
-Pour vérifier une signature Cython :
-→ Lis `alphaedge/core/<module>.pyx` directement.
+<regles_critiques>
+<rule name="alignement_cython">
+Module Cython unique : `models/cointegration_fast.pyx`
 
-─────────────────────────────────────────────
-ÉTAPE 0 — AUDIT PRIORITAIRE DES STUBS CYTHON
-─────────────────────────────────────────────
-Les stubs (`alphaedge/core/_stubs/`) sont les fallbacks
-Python purs des modules Cython. Ils sont traités
-EN PREMIER car toute divergence stub↔Cython se propage
-dans tout le projet.
+Fonctions exposées :
+- `engle_granger_fast(x, y, threshold)` → dict avec clés exactes : `is_cointegrated`, `pvalue`, `statistic`, `beta`, `intercept`, `half_life`, `critical_values`, `error`
+- `half_life_fast(spread)` → int
 
-### 0a — Ouverture des stubs dans l'éditeur
+Exigences : signatures exactes, types cohérents (numpy.float64), clés identiques. Corrige toujours le Python, jamais le .pyx. Ajoute : `# Aligned with Cython signature — vérifié le [date]`.
 
-⛔ **BLOQUANT** — ouvre **chaque** fichier stub dans VSCode
-via la commande PowerShell ci-dessous AVANT toute lecture
-ou modification. Cette commande ouvre physiquement les
-onglets dans la fenêtre VSCode active de l'utilisateur.
+Fichiers prioritaires : `models/cointegration.py`, `models/spread.py`, dossier `pair_selection/`.
+</rule>
 
-```powershell
-$stubs = "c:\Users\averr\AlphaEdge\alphaedge\core\_stubs"
-Get-ChildItem -Path $stubs -Filter "*.py" |
-  Where-Object { $_.FullName -notmatch "__pycache__" } |
-  Sort-Object Name |
-  ForEach-Object { code --reuse-window $_.FullName }
-```
+<rule name="zero_orphans">
+Toute variable, paramètre ou fonction déclarés doit être utilisé. Le préfixe `_` ne dispense pas de cette règle.
 
-⚠️ Attends la fin de l'exécution (les 6 onglets doivent
-être visibles dans l'éditeur) avant de procéder à l'étape 0b.
+Paramètre inutilisé : renomme `_param` avec commentaire explicite s’il mirror la signature Cython, sinon connecte-le à un usage naturel ou signale au chef de projet.
+</rule>
 
-### 0b — Vérification paramètres orphelins (ARG)
-```powershell
-python -m ruff check alphaedge/core/_stubs/ --select ARG 2>&1
-```
+<rule name="contraintes_projet">
+- Interdit : `# type: ignore`, `Any`, `datetime.utcnow()`, `print()`
+- Remplacements obligatoires : `datetime.now(timezone.utc)`, `structlog.get_logger(__name__)`, `get_settings().<section>.<champ>`
+- Ne jamais modifier `models/cointegration_fast.pyx`
+- Ne jamais importer `ccxt` ou du dossier `research/` en production
+- Toujours `_ibkr_rate_limiter.acquire()` avant appel IBKR
+- `EDGECORE_ENV=prod`
+- Grouper les corrections avec `multi_replace_string_in_file` quand possible
+</rule>
+</regles_critiques>
 
-Pour chaque violation `ARG001` / `ARG002` :
-1. Lis le stub dans l'onglet ouvert
-2. Lis la signature Cython correspondante dans
-   `alphaedge/core/<module>.pyx`
-3. Détermine si le paramètre est :
-   - **nécessaire à la logique** → connecte-le à son usage
-     naturel. Ne jamais supprimer.
-   - **présent uniquement pour mirrorer la signature Cython**
-     et intrinsèquement inutilisable en Python pur →
-     renomme-le `_param` + commentaire inline :
-     `# mirrors Cython signature — unused in Python fallback`
-   - **totalement superflu** → signale au chef de projet
-     avant toute suppression.
-
-### 0c — Vérification alignement complet stub↔Cython
-Pour chaque fonction publique de chaque stub :
-- Nom de la fonction
-- Ordre et noms des paramètres
-- Types des paramètres
-- Clés du dict retourné
-
-Toute divergence = erreur critique → corrige le stub.
-
-### 0d — Validation finale des stubs
-```powershell
-python -m ruff check alphaedge/core/_stubs/ --select ARG 2>&1
-python -m ruff check alphaedge/core/_stubs/ 2>&1
-get_errors ["c:\\Users\\averr\\AlphaEdge\\alphaedge\\core\\_stubs"]
-```
-→ Les trois doivent donner zéro violation.
-
-Ferme tous les onglets ouverts :
-```
-① Charge l'outil (obligatoire pour les outils différés) :
-   tool_search_tool_regex "run_vscode_command"
-
-② Appelle l'outil récupéré :
-   commandId : workbench.action.closeAllEditors
-```
-
-⚠️ Attends la confirmation de fermeture avant de continuer.
-
-Annonce : **`_stubs/` ✅ — N erreurs corrigées.**
-Demande `GO` pour passer à l'ÉTAPE 1.
-
-─────────────────────────────────────────────
-ÉTAPE 1 — TABLEAU DES DOSSIERS
-─────────────────────────────────────────────
-Scanne **l'ensemble du projet** (pas seulement `alphaedge/`)
-et dresse un tableau de **tous les dossiers et sous-dossiers
-contenant des fichiers `.py`**, en excluant :
-`.venv/`, `__pycache__/`, `build/`, `.git/`.
-```powershell
-Get-ChildItem -Path "c:\Users\averr\AlphaEdge" `
-  -Filter "*.py" -Recurse |
-  Where-Object { $_.FullName -notmatch
-    "(__pycache__|\.venv|\\build\\|\.git)" } |
-  Select-Object DirectoryName |
-  Sort-Object DirectoryName -Unique
-```
-
-Format du tableau :
-```
-DOSSIER                          | FICHIERS .py | STATUT
----------------------------------|--------------|--------
-(racine)/                        |      1       | ⏳  ← setup.py
-alphaedge/config/                |      3       | ⏳
-alphaedge/core/_stubs/           |      6       | ✅
-alphaedge/engine/                |     21       | ⏳
-scripts/                         |      3       | ⏳
-...
-```
-
-⚠️ La racine du projet (`setup.py`) et `scripts/`
-(`param_sweep.py`, `_opt_run.py`, `_sl_sweep.py`)
-font partie du périmètre d'audit — ne pas les oublier.
-
-Affiche le tableau complet.
-Demande `GO` pour démarrer le premier dossier.
-
-─────────────────────────────────────────────
-ÉTAPE 2 — TRAITEMENT DOSSIER PAR DOSSIER
-─────────────────────────────────────────────
-Pour chaque dossier dans l'ordre du tableau (sauf `_stubs/`
-déjà traité), répète la séquence suivante.
-
-**Ne passe jamais au dossier suivant tant que le dossier
-courant n'est pas entièrement propre :
-0 erreur ruff · 0 paramètre ARG · 0 erreur Pyright.**
-
-### 2a — Ouvrir tous les fichiers dans l'éditeur VSCode
-
-⛔ **BLOQUANT** — ouvre **chaque** fichier `.py` du dossier
-courant dans VSCode via la commande PowerShell ci-dessous
-AVANT toute lecture ou modification. Cette commande ouvre
-physiquement les onglets dans la fenêtre VSCode active.
+<etape_0 name="audit_prioritaire_cython">
+**Action bloquante** : Exécute cette commande PowerShell pour ouvrir les fichiers critiques :
 
 ```powershell
-$dossier = "c:\Users\averr\AlphaEdge\<chemin_dossier>"
-Get-ChildItem -Path $dossier -Filter "*.py" |
-  Where-Object { $_.FullName -notmatch "__pycache__" } |
-  Sort-Object Name |
-  ForEach-Object { code --reuse-window $_.FullName }
+$files = @(
+  "c:\Users\averr\EDGECORE_V1\models\cointegration_fast.pyx",
+  "c:\Users\averr\EDGECORE_V1\models\cointegration.py",
+  "c:\Users\averr\EDGECORE_V1\models\spread.py"
+)
+$files | ForEach-Object { code --reuse-window $_ }
 ```
 
-⚠️ Remplace `<chemin_dossier>` par le chemin réel du
-dossier courant à chaque itération.
-⚠️ Attends la fin de l'exécution (tous les onglets doivent
-être visibles dans l'éditeur) avant de passer à l'étape 2c.
+Attends que les onglets soient visibles, puis vérifie ARG, alignement Cython et valide (ruff + get_errors).
 
-✅ Dès que les onglets sont visibles, VSCode/Pylance analyse
-automatiquement les fichiers ouverts et alimente le panneau
-**PROBLEMS** (onglet en bas de l'éditeur). Passe directement
-à l'étape 2c pour lire ce panneau et corriger chaque erreur
-avant toute autre vérification.
+Après fermeture des onglets (`workbench.action.closeAllEditors`), fournis la sortie standardisée et demande `GO` pour l’ÉTAPE 1.
+</etape_0>
 
-### 2b — Vérifier l'alignement Cython
-Pour chaque fichier du dossier qui appelle, wrap ou
-interagit avec un module `alphaedge/core/*.pyx` :
+<etape_1 name="tableau_dossiers">
+Génère un tableau à jour de tous les dossiers contenant des fichiers `.py` (exclure : venv, __pycache__, build, .git, backups, cache, results, logs).
 
-1. Lis le fichier Python dans l'onglet ouvert
-2. Lis le fichier `.pyx` correspondant
-3. Compare signatures, paramètres, types, clés de retour
-4. Corrige toute divergence dans le fichier Python
+Affiche le tableau avec colonne STATUT (`⏳` ou `✅`). Demande `GO` pour commencer par `(racine)/`.
+</etape_1>
 
-Cette vérification est obligatoire même si aucune
-erreur ruff ou Pyright n'est remontée.
+<etape_2 name="traitement_dossier_par_dossier">
+**RÈGLE NON NÉGOCIABLE** : Traite **un dossier ou sous-dossier à la fois**. Passe au suivant **uniquement** lorsque toutes les erreurs sont corrigées pour le dossier courant.
 
-### 2c — Lire et vider le panneau PROBLEMS de VSCode
+Pour chaque dossier :
 
-⛔ **BLOQUANT** — accède immédiatement au panneau PROBLEMS
-de VSCode (onglet en bas de l'éditeur). Il affiche tous les
-diagnostics Pylance/Pyright des fichiers ouverts. Lis-le via :
-```
-get_errors ["c:\\Users\\averr\\AlphaEdge\\<chemin_dossier>"]
-```
-C'est la source de vérité — identique au contenu visible dans
-l'onglet PROBLEMS de l'éditeur VSCode.
+- **2a — Ouverture bloquante**
+  Ferme tous les onglets précédents via `workbench.action.closeAllEditors`.
+  **Ouvre concrètement tous les fichiers `.py` du dossier courant** dans VSCode avec la commande PowerShell adaptée :
 
-Dresse la liste complète de toutes les erreurs remontées.
+  ```powershell
+  $dossier = "c:\Users\averr\EDGECORE_V1\<chemin_dossier>"
+  Get-ChildItem -Path $dossier -Filter "*.py" |
+    Where-Object { $_.FullName -notmatch "__pycache__" } |
+    Sort-Object Name |
+    ForEach-Object { code --reuse-window $_.FullName }
+  ```
 
-**Boucle de correction — une erreur à la fois :**
-1. Prends la première erreur de la liste
-2. Lis le fichier concerné dans l'onglet ouvert
-3. Comprends le contexte — ne corrige jamais à l'aveugle
-4. Applique la correction selon les règles de l'étape 2f
-5. Relance `get_errors ["c:\\Users\\averr\\AlphaEdge\\<chemin_dossier>"]`
-6. Vérifie que l'erreur est résolue et qu'aucune nouvelle
-   erreur n'est apparue
-7. Répète jusqu'à ce que le panneau PROBLEMS retourne **0 erreurs**
+  Attends que **tous** les onglets soient visibles dans VSCode.
 
-⚠️ Ne passe jamais à 2d tant que `get_errors` retourne
-des erreurs. Les fichiers doivent rester ouverts pendant
-toute cette phase.
+- **2b — Lecture des erreurs PROBLEMS**
+  Lis immédiatement le panneau PROBLEMS via :
+  ```powershell
+  get_errors ["c:\\Users\\averr\\EDGECORE_V1\\<chemin_dossier>"]
+  ```
+  Cette commande est la source de vérité.
 
-### 2d — Corriger les erreurs ruff (auto-fix)
-```powershell
-python -m ruff check <chemin_dossier>/ --fix 2>&1
-python -m ruff check <chemin_dossier>/ --fix --unsafe-fixes 2>&1
-```
-Si des erreurs restent après l'auto-fix → lis le fichier
-dans l'onglet ouvert, comprends le contexte, corrige
-manuellement via `replace_string_in_file` ou
-`multi_replace_string_in_file`.
-Relance jusqu'à `All checks passed!`
+- **2c — Correction des erreurs**
+  Corrige **toutes** les erreurs une par une : analyse le contexte complet du fichier ouvert, applique la correction, puis vérifie immédiatement avec `get_errors`.
+  Ne passe à l’étape suivante que lorsque `get_errors` retourne « No errors found. ».
 
-### 2e — Vérifier les paramètres orphelins (ARG)
-⚠️ Obligatoire — ruff standard ne détecte pas ARG.
-```powershell
-python -m ruff check <chemin_dossier>/ --select ARG 2>&1
-```
+- **2d — Vérifications ruff**
+  Exécute `ruff check` (avec `--fix` puis `--select ARG`) et corrige manuellement les violations restantes.
 
-Pour chaque violation :
-1. Lis le fichier dans l'onglet ouvert
-2. Connecte le paramètre à son usage naturel si possible
-3. Si structurellement inutilisable → renomme `_param`
-   avec commentaire justificatif inline
-4. Vérifie l'impact sur les call sites :
-```powershell
-grep_search "<nom_parametre>" alphaedge/
-```
-5. Ne jamais supprimer sans validation chef de projet
+- **2e — Fermeture**
+  **Ferme tous les fichiers du dossier en cours** via `workbench.action.closeAllEditors` **uniquement** lorsque :
+  - `get_errors` = « No errors found. »
+  - ruff standard = « All checks passed! »
+  - ruff --select ARG = « All checks passed! »
 
-### 2e.bis — Audit des paramètres `_`-préfixés (angle mort de ruff)
+- **2f — Tests du dossier**
+  Lance les tests correspondants au dossier. Si des tests échouent, analyse la cause, corrige et recommence la boucle de correction si nécessaire.
 
-⚠️ **CRITIQUE** — `ruff --select ARG` ignore silencieusement les
-paramètres préfixés `_param` car la convention Python signifie
-"intentionnellement inutilisé". Or la règle d'or du projet est
-**zéro paramètre déclaré sans usage**. Ce step comble cet angle mort.
+**Sortie standardisée obligatoire** après chaque dossier :
 
-```powershell
-# Trouve tous les paramètres _-préfixés dans les signatures de fonctions
-Select-String -Path "<chemin_dossier>\*.py" `
-  -Pattern "def .*\b_[a-z][a-z0-9_]*\s*[=:,)]" -Recurse
+```markdown
+**Résumé dossier :** `<chemin_dossier>`
+- Fichiers ouverts et audités : X
+- Erreurs Pylance corrigées : X
+- Violations ruff / ARG traitées : X
+- Divergences Cython : X
+- Tests du dossier : X passed / Y failed
+- Statut : ✅ (toutes erreurs corrigées et fichiers fermés)
+- Prochain dossier : ...
 ```
 
-Pour chaque occurrence trouvée :
-1. Lis la fonction entière dans l'onglet ouvert (de la `def` jusqu'à
-   la fin du corps — **ligne par ligne sans exception**)
-2. Vérifie si `_param` apparaît dans le corps de la fonction
-3. **S'il n'apparaît pas → c'est un orphelin caché** :
-   - Renomme `_param` → `param`
-   - Identifie l'usage naturel (validation, condition, calcul, log)
-   - Connecte-le à cet usage
-   - ``if not param: raise ValueError(...)`` est souvent le
-     connecteur naturel minimal pour les paramètres `str`
-4. Ne jamais laisser un paramètre `_`-préfixé non utilisé —
-   Pylance le signale comme `"_param" is not accessed` même
-   si ruff ne le voit pas
+Mets à jour le tableau global et demande explicitement `GO` pour continuer.
+</etape_2>
 
-### 2e.ter — Audit des imports orphelins masqués par `# noqa: F401`
+<etape_3 name="validation_globale_finale">
+Une fois **tous** les dossiers traités :
+- Exécute les vérifications globales ruff (standard + ARG) et `get_errors` sur la racine.
+- Lance le **full pytest** complet :
 
-⚠️ **CRITIQUE — angle mort de ruff standard** : un import suivi de
-`# noqa: F401` est silencieusement ignoré par toutes les commandes
-ruff précédentes, même si le symbole n'est utilisé nulle part dans
-le fichier. C'est le vecteur exact des imports morts non détectés.
+  ```powershell
+  venv\Scripts\python.exe -m pytest tests/ -q --tb=no
+  ```
 
-**Commande obligatoire — bypass complet de tous les `# noqa` :**
-```powershell
-python -m ruff check <chemin_dossier>/ --select F401 --no-noqa 2>&1
+- Produis la sortie finale uniquement lorsque tout est validé (ruff OK, Pylance OK, 2787+ tests passed).
+</etape_3>
+
+<sortie_finale>
+À produire uniquement à la fin :
+
 ```
-
-Cette commande ignore toutes les suppressions `# noqa` et remonte
-tous les imports réellement non utilisés, qu'ils soient masqués ou non.
-
-Pour chaque violation F401 remontée :
-1. Lis le fichier **ligne par ligne** dans l'onglet ouvert :
-   - Cherche chaque occurrence du symbole importé dans le corps du fichier
-   - Un symbole qui n'apparaît que dans son propre `import` = mort
-2. Détermine la nature du `# noqa: F401` :
-   - **Masquage d'un import mort** → supprime l'import ET le `# noqa`
-   - **Re-export explicite** (`__all__` contient le symbole) → légitime,
-     conserve le `# noqa: F401` uniquement si le symbole est dans `__all__`
-   - **Tous les autres cas** → supprime l'import
-3. Règle d'or du `# noqa: F401` :
-   - Il n'est autorisé **que** si le symbole figure explicitement dans `__all__`
-   - Tout autre usage de `# noqa: F401` = masquage de dette technique
-
-**Vérification complémentaire — audit textuel de chaque import :**
-```powershell
-# Pour chaque fichier du dossier, affiche imports vs usages
-Select-String -Path "<chemin_dossier>\*.py" `
-  -Pattern "^\s*(from .+ import|import )" -Recurse
-```
-Pour chaque symbole importé listé : vérifie qu'il apparaît **au moins une fois**
-en dehors de la ligne d'import elle-même (recherche avec `grep_search`).
-
-Relance ensuite :
-```powershell
-python -m ruff check <chemin_dossier>/ --select F401 --no-noqa 2>&1
-```
-→ Doit retourner `All checks passed!` avant de passer à 2f.
-
-### 2f — Règles de correction par type d'erreur
-
-Référence pour la boucle de la section 2c.
-Pour chaque erreur rencontrée dans le panneau PROBLEMS :
-
-**Import non utilisé** (F401) → supprimer l'import ET le `# noqa: F401`
-associé s'il existe. Ne conserver `# noqa: F401` que si le symbole
-figure dans `__all__` (re-export explicite). Voir étape 2e.ter.
-
-**Type incompatible** → corriger l'annotation ou le code.
-
-**Variable, paramètre ou fonction non utilisé(e)**
-(`"X" is not accessed` / `"_x" is not accessed`) →
-**Règle d'or — zéro orphelin** :
-toute variable, tout paramètre et toute fonction présents
-dans le code doivent être utilisés avec cohérence et pertinence.
-Cela inclut les paramètres `_`-préfixés — le préfixe `_` ne
-dispense PAS d'une connexion à un usage naturel.
-Marche à suivre :
-1. Lis le fichier **ligne par ligne** dans l'onglet ouvert
-   (de la ligne 1 à la dernière — aucune ligne ne doit être sautée)
-2. Identifie où l'identifiant devrait logiquement être utilisé
-   (validation, logging, assertion, condition, valeur de retour…)
-3. Connecte-le à son usage naturel
-4. Ne le supprime pas
-5. **Exception unique** : index de boucle sans usage
-   possible → renomme `_i` + commentaire inline
-6. Si inutile après analyse → signale au chef de projet
-   avant toute suppression
-
-**Divergence avec Cython** → applique la règle
-d'alignement Cython définie en haut du prompt.
-
-**Toute autre erreur** → lire, comprendre, corriger.
-
-→ Reprends à l'étape 2c (boucle) après chaque correction.
-
-### 2g — Vérification finale du dossier
-```powershell
-python -m ruff check <chemin_dossier>/ 2>&1 |
-  Select-Object -Last 3
-python -m ruff check <chemin_dossier>/ --select ARG 2>&1 |
-  Select-Object -Last 3
-```
-→ Les deux : `All checks passed!`
-```
-get_errors ["c:\\Users\\averr\\AlphaEdge\\<chemin_dossier>"]
-```
-→ `No errors found.`
-
-### 2h — Fermer les fichiers et annoncer
-
-⛔ **CONDITION PRÉALABLE** — ne ferme les fichiers que lorsque
-les trois conditions suivantes sont simultanément réunies :
-- `get_errors` retourne **0 erreurs** (panneau PROBLEMS vide)
-- `python -m ruff check <chemin_dossier>/ --select ARG` → 0 violation
-- `python -m ruff check <chemin_dossier>/` → `All checks passed!`
-
-Ferme tous les onglets ouverts :
-```
-① Charge l'outil (obligatoire pour les outils différés) :
-   tool_search_tool_regex "run_vscode_command"
-
-② Appelle l'outil récupéré :
-   commandId : workbench.action.closeAllEditors
-```
-
-⚠️ **BLOQUANT** — attends la confirmation de fermeture
-avant d'ouvrir les fichiers du dossier suivant (2a).
-
-Annonce :
-**`<dossier>/` ✅ — ruff: N · ARG: N · Pyright: N ·
-Alignement Cython: N divergences corrigées.**
-
-Met à jour le tableau :
-```
-DOSSIER                          | FICHIERS .py | STATUT
----------------------------------|--------------|--------
-alphaedge/config/                |      3       | ✅
-alphaedge/core/_stubs/           |      5       | ✅
-alphaedge/engine/                |     21       | ✅ ← vient de finir
-alphaedge/signals/               |      8       | ⏳ ← suivant
-...
-```
-
-Demande `GO` pour passer au dossier suivant.
-
-─────────────────────────────────────────────
-CONTRAINTES DU PROJET ALPHAEDGE
-─────────────────────────────────────────────
-- ❌ Ne jamais utiliser `# type: ignore` ou
-  `# pyright: ignore`
-- ❌ Ne jamais utiliser `Any` comme raccourci de type
-- ❌ Ne jamais utiliser `datetime.utcnow()` →
-  utiliser `datetime.now(timezone.utc)`
-- ❌ Ne jamais toucher `alphaedge/core/*.pyx`
-- ❌ Ne jamais modifier `alphaedge/utils/timezone.py`
-  ou `session_manager.py` sans relancer les tests
-  DST edge cases
-- ❌ Ne jamais hardcoder de valeurs numériques
-  (pips, RR, risk%) → tout passe par
-  `alphaedge/config/constants.py`
-- ❌ **RÈGLE D'OR — zéro orphelin** : toute variable,
-  fonction, paramètre ET import présent dans le code
-  doit être utilisé. Couvre :
-  - Variables locales (Pyright `"X" is not accessed`)
-  - Fonctions non appelées (Pyright)
-  - Paramètres non référencés dans le corps
-    (`ruff --select ARG` uniquement)
-  - Imports morts — y compris ceux masqués par
-    `# noqa: F401` (`ruff --select F401 --no-noqa`)
-  Ne jamais supprimer ou masquer sans comprendre
-  l'intention et avoir connecté à l'usage naturel.
-- ❌ **`# noqa: F401` interdit sauf re-export `__all__`** :
-  cette suppression est le principal vecteur d'imports
-  morts non détectés. Elle n'est autorisée que si le
-  symbole figure explicitement dans `__all__`. Tout
-  autre usage = masquage de dette technique à éliminer.
-- ❌ **RÈGLE ALIGNEMENT CYTHON** : tout fichier Python
-  interagissant avec `alphaedge/core/*.pyx` doit être
-  parfaitement aligné (signatures, paramètres, types,
-  clés de retour). Corrige toujours le Python, jamais
-  le `.pyx`.
-- ✅ Python 3.11.9 strictement
-- ✅ Grouper les corrections avec
-  `multi_replace_string_in_file` quand possible
-- ✅ Toujours ouvrir les fichiers via PowerShell
-  `code --reuse-window <chemin>` avant toute modification.
-  Cette commande ouvre les onglets dans la fenêtre VSCode
-  active de l'utilisateur. Attendre la fin de l'exécution.
-
-─────────────────────────────────────────────
-ÉTAPE 3 — VÉRIFICATION GLOBALE FINALE
-─────────────────────────────────────────────
-Après tous les dossiers :
-```powershell
-python -m ruff check alphaedge/ --select ARG 2>&1
-python -m ruff check alphaedge/ --select F401 --no-noqa 2>&1
-make qa
-```
-
-→ Premier : `All checks passed!`
-  (zéro ARG orphelin sur tout le projet)
-→ Deuxième : `All checks passed!`
-  (zéro import mort masqué sur tout le projet)
-→ Second : 0 ruff · 0 pyright · 504 tests ✅ · coverage ≥ 80%
-
-─────────────────────────────────────────────
-SORTIE FINALE
-─────────────────────────────────────────────
-```
-✅ Correction complète terminée — ALPHAEDGE
-   Dossiers traités                  : X
-   Fichiers Python corrigés          : X
+✅ Correction complète terminée — EDGECORE_V1
+   Dossiers traités                  : X / X
+   Fichiers Python audités           : X
    Erreurs ruff corrigées            : X
    Paramètres orphelins (ARG)        : X
-   Imports morts (F401 masqués)      : X
-   Erreurs Pyright corrigées         : X
+   Erreurs Pylance corrigées         : X
    Divergences Python↔Cython         : X
-   make qa :
-     504 tests  ✅
-     0 ruff     ✅
-     0 pyright  ✅
-     coverage   X% ✅
+   Tests finaux : 2787+ passed ✅
+   ruff : OK | ARG : OK | Pylance : OK
+```
+</sortie_finale>
+
+<démarrage>
+Commence **immédiatement** par l’**ÉTAPE 0**. Respecte strictement l’ordre des étapes et toutes les pré-conditions bloquantes, en particulier l’ouverture réelle des fichiers dans VSCode, la lecture du panneau PROBLEMS via `get_errors`, la correction complète avant fermeture, et le passage au dossier suivant uniquement lorsque tout est propre.
+</démarrage>
 ```
 
-─────────────────────────────────────────────
-DÉMARRAGE
-─────────────────────────────────────────────
-Commence maintenant par l'**ÉTAPE 0**.
 
-Exécute d'abord la commande PowerShell d'ouverture
-des stubs dans VSCode, audite l'alignement Cython,
-corrige, valide, puis demande `GO` pour l'ÉTAPE 1.

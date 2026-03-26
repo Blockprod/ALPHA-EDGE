@@ -142,11 +142,11 @@ def _filter_bars_by_date(
     return filtered
 
 
-def _extract_data_range(m1_bars: list[dict[str, Any]]) -> tuple[date, date] | None:
-    """Return the first and last session dates represented by the M1 data."""
+def _extract_data_range(bars: list[dict[str, Any]]) -> tuple[date, date] | None:
+    """Return the first and last dates represented by the bar data."""
     et_tz = ZoneInfo("America/New_York")
     all_dates: list[date] = []
-    for bar in m1_bars:
+    for bar in bars:
         dt_val = bar["datetime"]
         if dt_val.tzinfo is None:
             dt_val = dt_val.replace(tzinfo=ZoneInfo("UTC"))
@@ -160,29 +160,25 @@ def _extract_data_range(m1_bars: list[dict[str, Any]]) -> tuple[date, date] | No
 
 def _run_window_backtests(
     wf_win: WalkForwardWindow,
-    m1_bars: list[dict[str, Any]],
-    m5_bars: list[dict[str, Any]],
+    daily_bars: list[dict[str, Any]],
     pair: str,
     config: AppConfig,
 ) -> tuple[list[TradeRecord], list[TradeRecord]]:
     """Run baseline IS/OOS backtests for one walk-forward window."""
     from alphaedge.engine.backtest import _backtest_pair  # noqa: PLC0415
 
-    train_m1 = _filter_bars_by_date(m1_bars, wf_win.train_start, wf_win.train_end)
-    train_m5 = _filter_bars_by_date(m5_bars, wf_win.train_start, wf_win.train_end)
-    test_m1 = _filter_bars_by_date(m1_bars, wf_win.test_start, wf_win.test_end)
-    test_m5 = _filter_bars_by_date(m5_bars, wf_win.test_start, wf_win.test_end)
+    train_bars = _filter_bars_by_date(daily_bars, wf_win.train_start, wf_win.train_end)
+    test_bars = _filter_bars_by_date(daily_bars, wf_win.test_start, wf_win.test_end)
 
     return (
-        _backtest_pair(pair, train_m1, train_m5, config),
-        _backtest_pair(pair, test_m1, test_m5, config),
+        _backtest_pair(pair, train_bars, config)[0],
+        _backtest_pair(pair, test_bars, config)[0],
     )
 
 
 def _run_optimized_oos_fold(
     wf_win: WalkForwardWindow,
-    m1_bars: list[dict[str, Any]],
-    m5_bars: list[dict[str, Any]],
+    daily_bars: list[dict[str, Any]],
     pair: str,
     config: AppConfig,
     optimize_fn: Any | None,
@@ -193,21 +189,18 @@ def _run_optimized_oos_fold(
 
     from alphaedge.engine.sensitivity import _run_with_params_trades  # noqa: PLC0415
 
-    train_m1 = _filter_bars_by_date(m1_bars, wf_win.train_start, wf_win.train_end)
-    train_m5 = _filter_bars_by_date(m5_bars, wf_win.train_start, wf_win.train_end)
-    test_m1 = _filter_bars_by_date(m1_bars, wf_win.test_start, wf_win.test_end)
-    test_m5 = _filter_bars_by_date(m5_bars, wf_win.test_start, wf_win.test_end)
+    train_bars = _filter_bars_by_date(daily_bars, wf_win.train_start, wf_win.train_end)
+    test_bars = _filter_bars_by_date(daily_bars, wf_win.test_start, wf_win.test_end)
 
-    best_params = optimize_fn(train_m1, train_m5, pair, config)
-    opt_trades = _run_with_params_trades(test_m1, test_m5, pair, config, best_params)
+    best_params = optimize_fn(train_bars, pair, config)
+    opt_trades = _run_with_params_trades(test_bars, pair, config, best_params)
     for trade in opt_trades:
         trade.sample_type = "OOS_OPT"
     return compute_stats(opt_trades), best_params, opt_trades
 
 
 def run_walk_forward(  # pylint: disable=too-many-locals
-    m1_bars: list[dict[str, Any]],
-    m5_bars: list[dict[str, Any]],
+    daily_bars: list[dict[str, Any]],
     pair: str,
     config: AppConfig,
     train_months: int = 3,
@@ -216,7 +209,7 @@ def run_walk_forward(  # pylint: disable=too-many-locals
     optimize_fn: Any | None = None,
 ) -> WalkForwardReport:
     """
-    Run walk-forward optimization on pre-fetched bars.
+    Run walk-forward optimization on pre-fetched Daily bars.
 
     For each window:
     - Train: backtest on the training period (parameters from config)
@@ -226,10 +219,8 @@ def run_walk_forward(  # pylint: disable=too-many-locals
 
     Parameters
     ----------
-    m1_bars : list[dict]
-        All M1 bars for the pair.
-    m5_bars : list[dict]
-        All M5 bars for the pair.
+    daily_bars : list[dict]
+        All Daily bars for the pair.
     pair : str
         Currency pair name.
     config : AppConfig
@@ -241,7 +232,7 @@ def run_walk_forward(  # pylint: disable=too-many-locals
     step_months : int
         Slide step in months.
     optimize_fn : callable | None
-        Optional ``(m1_bars, m5_bars, pair, config) -> dict[str, float]``
+        Optional ``(daily_bars, pair, config) -> dict[str, float]``
         that returns parameter overrides found from IS grid-search.
         When provided, each window's OOS fold is also run with those params
         and the results are stored in ``WalkForwardResult.optimized_test_stats``.
@@ -253,7 +244,7 @@ def run_walk_forward(  # pylint: disable=too-many-locals
         ``aggregated_oos_optimized`` is populated only when ``optimize_fn``
         is not None.
     """
-    data_range = _extract_data_range(m1_bars)
+    data_range = _extract_data_range(daily_bars)
     if data_range is None:
         return WalkForwardReport()
 
@@ -263,6 +254,19 @@ def run_walk_forward(  # pylint: disable=too-many-locals
         data_start, data_end, train_months, test_months, step_months
     )
 
+    if not windows:
+        logger.warning(
+            "ALPHAEDGE walk-forward: %s — no windows generated "
+            "(data range %s → %s too short for train=%d + test=%d months). "
+            "Need N >= 100 trades before activating walk-forward.",
+            pair,
+            data_start,
+            data_end,
+            train_months,
+            test_months,
+        )
+        return WalkForwardReport()
+
     report = WalkForwardReport()
     all_test_trades: list[TradeRecord] = []
     all_optimized_test_trades: list[TradeRecord] = []
@@ -270,8 +274,7 @@ def run_walk_forward(  # pylint: disable=too-many-locals
     for wf_win in windows:
         train_trades, test_trades = _run_window_backtests(
             wf_win,
-            m1_bars,
-            m5_bars,
+            daily_bars,
             pair,
             config,
         )
@@ -287,8 +290,7 @@ def run_walk_forward(  # pylint: disable=too-many-locals
 
         optimized_test_stats, best_params, opt_trades = _run_optimized_oos_fold(
             wf_win,
-            m1_bars,
-            m5_bars,
+            daily_bars,
             pair,
             config,
             optimize_fn,

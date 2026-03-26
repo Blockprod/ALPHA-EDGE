@@ -20,14 +20,20 @@ import yaml
 from dotenv import load_dotenv
 
 from alphaedge.config.constants import (
+    DEFAULT_ADX_PERIOD,
+    DEFAULT_ADX_THRESHOLD,
     DEFAULT_ATR_PERIOD,
-    DEFAULT_FCR_LOOKBACK,
+    DEFAULT_CARRY_MIN_DIFFERENTIAL,
+    DEFAULT_MARKET_SLIPPAGE_PIPS,
     DEFAULT_MAX_DAILY_LOSS_PCT,
     DEFAULT_MAX_SPREAD_PIPS,
     DEFAULT_MAX_TRADES_PER_SESSION,
-    DEFAULT_MIN_ATR_RATIO,
-    DEFAULT_MIN_RANGE_PIPS,
     DEFAULT_MIN_VOLUME_RATIO,
+    DEFAULT_MOMENTUM_FAST_PERIOD,
+    DEFAULT_MOMENTUM_LOOKBACK_DAYS,
+    DEFAULT_MOMENTUM_SLOW_PERIOD,
+    DEFAULT_REGIME_BLOCK_ON,
+    DEFAULT_REGIME_GATE_ENABLED,
     DEFAULT_RISK_PCT,
     DEFAULT_RR_RATIO,
     DEFAULT_VOLUME_PERIOD,
@@ -178,11 +184,10 @@ class TradingConfig:
     min_body_ratio: float = 0.3
     max_wick_ratio: float = 1.5
     atr_period: int = DEFAULT_ATR_PERIOD
-    min_atr_ratio: float = DEFAULT_MIN_ATR_RATIO
-    min_range_pips: float = DEFAULT_MIN_RANGE_PIPS
+    min_atr_ratio: float = 2.0
+    min_range_pips: float = 8.0
     volume_period: int = DEFAULT_VOLUME_PERIOD
     min_volume_ratio: float = DEFAULT_MIN_VOLUME_RATIO
-    fcr_lookback_candles: int = DEFAULT_FCR_LOOKBACK
     max_lot_size: float = 1.0
     backtest_years: int = 3
     eur_usd_rate: float = 1.08
@@ -195,13 +200,27 @@ class TradingConfig:
     min_atr_ratio_by_pair: dict[str, float] = field(default_factory=dict)
     pair_aliases: dict[str, str] = field(default_factory=dict)  # virtual → real IB pair
     fcr_timeframe: str = "5 mins"  # Timeframe for FCR detection (pre-session bars)
-    entry_timeframe: str = "1 min"  # Timeframe for engulfing entry signals
     excluded_days: list[int] = field(default_factory=list)  # 0=Mon..6=Sun to exclude
     usd_correlation_filter: bool = (
         False  # Block trades that amplify USD directional exposure
     )
     fcr_range_cv_max: float = 1.0  # Max CV of pre-session bar ranges (0.0 = disabled)
+    direction_filter: str = "ALL"  # "ALL" | "LONG" | "SHORT"
+    walk_forward_enabled: bool = False  # Call run_walk_forward after main backtest
+    max_consecutive_losses: int = 5  # Circuit breaker: halt after N consecutive losses
+    max_trades_per_day: int = 3  # Jackpot guard: max trades per calendar day per pair
     pair_sessions: dict[str, SessionSpec] = field(default_factory=dict)
+    # Momentum + Carry (Daily swing strategy parameters)
+    signal_timeframe: str = "1 day"
+    momentum_fast_period: int = DEFAULT_MOMENTUM_FAST_PERIOD
+    momentum_slow_period: int = DEFAULT_MOMENTUM_SLOW_PERIOD
+    momentum_adx_period: int = DEFAULT_ADX_PERIOD
+    momentum_adx_threshold: float = DEFAULT_ADX_THRESHOLD
+    momentum_lookback_days: int = DEFAULT_MOMENTUM_LOOKBACK_DAYS
+    carry_enabled: bool = True
+    carry_min_differential_pct: float = DEFAULT_CARRY_MIN_DIFFERENTIAL
+    carry_rates: dict[str, float] = field(default_factory=dict)
+    slippage_buffer_pips: float = DEFAULT_MARKET_SLIPPAGE_PIPS
 
 
 # ------------------------------------------------------------------
@@ -217,6 +236,8 @@ class AppConfig:
     mode: str = "paper"
     news_filter_raw: dict[str, Any] = field(default_factory=dict)
     alerting_raw: dict[str, Any] = field(default_factory=dict)
+    regime_gate_enabled: bool = DEFAULT_REGIME_GATE_ENABLED
+    regime_block_on: str = DEFAULT_REGIME_BLOCK_ON
 
 
 # ------------------------------------------------------------------
@@ -362,16 +383,11 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         min_body_ratio=float(eng_section.get("min_body_ratio", 0.3)),
         max_wick_ratio=float(eng_section.get("max_wick_ratio", 1.5)),
         atr_period=int(vol_section.get("atr_period", DEFAULT_ATR_PERIOD)),
-        min_atr_ratio=float(vol_section.get("min_atr_ratio", DEFAULT_MIN_ATR_RATIO)),
-        min_range_pips=float(
-            struct_section.get("min_range_pips", DEFAULT_MIN_RANGE_PIPS)
-        ),
+        min_atr_ratio=float(vol_section.get("min_atr_ratio", 2.0)),
+        min_range_pips=float(struct_section.get("min_range_pips", 8.0)),
         volume_period=int(pattern_section.get("volume_period", DEFAULT_VOLUME_PERIOD)),
         min_volume_ratio=float(
             pattern_section.get("min_volume_ratio", DEFAULT_MIN_VOLUME_RATIO)
-        ),
-        fcr_lookback_candles=int(
-            struct_section.get("lookback_candles", DEFAULT_FCR_LOOKBACK)
         ),
         max_lot_size=float(section.get("max_lot_size", 1.0)),
         backtest_years=int(section.get("backtest_years", 3)),
@@ -380,10 +396,13 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         partial_exit=bool(risk_section.get("partial_exit", False)),
         trailing_partial_exit=bool(risk_section.get("trailing_partial_exit", False)),
         fcr_timeframe=str(struct_section.get("fcr_timeframe", "5 mins")),
-        entry_timeframe=str(struct_section.get("entry_timeframe", "1 min")),
         excluded_days=[int(d) for d in section.get("excluded_days", [])],
         usd_correlation_filter=bool(section.get("usd_correlation_filter", False)),
         fcr_range_cv_max=float(struct_section.get("fcr_range_cv_max", 1.0)),
+        direction_filter=str(section.get("direction_filter", "ALL")),
+        walk_forward_enabled=bool(section.get("walk_forward_enabled", False)),
+        max_consecutive_losses=int(risk_section.get("max_consecutive_losses", 5)),
+        max_trades_per_day=int(section.get("max_trades_per_day", 3)),
     )
     # Build per-pair session windows: YAML overrides > canonical defaults
     pair_sessions: dict[str, SessionSpec] = {}
@@ -413,6 +432,33 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         k: float(v) for k, v in vol_section.get("min_atr_ratio_by_pair", {}).items()
     }
     cfg.pair_aliases = {k: str(v) for k, v in section.get("pair_aliases", {}).items()}
+    # Momentum + Carry YAML sections
+    momentum_section: dict[str, Any] = raw.get("momentum", {})
+    carry_section: dict[str, Any] = raw.get("carry", {})
+    cfg.signal_timeframe = str(section.get("signal_timeframe", "1 day"))
+    cfg.momentum_fast_period = int(
+        momentum_section.get("fast_period", DEFAULT_MOMENTUM_FAST_PERIOD)
+    )
+    cfg.momentum_slow_period = int(
+        momentum_section.get("slow_period", DEFAULT_MOMENTUM_SLOW_PERIOD)
+    )
+    cfg.momentum_adx_period = int(
+        momentum_section.get("adx_period", DEFAULT_ADX_PERIOD)
+    )
+    cfg.momentum_adx_threshold = float(
+        momentum_section.get("adx_threshold", DEFAULT_ADX_THRESHOLD)
+    )
+    cfg.momentum_lookback_days = int(
+        momentum_section.get("lookback_days", DEFAULT_MOMENTUM_LOOKBACK_DAYS)
+    )
+    cfg.carry_enabled = bool(carry_section.get("enabled", True))
+    cfg.carry_min_differential_pct = float(
+        carry_section.get("min_differential_pct", DEFAULT_CARRY_MIN_DIFFERENTIAL)
+    )
+    cfg.carry_rates = {k: float(v) for k, v in carry_section.get("rates", {}).items()}
+    cfg.slippage_buffer_pips = float(
+        risk_section.get("slippage_buffer_pips", DEFAULT_MARKET_SLIPPAGE_PIPS)
+    )
     _validate_trading_config(cfg)
     return cfg
 
@@ -453,10 +499,6 @@ def _validate_trading_config(cfg: TradingConfig) -> None:
         raise ValueError(f"volume_period must be > 0, got {cfg.volume_period}")
     if cfg.min_volume_ratio <= 0.0:
         raise ValueError(f"min_volume_ratio must be > 0, got {cfg.min_volume_ratio}")
-    if cfg.fcr_lookback_candles <= 0:
-        raise ValueError(
-            f"fcr_lookback_candles must be > 0, got {cfg.fcr_lookback_candles}"
-        )
 
 
 # ------------------------------------------------------------------
@@ -492,6 +534,8 @@ def load_config(
     _check_ib_port(ib_cfg.port)
     trading_cfg = _build_trading_config(raw)
 
+    regime_section: dict[str, Any] = raw.get("regime_filter", {})
+
     return AppConfig(
         ib=ib_cfg,
         trading=trading_cfg,
@@ -499,6 +543,10 @@ def load_config(
         mode="paper" if ib_cfg.is_paper else "live",
         news_filter_raw=raw.get("news_filter", {}),
         alerting_raw=raw.get("alerting", {}),
+        regime_gate_enabled=bool(
+            regime_section.get("enabled", DEFAULT_REGIME_GATE_ENABLED)
+        ),
+        regime_block_on=str(regime_section.get("block_on", DEFAULT_REGIME_BLOCK_ON)),
     )
 
 

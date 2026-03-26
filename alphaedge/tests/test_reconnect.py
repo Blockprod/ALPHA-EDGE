@@ -18,7 +18,7 @@ import pytest
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
 from alphaedge.engine.broker import BrokerConnection
-from alphaedge.engine.strategy import CoreModules, FCRStrategy, StrategyState
+from alphaedge.engine.strategy import CoreModules, StrategyState, SwingStrategy
 
 
 # ------------------------------------------------------------------
@@ -33,12 +33,12 @@ def _make_config(pairs: list[str] | None = None) -> AppConfig:
 
 
 # ------------------------------------------------------------------
-# Helper to build an FCRStrategy with mocked externals
+# Helper to build an SwingStrategy with mocked externals
 # ------------------------------------------------------------------
 def _build_strategy(
     config: AppConfig | None = None,
-) -> FCRStrategy:
-    """Create FCRStrategy with mocked broker, feeds, and modules."""
+) -> SwingStrategy:
+    """Create SwingStrategy with mocked broker, feeds, and modules."""
     cfg = config or _make_config()
     with (
         patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,
@@ -52,13 +52,11 @@ def _build_strategy(
         mock_ib.disconnectedEvent = MagicMock()
         mock_broker_cls.return_value.ib = mock_ib
         mock_modules.return_value = CoreModules(
-            fcr_detector=MagicMock(),
-            gap_detector=MagicMock(),
-            engulfing_detector=MagicMock(),
+            momentum_detector=MagicMock(),
             order_manager=MagicMock(),
             risk_manager=MagicMock(),
         )
-        strategy = FCRStrategy(cfg)
+        strategy = SwingStrategy(cfg)
     return strategy
 
 
@@ -81,13 +79,11 @@ class TestDisconnectTriggersReconnect:
             mock_ib = MagicMock()
             mock_broker_cls.return_value.ib = mock_ib
             mock_mods.return_value = CoreModules(
-                fcr_detector=MagicMock(),
-                gap_detector=MagicMock(),
-                engulfing_detector=MagicMock(),
+                momentum_detector=MagicMock(),
                 order_manager=MagicMock(),
                 risk_manager=MagicMock(),
             )
-            strategy = FCRStrategy(cfg)
+            strategy = SwingStrategy(cfg)
 
         mock_broker_cls.return_value.add_disconnect_handler.assert_called_once_with(
             strategy._lifecycle._on_ib_disconnect

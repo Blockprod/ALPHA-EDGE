@@ -21,27 +21,25 @@ from zoneinfo import ZoneInfo
 import numpy as np
 
 from alphaedge.config.constants import (
-    DEFAULT_ATR_PERIOD,
-    DEFAULT_MIN_ATR_RATIO,
-    DEFAULT_MIN_RANGE_PIPS,
-    DEFAULT_MIN_VOLUME_RATIO,
-    DEFAULT_VOLUME_PERIOD,
+    DEFAULT_ADX_THRESHOLD,
+    DEFAULT_PIP_SIZE,
+    DEFAULT_RR_RATIO,
     MIN_LOTS,
     PIP_SIZES,
     PROJECT_TITLE,
 )
-from alphaedge.config.loader import AppConfig, SessionSpec, load_config
+from alphaedge.config.loader import AppConfig, load_config
 from alphaedge.engine.backtest_export import export_results_csv, plot_equity_curve
-from alphaedge.engine.backtest_filters import (  # noqa: F401
+from alphaedge.engine.backtest_filters import (
     _apply_global_session_limit,
     _apply_usd_correlation_filter,
-    _group_bars_by_session,
 )
 from alphaedge.engine.backtest_simulation import (
     _simulate_partial_exit_fast,
     _simulate_trade_exit,
     _simulate_trade_exit_fast,
     _simulate_trailing_partial_exit_fast,
+    compute_overnight_carry,
     compute_variable_slippage,
 )
 from alphaedge.engine.backtest_stats import (
@@ -79,6 +77,8 @@ logger = get_logger()
 # test imports such as ``from alphaedge.engine.backtest import compute_stats``
 # continue to work without modification.
 __all__ = [
+    # --- constants re-exported for sensitivity analysis ---
+    "DEFAULT_ADX_THRESHOLD",
     # --- data types (backtest_types) ---
     "TradeRecord",
     "BacktestStats",
@@ -107,6 +107,7 @@ __all__ = [
     "run_walk_forward",
     "_log_walk_forward_report",
     # --- simulation (backtest_simulation) ---
+    "compute_overnight_carry",
     "compute_variable_slippage",
 ]
 
@@ -121,53 +122,38 @@ async def _fetch_pair_trades(
     start_dt: datetime,
     end_dt: datetime,
     cache: Any = None,
+    news_filter: EconomicNewsFilter | None = None,
 ) -> list[TradeRecord]:
-    """Fetch historical bars for a pair and run backtest.
+    """Fetch historical Daily bars for a pair and run the Momentum+Carry backtest.
 
-    Requests are strictly sequential (entry TF first, then FCR TF) — IB's historical
-    data pacing rejects concurrent requests with error 162 regardless of
-    semaphore depth.  The rolling cache makes subsequent runs near-instant.
+    A single sequential fetch is used — IB pacing rejects concurrent requests.
+    The rolling cache makes subsequent runs near-instant.
     """
-    # Resolve alias: e.g. EURUSD_LC → EURUSD for IB data fetch (reuses cached bars)
+    # Resolve alias: e.g. EURUSD_LC → EURUSD for IB data fetch
     data_pair = config.trading.pair_aliases.get(pair, pair)
-    entry_tf = config.trading.entry_timeframe
-    fcr_tf = config.trading.fcr_timeframe
+    signal_tf = config.trading.signal_timeframe  # "1 day"
     logger.info(f"ALPHAEDGE backtesting: {pair} ({start_dt.date()} → {end_dt.date()})")
-    entry_bars = await hist_feed.fetch_bars_chunked(
+    daily_bars = await hist_feed.fetch_bars_chunked(
         pair=data_pair,
-        timeframe=entry_tf,
+        timeframe=signal_tf,
         start_dt=start_dt,
         end_dt=end_dt,
         cache=cache,
     )
-    fcr_bars = await hist_feed.fetch_bars_chunked(
-        pair=data_pair,
-        timeframe=fcr_tf,
-        start_dt=start_dt,
-        end_dt=end_dt,
-        cache=cache,
-    )
-    if not entry_bars:
+    if not daily_bars:
         return []
-    # Per-pair parameter overrides (fall back to global config values)
-    pair_min_range = config.trading.min_range_pips_by_pair.get(
-        pair, config.trading.min_range_pips
-    )
-    pair_min_volume = config.trading.min_volume_ratio_by_pair.get(
-        pair, DEFAULT_MIN_VOLUME_RATIO
-    )
+
+    # Walk-forward validation (optional, post main backtest)
+    if config.trading.walk_forward_enabled:
+        wf_report = run_walk_forward(daily_bars, pair, config)
+        _log_walk_forward_report(wf_report)
+
     return _backtest_pair(
         pair,
-        entry_bars,
-        fcr_bars,
+        daily_bars,
         config,
-        min_atr_ratio=config.trading.min_atr_ratio_by_pair.get(
-            pair, config.trading.min_atr_ratio
-        ),
-        min_range_pips=pair_min_range,
-        min_volume_ratio=pair_min_volume,
-        session_spec=config.trading.pair_sessions.get(pair),
-    )
+        news_filter=news_filter,
+    )[0]
 
 
 async def run_backtest(config: AppConfig) -> BacktestStats:
@@ -194,6 +180,27 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
     cache = BarDiskCache()
     all_trades: list[TradeRecord] = []
 
+    # C-03: Instantiate news filter from config if enabled
+    news_filter: EconomicNewsFilter | None = None
+    if config.news_filter_raw.get("enabled", False):
+        from alphaedge.utils.news_filter import EconomicNewsFilter as _EcNF
+        from alphaedge.utils.news_filter import NewsFilterConfig
+
+        nf_cfg = NewsFilterConfig(
+            enabled=True,
+            blackout_minutes=int(config.news_filter_raw.get("blackout_minutes", 15)),
+            impact_levels=list(config.news_filter_raw.get("impact_levels", ["high"])),
+            calendar_path=str(
+                config.news_filter_raw.get(
+                    "calendar_path", "data/economic_calendar.csv"
+                )
+            ),
+        )
+        news_filter = _EcNF(nf_cfg)
+        logger.info(
+            f"ALPHAEDGE: News filter active — {news_filter.event_count} events loaded"
+        )
+
     end_dt = datetime.now(tz=ZoneInfo("UTC"))
     start_dt = end_dt - timedelta(days=365 * config.trading.backtest_years)
     pairs = config.trading.pairs
@@ -206,7 +213,7 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
         logger.info(f"ALPHAEDGE [{idx}/{len(pairs)}] Starting {pair}...")
         try:
             trades = await _fetch_pair_trades(
-                hist_feed, pair, config, start_dt, end_dt, cache
+                hist_feed, pair, config, start_dt, end_dt, cache, news_filter
             )
             all_trades.extend(trades)
             logger.info(
@@ -223,7 +230,11 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
     eur_usd_rate = config.trading.eur_usd_rate
     starting_equity = config.trading.starting_equity
 
-    # USD correlation filter: drop trades that double USD directional exposure
+    # USD correlation filter: drop trades that double USD directional exposure.
+    # NOTE: This backtest algorithm uses USD directional exposure (long vs short USD)
+    # which differs from the live algorithm in session_lifecycle.py that uses a
+    # pairwise correlation matrix. Align both algorithms before enabling
+    # multi-pair trading. See audit_pipeline_alphaedge.md — P-05.
     if config.trading.usd_correlation_filter:
         all_trades = _apply_usd_correlation_filter(all_trades)
 
@@ -262,45 +273,30 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
     # Rich table — printed last so it's the final thing visible in the terminal
     print_rich_summary(all_trades, stats, starting_equity, eur_usd_rate)
 
+    # C-06: Warn if consecutive losses exceed circuit breaker threshold
+    if all_trades:
+        max_consec = config.trading.max_consecutive_losses
+        consec = 0
+        peak_consec = 0
+        for t in all_trades:
+            if t.pnl_pips < 0:
+                consec += 1
+                peak_consec = max(peak_consec, consec)
+            else:
+                consec = 0
+        if peak_consec >= max_consec:
+            logger.warning(
+                f"ALPHAEDGE RISK: {peak_consec} consecutive losses detected — "
+                f"circuit breaker threshold is {max_consec}. "
+                "Review strategy before live deployment."
+            )
+
     return stats
 
 
 # ------------------------------------------------------------------
 # Backtest a single pair
 # ------------------------------------------------------------------
-def _detect_signal_at_bar(
-    session_m1: list[dict[str, Any]],
-    local_index: int,
-    pip_size: float,
-    config: AppConfig,
-    eng_mod: Any,
-    fcr_result: dict[str, Any],
-    min_volume_ratio: float = DEFAULT_MIN_VOLUME_RATIO,
-) -> dict[str, Any] | None:
-    """
-    Detect engulfing signal at a session bar using pre-calculated FCR.
-
-    FCR and gap are computed once per session (no look-ahead bias).
-    Only engulfing detection runs per-bar.
-    """
-    m1_recent = session_m1[max(0, local_index - 3) : local_index + 1]
-
-    result: dict[str, Any] | None = eng_mod.detect_engulfing(
-        candles_data=m1_recent,
-        fcr_high=fcr_result["range_high"],
-        fcr_low=fcr_result["range_low"],
-        rr_ratio=config.trading.rr_ratio,
-        pip_size=pip_size,
-        volume_period=DEFAULT_VOLUME_PERIOD,
-        min_volume_ratio=min_volume_ratio,
-        min_body_ratio=config.trading.min_body_ratio,
-        max_wick_ratio=config.trading.max_wick_ratio,
-    )
-    if result and result.get("detected"):
-        return result
-    return None
-
-
 def _build_trade_record(
     pair: str,
     signal: dict[str, Any],
@@ -319,11 +315,11 @@ def _build_trade_record(
         if spread_cost_pips is not None
         else compute_variable_slippage(bar_time, pair=pair)
     )
-    pip_size = PIP_SIZES.get(pair, 0.0001)
+    pip_size = PIP_SIZES.get(pair, DEFAULT_PIP_SIZE)
     sl_pips = abs(signal["entry_price"] - signal["stop_loss"]) / pip_size
     trade = TradeRecord(
         pair=pair,
-        direction=signal["signal"],
+        direction=signal["direction"],
         entry_price=signal["entry_price"],
         stop_loss=signal["stop_loss"],
         take_profit=signal["take_profit"],
@@ -369,7 +365,7 @@ def _validate_backtest_signal(
         return None
 
     bracket: dict[str, Any] = order_mod.create_bracket_order(
-        direction=signal["signal"],
+        direction=signal["direction"],
         entry_price=signal["entry_price"],
         stop_loss=signal["stop_loss"],
         take_profit=signal["take_profit"],
@@ -398,217 +394,203 @@ def _validate_backtest_signal(
     }
 
 
-def _session_passes_fcr_quality_gate(
-    m5_pre: list[dict[str, Any]],
-    cv_max: float,
-) -> bool:
-    """Return True when pre-session M5 bars pass the optional CV filter."""
-    if cv_max <= 0.0 or len(m5_pre) < 2:
-        return True
-
-    bar_ranges = [b["high"] - b["low"] for b in m5_pre if b["high"] - b["low"] > 0]
-    if not bar_ranges:
-        return True
-
-    mu = sum(bar_ranges) / len(bar_ranges)
-    if mu <= 0.0:
-        return True
-
-    sigma = (sum((r - mu) ** 2 for r in bar_ranges) / len(bar_ranges)) ** 0.5
-    return sigma / mu <= cv_max
-
-
-def _detect_session_gap(
-    session: dict[str, Any],
-    m1_bars: list[dict[str, Any]],
-    m5_pre: list[dict[str, Any]],
-    gap_detector: Any,
-    min_atr_ratio: float,
-) -> dict[str, Any] | None:
-    """Run once-per-session gap detection using the first three M1 bars."""
-    first_3_m1 = [m1_bars[i] for i in session["m1_indices"][:3]]
-    pre_close = m5_pre[-1]["close"]
-    session_open = m1_bars[session["m1_indices"][0]]["open"]
-    return gap_detector.detect_gap(
-        pre_session_m1=session["m1_pre"],
-        session_m1=first_3_m1,
-        pre_close=pre_close,
-        session_open=session_open,
-        atr_period=DEFAULT_ATR_PERIOD,
-        min_atr_ratio=min_atr_ratio,
-    )
-
-
-def _collect_session_trades(
+def _collect_daily_trades(
     pair: str,
-    session_m1: list[dict[str, Any]],
-    m1_bars: list[dict[str, Any]],
-    m1_idx: list[int],
+    daily_bars: list[dict[str, Any]],
+    bar_index: int,
+    signal: dict[str, Any],
     pip_size: float,
     config: AppConfig,
-    engulfing_detector: Any,
-    fcr_result: dict[str, Any],
     risk_manager: Any,
     order_manager: Any,
-    _m1_highs: np.ndarray,
-    _m1_lows: np.ndarray,
+    _all_highs: np.ndarray,
+    _all_lows: np.ndarray,
     *,
-    min_volume_ratio: float,
-    min_sl_pips: float,
     news_filter: EconomicNewsFilter | None,
+    min_sl_pips: float = 0.0,
 ) -> list[TradeRecord]:
-    """Build all validated trade records for one historical session."""
+    """Build validated trade records for one daily momentum signal."""
     trades: list[TradeRecord] = []
-    for local_i in range(3, len(session_m1)):
-        if news_filter is not None:
-            bar_dt = session_m1[local_i].get("datetime")
-            if bar_dt is not None and news_filter.is_news_blackout(bar_dt, pair):
-                continue
+    bar = daily_bars[bar_index]
+    bar_dt = bar.get("datetime")
 
-        signal = _detect_signal_at_bar(
-            session_m1,
-            local_i,
-            pip_size,
-            config,
-            engulfing_detector,
-            fcr_result,
-            min_volume_ratio=min_volume_ratio,
-        )
-        if not signal:
-            continue
+    if news_filter is not None and bar_dt is not None:
+        if news_filter.is_news_blackout(bar_dt, pair):
+            return trades
 
-        if min_sl_pips > 0.0 and (
-            abs(signal["entry_price"] - signal["stop_loss"]) / pip_size < min_sl_pips
-        ):
-            continue
+    # Direction filter
+    direction_filter = config.trading.direction_filter
+    if direction_filter != "ALL":
+        dir_val = signal.get("direction", 0)
+        if direction_filter == "LONG" and dir_val != 1:
+            return trades
+        if direction_filter == "SHORT" and dir_val != -1:
+            return trades
 
-        bar_time = session_m1[local_i].get("datetime")
-        spread_pips = compute_variable_slippage(bar_time, pair=pair)
-        validated = _validate_backtest_signal(
+    # Build a synthetic entry from the daily signal
+    direction: int = int(signal["direction"])
+    entry_price: float = float(bar["close"])
+    pip_dist_sl = config.trading.rr_ratio * config.trading.min_range_pips
+    if min_sl_pips > 0.0 and pip_dist_sl < min_sl_pips:
+        return trades
+    if direction == 1:
+        stop_loss = entry_price - pip_dist_sl * pip_size
+        take_profit = entry_price + pip_dist_sl * config.trading.rr_ratio * pip_size
+    else:
+        stop_loss = entry_price + pip_dist_sl * pip_size
+        take_profit = entry_price - pip_dist_sl * config.trading.rr_ratio * pip_size
+
+    trade_signal: dict[str, Any] = {
+        "direction": direction,
+        "entry_price": entry_price,
+        "stop_loss": stop_loss,
+        "take_profit": take_profit,
+        "risk_pips": pip_dist_sl,
+    }
+
+    spread_pips = compute_variable_slippage(bar_dt, pair=pair)
+    validated = _validate_backtest_signal(
+        pair, trade_signal, config, pip_size, spread_pips, risk_manager, order_manager
+    )
+    if validated is None:
+        return trades
+
+    trades.append(
+        _build_trade_record(
             pair,
-            signal,
-            config,
-            pip_size,
-            spread_pips,
-            risk_manager,
-            order_manager,
+            validated["signal"],
+            daily_bars,
+            bar_index,
+            spread_cost_pips=validated["spread_pips"],
+            _all_highs=_all_highs,
+            _all_lows=_all_lows,
+            partial_exit=config.trading.partial_exit,
+            trailing_partial_exit=config.trading.trailing_partial_exit,
         )
-        if validated is None:
-            continue
-
-        global_idx = m1_idx[local_i]
-        trades.append(
-            _build_trade_record(
-                pair,
-                validated["signal"],
-                m1_bars,
-                global_idx,
-                spread_cost_pips=validated["spread_pips"],
-                _all_highs=_m1_highs,
-                _all_lows=_m1_lows,
-                partial_exit=config.trading.partial_exit,
-                trailing_partial_exit=config.trading.trailing_partial_exit,
-            )
-        )
-
+    )
     return trades
 
 
 def _backtest_pair(
     pair: str,
-    m1_bars: list[dict[str, Any]],
-    m5_bars: list[dict[str, Any]],
+    daily_bars: list[dict[str, Any]],
     config: AppConfig,
     news_filter: EconomicNewsFilter | None = None,
     *,
-    min_atr_ratio: float = DEFAULT_MIN_ATR_RATIO,
-    min_range_pips: float = DEFAULT_MIN_RANGE_PIPS,
-    min_volume_ratio: float = DEFAULT_MIN_VOLUME_RATIO,
     min_sl_pips: float = 0.0,
-    session_spec: SessionSpec | None = None,
-) -> list[TradeRecord]:
+) -> tuple[list[TradeRecord], dict[str, int]]:
     """
-    Run the strategy logic on historical bars for one pair.
+    Run the Momentum+Carry strategy on historical Daily bars for one pair.
 
-    Mirrors the live flow: FCR once per session from pre-session M5,
-    gap/ATR once from first M1 bars, then engulfing on remaining M1.
+    Mirrors the live flow: momentum detection on the rolling lookback window,
+    carry filter, then bracket order sizing.  One trade per Daily bar maximum.
     """
     trades: list[TradeRecord] = []
-    pip_size = PIP_SIZES.get(pair, 0.0001)
+    pip_size = PIP_SIZES.get(pair, DEFAULT_PIP_SIZE)
 
     try:
-        from alphaedge.core import (
-            engulfing_detector,
-            fcr_detector,
-            gap_detector,
-            order_manager,
-            risk_manager,
-        )
+        from alphaedge.core import momentum_detector, order_manager, risk_manager
     except ImportError:
         logger.warning(f"ALPHAEDGE: Cython not compiled — skipping backtest for {pair}")
-        return trades
+        return trades, {}
 
-    sessions = _group_bars_by_session(m1_bars, m5_bars, session_spec=session_spec)
+    from alphaedge.engine.carry_signal import get_carry_bias
 
-    # Pre-build bar arrays once — amortises per-trade dict extraction across all trades
-    _m1_highs = np.array([b["high"] for b in m1_bars], dtype=np.float64)
-    _m1_lows = np.array([b["low"] for b in m1_bars], dtype=np.float64)
+    lookback = config.trading.momentum_lookback_days
+    fast = config.trading.momentum_fast_period
+    slow = config.trading.momentum_slow_period
+    adx_p = config.trading.momentum_adx_period
+    adx_t = config.trading.momentum_adx_threshold
+    carry_enabled = config.trading.carry_enabled
+    carry_rates = config.trading.carry_rates
+
+    # Pre-build bar arrays once
+    _all_highs = np.array([b["high"] for b in daily_bars], dtype=np.float64)
+    _all_lows = np.array([b["low"] for b in daily_bars], dtype=np.float64)
 
     excluded_days = set(config.trading.excluded_days)
-    for session in sessions:
-        if excluded_days and session["date"].weekday() in excluded_days:
-            continue
-        m5_pre = session["m5_pre"]
-        m1_idx = session["m1_indices"]
+    max_trades_per_day = config.trading.max_trades_per_day
+    _adx_rejections: int = 0
+    _carry_rejections: int = 0
+    _day_limit_rejections: int = 0
+    _bars_processed: int = 0
+    _trades_by_day: dict[str, int] = {}
 
-        if len(m5_pre) < 2 or len(m1_idx) < 4:
-            continue
+    for bar_index in range(lookback, len(daily_bars)):
+        bar = daily_bars[bar_index]
+        bar_dt = bar.get("datetime")
 
-        if not _session_passes_fcr_quality_gate(
-            m5_pre, config.trading.fcr_range_cv_max
-        ):
-            continue
+        if excluded_days and bar_dt is not None:
+            if hasattr(bar_dt, "weekday") and bar_dt.weekday() in excluded_days:
+                continue
 
-        fcr_result = fcr_detector.detect_fcr(
-            candles_data=m5_pre,
-            min_range_pips=min_range_pips,
-            pip_size=pip_size,
+        _bars_processed += 1
+        window = daily_bars[bar_index - lookback : bar_index + 1]
+        signal = momentum_detector.detect_momentum(
+            bars=window,
+            fast_period=fast,
+            slow_period=slow,
+            adx_period=adx_p,
+            adx_threshold=adx_t,
         )
-        if not fcr_result:
+        if signal is None or not signal.get("detected"):
+            _adx_rejections += 1
             continue
 
-        gap_result = _detect_session_gap(
-            session,
-            m1_bars,
-            m5_pre,
-            gap_detector,
-            min_atr_ratio,
+        # Carry filter (optional)
+        if carry_enabled and carry_rates:
+            carry = get_carry_bias(pair=pair, rates=carry_rates)
+            if carry.is_valid and carry.direction != "NEUTRAL":
+                mom_dir: int = int(signal.get("direction", 0))
+                if (mom_dir == 1 and carry.direction == "SHORT") or (
+                    mom_dir == -1 and carry.direction == "LONG"
+                ):
+                    _carry_rejections += 1
+                    continue
+
+        bar_trades = _collect_daily_trades(
+            pair,
+            daily_bars,
+            bar_index,
+            signal,
+            pip_size,
+            config,
+            risk_manager,
+            order_manager,
+            _all_highs,
+            _all_lows,
+            news_filter=news_filter,
+            min_sl_pips=min_sl_pips,
         )
-        if not gap_result or not gap_result.get("detected"):
-            continue
-
-        session_m1 = [m1_bars[i] for i in m1_idx]
-        trades.extend(
-            _collect_session_trades(
-                pair,
-                session_m1,
-                m1_bars,
-                m1_idx,
-                pip_size,
-                config,
-                engulfing_detector,
-                fcr_result,
-                risk_manager,
-                order_manager,
-                _m1_highs,
-                _m1_lows,
-                min_volume_ratio=min_volume_ratio,
-                min_sl_pips=min_sl_pips,
-                news_filter=news_filter,
+        if bar_trades:
+            day_key = (
+                bar_dt.strftime("%Y-%m-%d")
+                if bar_dt is not None and hasattr(bar_dt, "strftime")
+                else str(bar_index)
             )
-        )
+            _trades_by_day[day_key] = _trades_by_day.get(day_key, 0) + len(bar_trades)
+            if _trades_by_day[day_key] - len(bar_trades) >= max_trades_per_day:
+                _day_limit_rejections += len(bar_trades)
+                continue
+        trades.extend(bar_trades)
 
-    return trades
+    logger.info(
+        "ALPHAEDGE BACKTEST: %s \u2014 %d bars, %d signals "
+        "(ADX rejected=%d, carry rejected=%d, day-limit rejected=%d, trades=%d)",
+        pair,
+        _bars_processed,
+        _bars_processed - _adx_rejections,
+        _adx_rejections,
+        _carry_rejections,
+        _day_limit_rejections,
+        len(trades),
+    )
+    rejection_counts = {
+        "adx_gate": _adx_rejections,
+        "carry_conflict": _carry_rejections,
+        "day_limit": _day_limit_rejections,
+    }
+    return trades, rejection_counts
 
 
 # ------------------------------------------------------------------
@@ -684,7 +666,7 @@ def _generate_random_trades(
     m1_bars: list[dict[str, Any]],
     pair: str,
     n_trades: int,
-    rr_ratio: float = 3.0,
+    rr_ratio: float = DEFAULT_RR_RATIO,
     sl_pips: float = 10.0,
     rng: random.Random | None = None,
 ) -> list[TradeRecord]:
@@ -717,7 +699,7 @@ def _generate_random_trades(
     if len(m1_bars) < 20:
         return []
 
-    pip_size = PIP_SIZES.get(pair, 0.0001)
+    pip_size = PIP_SIZES.get(pair, DEFAULT_PIP_SIZE)
     sl_price_dist = sl_pips * pip_size
     tp_price_dist = sl_price_dist * rr_ratio
     trades: list[TradeRecord] = []
@@ -765,7 +747,7 @@ def run_random_baseline(
     pair: str,
     strategy_trades: list[TradeRecord],
     n_simulations: int = 1000,
-    rr_ratio: float = 3.0,
+    rr_ratio: float = DEFAULT_RR_RATIO,
     sl_pips: float = 10.0,
     seed: int | None = None,
 ) -> RandomBaselineReport:

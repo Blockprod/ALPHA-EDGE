@@ -3,7 +3,7 @@ modele: sonnet-4.6
 mode: agent
 contexte: codebase
 produit: tasks/audits/audit_email_alerts_alphaedge.md
-derniere_revision: 2026-03-22
+derniere_revision: 2026-03-25
 creation: 2026-03-22 à 15:55
 ---
 
@@ -46,7 +46,7 @@ Tu analyses UNIQUEMENT :
 - L'intégration alertes ↔ pipeline IB Gateway
 
 Tu n'analyses PAS :
-- La stratégie FCR de trading
+- La stratégie Momentum+Carry de trading
 - L'architecture des modules Cython
 - La sécurité des credentials IB (autre audit)
 - Les performances du pipeline signal
@@ -87,7 +87,7 @@ conclus par COUVERT / NON COUVERT / À VÉRIFIER
 - [ ] Exception critique non gérée dans le pipeline
 - [ ] Échec de sauvegarde d'état (DailyState / JSON)
 - [ ] Échec de connexion à IB Gateway (erreur 1100-1102)
-- [ ] Données de marché manquantes ou corrompues (M1/M5)
+- [ ] Données de marché manquantes ou corrompues (Daily bars)
 - [ ] Erreur réseau prolongée / déconnexion IB
 - [ ] Circuit breaker IB déclenché (RequestThrottler)
 - [ ] Timeout fill (asyncio.wait_for > 10 s)

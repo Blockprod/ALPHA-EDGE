@@ -24,7 +24,7 @@ trading:
   # Currency pairs to monitor
   pairs:
     - "EURUSD"
-    - "USDJPY"
+    # - "USDJPY"  # Suspended 2026-03-24: PF=0.47, WR=25% — recalibration pending
 
   # WARNING: risk_pct at 2% — projected return ~27.7% over 3Y, max DD ~12%
   # Validate on full backtest before live deployment
@@ -37,6 +37,9 @@ trading:
   # Maximum trades per session
   max_trades_per_session: 6
 
+  # Maximum trades per calendar day per pair (jackpot guard — prevents over-concentration)
+  max_trades_per_day: 3
+
   # Days of week to exclude (0=Monday, 4=Friday, 6=Sunday)
   # Tested [0, 4] → 42T WR=47.6%, Sharpe=2.23 vs baseline 69T WR=54.5%, Sharpe=3.37 — ELIMINATED
   excluded_days: []  # LOCKED: no day exclusion optimal
@@ -45,6 +48,17 @@ trading:
   # Tested: 26T WR=46.2%, Sharpe=1.94 vs baseline 69T WR=54.5%, Sharpe=3.37 — ELIMINATED
   # (blocked 49/69 trades — sessions are structurally independent, not USD-correlated)
   usd_correlation_filter: false
+
+  # Direction filter: "ALL" | "LONG" | "SHORT" — filter trade direction
+  # LOCKED: "LONG" — SHORT WR=0%, PF=0.00 on N=4 (audit_strategic 2026-03-26).
+  # Revert to "ALL" only after ≥30 SHORT trades with WR > 40% in paper trading.
+  direction_filter: "LONG"
+
+  # Enable IS/OOS multi-window walk-forward validation after main backtest
+  # LOCKED: false — activate only after N >= 100 live trades accumulated.
+  # Walk-forward requires sufficient OOS windows for meaningful statistics.
+  # Activate offline via scripts/run_bayesian_optimization.py only.
+  walk_forward_enabled: false
 
   # Maximum acceptable spread in pips (skip trade if exceeded)
   max_spread_pips: 2.0
@@ -67,8 +81,13 @@ trading:
   # Action at session end if position still open: "hold" or "close"
   session_end_action: "hold"
 
-  # London Open session (8:00-9:00 UTC) — enable after OOS validation
-  london_open_enabled: false
+  # Monitoring window (UTC) — swing strategy checks signals during this window
+  monitoring_window_start: "08:00"
+  monitoring_window_end: "18:00"
+
+  # Signal timeframes for Momentum+Carry swing strategy
+  signal_timeframe: "1 day"    # Primary timeframe for momentum detection
+  confirmation_timeframe: "4 hours"  # Secondary confirmation timeframe
 
   # Number of years of historical data to fetch for backtesting
   backtest_years: 3
@@ -79,44 +98,35 @@ trading:
   # Starting equity for backtest drawdown and Sharpe calculations (USD)
   starting_equity: 10000.0
 
-# --- Structure Detection ---
-structure:
-  min_range_pips: 8.0        # Minimum candle range for valid detection (sweep-optimal — DO NOT lower)
-  lookback_candles: 6       # Number of candles to scan
-  # Per-pair overrides tested: EURUSD 6.0 → 41T WR=31.7% vs 11T WR=54.5% — ELIMINATED
-  # Timeframe configuration
-  # fcr_timeframe: FCR pre-session structure detection (default: "5 mins")
-  # entry_timeframe: bar-by-bar engulfing detection (default: "1 min")
-  # Tested combinations: M15/M1 → WR=34.3%, PF=0.74, DD=62%, return=-59% — ELIMINATED
-  fcr_timeframe: "5 mins"    # LOCKED: M5 optimal (M15 tested and eliminated)
-  entry_timeframe: "1 min"   # LOCKED: M1 precision entries
+# --- Momentum Signal Parameters ---
+momentum:
+  fast_period: 12        # EMA fast period
+  slow_period: 26        # EMA slow period
+  adx_period: 14         # ADX smoothing period
+  adx_threshold: 25.0    # Minimum ADX to confirm trend (gate)
+  lookback_days: 252     # Historical bars for signal computation
 
-  # FCR range quality filter: coefficient of variation of pre-session bar heights
-  # CV = σ(bar_ranges) / μ(bar_ranges) — low CV = homogeneous consolidation
-  # 0.0 = disabled; 0.5 = strict; 0.7 = moderate; 1.0 = permissive
-  fcr_range_cv_max: 0.5
+# --- Carry Signal Parameters ---
+carry:
+  min_differential_pct: 0.5  # Minimum rate differential to declare a bias (%)
+  enabled: true               # Enable carry filter in signal pipeline
+  # Update central-bank rates periodically before each trading quarter.
+  rates:
+    EUR: 3.65   # ECB deposit facility rate (2026-Q1)
+    USD: 5.25   # Fed funds rate upper bound (2026-Q1)
+    JPY: 0.10   # BOJ overnight rate (2026-Q1)
+    GBP: 5.25   # BOE base rate (2026-Q1)
+    AUD: 4.35   # RBA cash rate (2026-Q1)
+    NZD: 5.50   # RBNZ official cash rate (2026-Q1)
+    CAD: 5.00   # BOC overnight rate (2026-Q1)
+    CHF: 1.50   # SNB policy rate (2026-Q1)
 
-# --- Volatility Detection ---
-volatility:
-  atr_period: 14            # Number of candles for ATR calculation
-  min_atr_ratio: 1.7        # ATR spike threshold (1.5=225 bruts; 2.0=10 nets; trying midpoint)
-  tolerance_pips: 5.0       # Buffer zone around boundaries
-  # Per-pair ATR override — allows lower threshold for pairs with lower institutional spike
-  # EURUSD at London Open (08:00-09:00 UTC): Frankfurt→London transition; weaker spike than NYSE
-  # Diagnostic: London at 1.0 → 26 gap sessions/3y; NYSE at 1.2 → 23 but FCR stale (5h lag)
-  min_atr_ratio_by_pair:
-    EURUSD: 1.0
-
-# --- Pattern Detection ---
-pattern:
-  volume_period: 20         # Lookback for average tick volume
-  min_volume_ratio: 1.0     # Min ratio vs average for confirmation
-  # Per-pair vol override tested: USDJPY 1.2 → 58T identical (NYSE Open already high-vol) — ELIMINATED
-
-# --- Engulfing Quality Filters ---
-engulfing:
-  min_body_ratio: 0.3       # Body >= 30% of FCR range (sweep-optimal)
-  max_wick_ratio: 1.5       # Wick <= 150% of body size (sweep-optimal)
+# --- Volatility Regime Gate ---
+# K-Means classifier (DailyRegimeFilter) observation mode until 30 sessions NYSE paper.
+# Set enabled: true after validating that high_vol sessions have WinRate < 40%.
+regime_filter:
+  enabled: false          # Activate after 30 NYSE paper sessions in observation
+  block_on: "high_vol"   # Regime label that triggers the gate (high_vol / low_vol)
 
 # --- News Filter ---
 news_filter:
@@ -134,6 +144,9 @@ risk:
   min_lots: 0.01            # Minimum position size
   max_lots: 10.0            # Maximum position size
   adjust_sl_for_spread: true
+
+  # Circuit breaker: halt all trading after N consecutive session losses
+  max_consecutive_losses: 5
 
 # --- Web Dashboard ---
 dashboard:
@@ -161,54 +174,3 @@ alerting:
     - session_end_open_position
     - session_end_clean
     - daily_summary
-
-# --- Per-pair session windows ---
-# London Open (08:00-09:00 UTC) for EUR/GBP-based pairs: FCR forms during
-# the Frankfurt→London transition; engulfing fires at London bell.
-# NYSE Open (09:30-10:30 ET) for USD-centric pairs: driven by US economic
-# data drops and NYSE institutional flow.
-pair_sessions:
-  EURUSD_LC:
-    start: "15:00"
-    end: "16:00"
-    tz: "UTC"
-  EURGBP:
-    start: "08:00"
-    end: "09:00"
-    tz: "UTC"
-  EURUSD:
-    start: "08:00"
-    end: "09:00"
-    tz: "UTC"
-  GBPUSD:
-    start: "08:00"
-    end: "09:00"
-    tz: "UTC"
-  AUDUSD:
-    start: "08:00"
-    end: "09:00"
-    tz: "UTC"
-  NZDUSD:
-    start: "08:00"
-    end: "09:00"
-    tz: "UTC"
-  USDCHF:
-    start: "08:00"
-    end: "09:00"
-    tz: "UTC"
-  EURJPY:
-    start: "08:00"
-    end: "09:00"
-    tz: "UTC"
-  GBPJPY:
-    start: "08:00"
-    end: "09:00"
-    tz: "UTC"
-  USDJPY:
-    start: "09:30"
-    end: "10:30"
-    tz: "America/New_York"
-  USDCAD:
-    start: "09:30"
-    end: "10:30"
-    tz: "America/New_York"

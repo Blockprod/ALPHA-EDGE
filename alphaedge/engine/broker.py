@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Swing Trading Bot
 # FILE         : alphaedge/engine/broker.py
 # DESCRIPTION  : IB Gateway broker interface with auto-reconnect
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: IB Gateway broker connection."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: IB Gateway broker connection."""
 
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ from ib_insync import (
 
 from alphaedge.config.constants import (
     IB_CIRCUIT_BREAKER_MAX_FAILURES,
+    IB_CIRCUIT_BREAKER_RESET_SECONDS,
     IB_TIMEOUT_SECONDS,
     IB_TOKEN_BUCKET_BURST,
     IB_TOKEN_BUCKET_RATE,
@@ -112,6 +113,8 @@ class BrokerConnection:
         self._throttler = RequestThrottler()
         self._connected = False
         self._consecutive_failures: int = 0
+        self._cached_available_funds: float = 0.0
+        self._circuit_breaker_opened_at: float = 0.0
         self._disconnect_handlers: list[DisconnectHandler] = []
         self._ib = self._build_ib_client()
 
@@ -138,6 +141,8 @@ class BrokerConnection:
     ) -> bool:
         """Record a failed IB connection attempt and return False."""
         self._consecutive_failures += 1
+        if self._consecutive_failures == IB_CIRCUIT_BREAKER_MAX_FAILURES:
+            self._circuit_breaker_opened_at = time.monotonic()
         formatted = (
             f"{message} (failure {self._consecutive_failures}/"
             f"{IB_CIRCUIT_BREAKER_MAX_FAILURES})"
@@ -172,12 +177,21 @@ class BrokerConnection:
             True if connection was successful.
         """
         if self._consecutive_failures >= IB_CIRCUIT_BREAKER_MAX_FAILURES:
-            logger.critical(
-                f"ALPHAEDGE circuit breaker OPEN after "
-                f"{self._consecutive_failures} consecutive failures — "
-                "manual intervention required"
+            elapsed = time.monotonic() - self._circuit_breaker_opened_at
+            if elapsed < IB_CIRCUIT_BREAKER_RESET_SECONDS:
+                logger.critical(
+                    "ALPHAEDGE circuit breaker OPEN after "
+                    "%d consecutive failures — auto-reset in %.0fs",
+                    self._consecutive_failures,
+                    IB_CIRCUIT_BREAKER_RESET_SECONDS - elapsed,
+                )
+                return False
+            logger.warning(
+                "ALPHAEDGE: circuit breaker AUTO-RESET after %.0fs — retrying",
+                elapsed,
             )
-            return False
+            self._consecutive_failures = 0
+            self._circuit_breaker_opened_at = 0.0
 
         try:
             await asyncio.wait_for(
@@ -291,6 +305,21 @@ class BrokerConnection:
                 f"{contract_info}: {errorString}"
             )
 
+    async def refresh_account_funds(self) -> None:
+        """Refresh cached available funds from IB (call from risk-check loop)."""
+        await self._throttler.acquire()
+        _t0 = time.perf_counter_ns()
+        account_values = self._ib.accountSummary()
+        logger.debug(
+            "LATENCE accountSummary=%.2fms",
+            (time.perf_counter_ns() - _t0) / 1e6,
+        )
+        for av in account_values:
+            if av.tag == "AvailableFunds":
+                self._cached_available_funds = float(av.value)
+                return
+        logger.warning("ALPHAEDGE: AvailableFunds tag not found in accountSummary")
+
     def _ensure_connected(self) -> None:
         """Raise if not currently connected."""
         if not self._ib.isConnected():
@@ -373,44 +402,19 @@ class OrderExecutor:
         Uses a conservative estimate: nominal_value / leverage * 1.2 safety factor.
         Returns False on any failure (fail-closed) to avoid unsafe submissions.
         """
-        try:
-            account_values = self._broker.ib.accountSummary()
-            available_funds = 0.0
-            for av in account_values:
-                if av.tag == "AvailableFunds":
-                    available_funds = float(av.value)
-                    break
-            if available_funds <= 0.0:
-                logger.warning(
-                    "ALPHAEDGE: AvailableFunds not found in account summary — "
-                    "trade blocked"
-                )
-                return False
-            required = (quantity * entry_price / leverage_estimate) * 1.2
-            if available_funds < required:
-                logger.warning(
-                    f"ALPHAEDGE: Insufficient margin — "
-                    f"available={available_funds:.2f} < required≈{required:.2f} "
-                    f"— trade SKIPPED"
-                )
-                return False
-            return True
-        except (TypeError, ValueError):
-            logger.exception(
-                "ALPHAEDGE margin check received malformed account summary "
-                "— blocking trade"
+        available_funds = self._broker._cached_available_funds
+        if available_funds <= 0.0:
+            logger.warning("ALPHAEDGE: margin cache not initialized — trade blocked")
+            return False
+        required = (quantity * entry_price / leverage_estimate) * 1.2
+        if available_funds < required:
+            logger.warning(
+                f"ALPHAEDGE: Insufficient margin — "
+                f"available={available_funds:.2f} < required≈{required:.2f} "
+                f"— trade SKIPPED"
             )
             return False
-        except RuntimeError:
-            logger.exception(
-                "ALPHAEDGE margin check IB runtime failure — blocking trade"
-            )
-            return False
-        except Exception:
-            logger.exception(
-                "ALPHAEDGE margin check unexpected failure — blocking trade"
-            )
-            return False
+        return True
 
     async def place_bracket_order(
         self,

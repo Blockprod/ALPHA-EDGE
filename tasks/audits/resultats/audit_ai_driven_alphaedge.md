@@ -1,137 +1,208 @@
-# AUDIT AI-DRIVEN — ALPHAEDGE
-# Date : 2026-03-20 à 18:27
-# Généré par : audit_ai_driven_prompt.md
+---
+modele: sonnet-4.6
+mode: agent
+contexte: codebase
+produit: audit_ai_driven_alphaedge.md
+derniere_revision: 2026-03-25
+creation: 2026-03-25 à 00:00
+---
+
+# ALPHAEDGE — Audit AI-Driven Repository Engineering
+
+**Date** : 2026-03-25
+**QA après audit** : `make qa` → 574 tests ✅ · 0 ruff ✅ · 0 pyright ✅
 
 ---
 
-## BLOC 1 — ÉTAT DES LIEUX
+## BLOC 1 — ÉTAT DES LIEUX (fichiers présents / partiels / absents)
 
-| Fichier | Statut initial | Action |
-|---------|---------------|--------|
-| `.github/copilot-instructions.md` | ✅ EXISTE (120 lignes) | Aucune — déjà conforme |
-| `.claude/context.md` | ❌ ABSENT | Créé |
-| `.claude/rules.md` | ❌ ABSENT | Créé |
-| `architecture/system_design.md` | ❌ ABSENT | Créé |
-| `architecture/decisions.md` | ❌ ABSENT | Créé |
-| `knowledge/ibkr_constraints.md` | ❌ ABSENT | Créé |
-| `knowledge/trading_constraints.md` | ❌ ABSENT | Créé |
-| `agents/quant_researcher.md` | ❌ ABSENT | Créé |
-| `agents/risk_manager.md` | ❌ ABSENT | Créé |
-| `agents/code_auditor.md` | ❌ ABSENT | Créé |
-| `agents/dev_engineer.md` | ❌ ABSENT | Créé |
+┌─────────────────────────────────────────────────────────────┐
+│ ÉTAT DES LIEUX — FICHIERS AI-DRIVEN                         │
+├──────────────────────────────────────────────────────────────┤
+│ .github/copilot-instructions.md  ✅ EXISTE                  │
+│ .claude/context.md               ⚠️ PARTIEL (504→574)       │
+│ .claude/rules.md                 ⚠️ PARTIEL (504→574 ×2)    │
+│ architecture/system_design.md    ⚠️ PARTIEL (504→574 ×2)    │
+│ architecture/decisions.md        ✅ EXISTE (8 ADRs)          │
+│ knowledge/ibkr_constraints.md    ✅ EXISTE                  │
+│ knowledge/trading_constraints.md ⚠️ PARTIEL (pip fallback)  │
+│ agents/quant_researcher.md       ⚠️ PARTIEL (rôle FCR)      │
+│ agents/risk_manager.md           ✅ EXISTE                  │
+│ agents/code_auditor.md           ⚠️ PARTIEL (504→574, pip)  │
+│ agents/dev_engineer.md           ⚠️ PARTIEL (504→574 ×2)    │
+│ .github/skills/audit-workflow/   ⚠️ PARTIEL (504→574 ×2)    │
+│ .github/skills/run-qa/           ⚠️ PARTIEL (504→574)       │
+│ CLAUDE.md                        ⚠️ PARTIEL (504→574 ×3)    │
+└──────────────────────────────────────────────────────────────┘
+
+**Légende :** ✅ EXISTE · ⚠️ PARTIEL · ❌ ABSENT
+
+### Fichiers ✅ — Conformes
+
+| Fichier | Évaluation |
+|---------|-----------|
+| `.github/copilot-instructions.md` | Complet : stack, modules, interdictions, workflow, QA commands. Mis à jour (574). |
+| `architecture/decisions.md` | 8 ADRs documentés (Cython, paper-default, all-or-nothing, engine/core séparation, zoneinfo, constants.py, ml_filter archive, bandit). |
+| `knowledge/ibkr_constraints.md` | Précis : ports, rate limits, timeouts, codes erreur. |
+| `agents/risk_manager.md` | Complet : séquence protection 5 étapes, scénarios de risque, paramètres. |
+
+### Fichiers ⚠️ — Partiels (problèmes constatés + corrections appliquées)
+
+| Fichier | Problème | Correction |
+|---------|----------|-----------|
+| `.claude/rules.md` | "504 tests" ×2 | → 574 |
+| `.claude/context.md` | "504 tests" ×1 | → 574 |
+| `architecture/system_design.md` | "504 tests" ×2 | → 574 |
+| `agents/dev_engineer.md` | "504 passed" / "504 tests" ×2 | → 574 |
+| `agents/code_auditor.md` | "504 passed" + `PIP_SIZES.get(pair, 0.0001)` | → 574 + `DEFAULT_PIP_SIZE` |
+| `agents/quant_researcher.md` | Rôle dit "stratégie FCR" (rebranded Momentum+Carry) | → "modules `core/*.pyx`" |
+| `knowledge/trading_constraints.md` | Pip fallback ne référençait pas `DEFAULT_PIP_SIZE` | → ajout `DEFAULT_PIP_SIZE` |
+| `.github/skills/audit-workflow/SKILL.md` | "504 tests" ×2 | → 574 |
+| `.github/skills/run-qa/SKILL.md` | "504 tests" ×1 | → 574 |
+| `CLAUDE.md` | "504 tests" ×3 | → 574 |
+
+### Fichiers ❌ — Absents
+
+Aucun. Tous les fichiers AI-driven sont présents.
 
 ---
 
 ## BLOC 2 — NETTOYAGE PRÉALABLE
 
-| Fichier | Présent ? | Action |
-|---------|-----------|--------|
-| `CMakeLists.txt` | ❌ Non | Aucune |
-| `ARCHIVED_cpp_sources/` | ❌ Non | Aucune |
-| `ARCHIVED_crypto/` | ❌ Non | Aucune |
-| Fichiers debug `bt_results_v*.txt` | ❌ Non | Aucune |
-| `run_backtest_v*.py` | ❌ Non | Aucune |
+Vérification des résidus potentiels dans le workspace racine :
 
-**Résultat** : Aucun nettoyage nécessaire. Racine propre.
+| Artefact | Présent ? | Action |
+|----------|-----------|--------|
+| `CMakeLists.txt` | ❌ Non | Rien |
+| `ARCHIVED_cpp_sources/` | ❌ Non | Rien |
+| `ARCHIVED_crypto/` | ❌ Non | Rien |
+| Fichiers `bt_results_v*.txt` racine | ❌ Non | Rien |
+| `run_backtest_v*.py` racine | ❌ Non | Rien |
+| `setup.py` + `pyproject.toml` les deux | ✅ Intentionnel | `setup.py` nécessaire pour la compilation Cython (ADR-001). |
+
+**Conclusion** : workspace propre, aucun résidu à supprimer.
 
 ---
 
 ## BLOC 3 — ARBORESCENCE CIBLE
 
 ```
-AlphaEdge/
+ALPHAEDGE/
 ├── .claude/
-│   ├── context.md          ✅ CRÉÉ
-│   └── rules.md            ✅ CRÉÉ
+│   ├── context.md          ✅ MIS À JOUR (574 tests)
+│   └── rules.md            ✅ MIS À JOUR (574 tests ×2)
 ├── .github/
-│   └── copilot-instructions.md  ✅ EXISTANT (inchangé)
+│   ├── copilot-instructions.md  ✅ MIS À JOUR (574 tests)
+│   └── skills/
+│       ├── audit-workflow/SKILL.md  ✅ MIS À JOUR (574 ×2)
+│       └── run-qa/SKILL.md          ✅ MIS À JOUR (574)
 ├── architecture/
-│   ├── system_design.md    ✅ CRÉÉ
-│   └── decisions.md        ✅ CRÉÉ  (8 ADRs)
+│   ├── system_design.md    ✅ MIS À JOUR (574 tests ×2)
+│   └── decisions.md        ✅ CONFORME (8 ADRs)
 ├── knowledge/
-│   ├── ibkr_constraints.md      ✅ CRÉÉ
-│   └── trading_constraints.md   ✅ CRÉÉ
+│   ├── ibkr_constraints.md      ✅ CONFORME
+│   └── trading_constraints.md   ✅ MIS À JOUR (DEFAULT_PIP_SIZE)
 ├── agents/
-│   ├── quant_researcher.md ✅ CRÉÉ
-│   ├── risk_manager.md     ✅ CRÉÉ
-│   ├── code_auditor.md     ✅ CRÉÉ
-│   └── dev_engineer.md     ✅ CRÉÉ
-├── tasks/                  ← existant
-├── docs/                   ← existant
-├── alphaedge/              ← existant
-└── ...
+│   ├── quant_researcher.md ✅ MIS À JOUR (rôle débranded)
+│   ├── risk_manager.md     ✅ CONFORME
+│   ├── code_auditor.md     ✅ MIS À JOUR (574 + DEFAULT_PIP_SIZE)
+│   └── dev_engineer.md     ✅ MIS À JOUR (574 ×2)
+├── CLAUDE.md               ✅ MIS À JOUR (574 ×3)
+└── tasks/audits/           ← CE FICHIER
 ```
 
 ---
 
-## BLOC 4 — FICHIERS CRÉÉS (contenu réel)
+## BLOC 4 — FICHIERS CRÉÉS OU MIS À JOUR
 
-### `.claude/rules.md`
-Règles de modification · ordre de priorité capital → risque → exécution → signal → backtest · obligations post-modification par type de fichier · startup checklist 5 points · workflow agent.
+### Modifications appliquées
 
-### `.claude/context.md`
-Pipeline complet depuis le code source · table 29 modules avec responsabilités réelles · paramètres clés de `constants.py` · ce qui ne doit pas changer sans benchmark OOS · paires supportées et pip sizes.
+#### `.claude/rules.md` — MISE À JOUR
+- Ligne 16 : `(504 tests, ≥80% coverage)` → `(574 tests, ≥80% coverage)`
+- Ligne 52 : `vert (504 tests)` → `vert (574 tests)`
 
-### `architecture/system_design.md`
-Vue d'ensemble FCR · diagramme ASCII pipeline complet · flux de données config → modules · tableau sessions NYSE/London avec DST · tableau modules Cython → .pyd → stubs · infrastructure de test · QA pipeline complet.
+#### `.claude/context.md` — MISE À JOUR
+- Ligne 108 : `504 tests, couverture ≥ 80%` → `574 tests, couverture ≥ 80%`
 
-### `architecture/decisions.md`
-8 ADRs documentés :
-- ADR-001 : Cython pour modules de détection
-- ADR-002 : Paper trading par défaut
-- ADR-003 : Pipeline all-or-nothing
-- ADR-004 : Séparation engine/ ↔ core/
-- ADR-005 : zoneinfo exclusivement
-- ADR-006 : constants.py source unique
-- ADR-007 : ml_filter archivé en _experimental/
-- ADR-008 : Bandit dans qa-strict uniquement
+#### `agents/dev_engineer.md` — MISE À JOUR
+- Ligne 22 : `"504 passed"` → `"574 passed"`
+- Ligne 60 : `504 tests doivent passer` → `574 tests doivent passer`
 
-### `knowledge/ibkr_constraints.md`
-Ports 4001/4002 · rate limits token-bucket (45 req/s, burst 10) · timeouts (15s connexion, 60s hist, 10s fill) · codes d'erreur IB classifiés (informatifs vs critiques) · types d'ordres disponibles · idempotence · circuit breaker.
+#### `agents/code_auditor.md` — MISE À JOUR
+- Ligne 88 : `504 passed` → `574 passed`
+- Ligne 51 : `PIP_SIZES.get(pair, 0.0001) (pas de fonction helper)` → `PIP_SIZES.get(pair, DEFAULT_PIP_SIZE) (DEFAULT_PIP_SIZE défini dans constants.py)`
 
-### `knowledge/trading_constraints.md`
-6 conditions d'entrée FCR · paramètres risque (2% risk, 3% daily loss, 2 trades, 2 pips spread) · sizing position (micro lots, 0.01–10.0) · sessions UTC avec DST · modèles slippage et spread variables · filtres additionnels (corrélation, régime, news, spread spike) · pip sizes par paire · kill switch.
+#### `agents/quant_researcher.md` — MISE À JOUR
+- Rôle : `stratégie FCR` → `stratégie (modules core/*.pyx)` — aligné avec le rebranding Momentum+Carry
 
-### `agents/quant_researcher.md`
-Checklist anti-biais (look-ahead, survival, overfitting, IS/OOS contamination) · protocole IS/OOS/Monte Carlo · paramètres sensibles (RR, range, ATR) · ressources code.
+#### `architecture/system_design.md` — MISE À JOUR
+- Ligne 83 : `504 tests` → `574 tests`
+- Ligne 100 : `(504 tests, ≥80% coverage)` → `(574 tests, ≥80% coverage)`
 
-### `agents/risk_manager.md`
-Séquence protection capital (5 étapes ordonnées) · paramètres risque · 6 scénarios de risque avec triggers et actions · checklist risque avant modification · ressources code.
+#### `knowledge/trading_constraints.md` — MISE À JOUR
+- Section "Pip Sizes" : `PIP_SIZES dans constants.py` → `PIP_SIZES et DEFAULT_PIP_SIZE dans constants.py`
 
-### `agents/code_auditor.md`
-Checklist sécurité (credentials, IB, web dashboard) · checklist qualité code (types, conventions, Cython) · checklist erreurs silencieuses · checklist avant merge (7 points) · patterns interdits vs corrects avec exemples.
+#### `CLAUDE.md` — MISE À JOUR
+- Ligne 31 : `(504 tests)` → `(574 tests)`
+- Ligne 110 : `(504 tests)` → `(574 tests)`
+- Ligne 170 : `504 tests — 100% pass` → `574 tests — 100% pass`
 
-### `agents/dev_engineer.md`
-Procédure 5 étapes ajout fonctionnalité · pipeline CI (make qa/qa-strict/build/test/bandit) · workflow Cython obligatoire · 8 interdictions absolues · fichiers clés à connaître · convention de nommage des tests.
+#### `.github/copilot-instructions.md` — MISE À JOUR
+- Ligne 59 : `504 tests is the contract` → `574 tests is the contract`
+
+#### `.github/skills/audit-workflow/SKILL.md` — MISE À JOUR
+- Ligne 27 : `(504 tests)` → `(574 tests)`
+- Ligne 65 : `verify 504 tests pass` → `verify 574 tests pass`
+
+#### `.github/skills/run-qa/SKILL.md` — MISE À JOUR
+- Ligne 65 : `504 tests` → `574 tests`
+
+### Aucun fichier créé
+Tous les fichiers AI-driven existaient déjà.
 
 ---
 
 ## BLOC 5 — PLAN DE MIGRATION PRIORISÉ
 
-| Priorité | Fichier | Statut initial | Effort réel | Impact |
-|----------|---------|---------------|-------------|--------|
-| 1 | `.claude/rules.md` | ❌ ABSENT | ~10 min | Réduit à zéro les erreurs d'agent par session |
-| 2 | `.claude/context.md` | ❌ ABSENT | ~15 min | Fournit le pipeline complet sans lecture du code |
-| 3 | `architecture/decisions.md` | ❌ ABSENT | ~20 min | Explique le pourquoi de chaque choix structurel |
-| 4 | `knowledge/ibkr_constraints.md` | ❌ ABSENT | ~10 min | Évite les violations pacing IB en session |
-| 5 | `knowledge/trading_constraints.md` | ❌ ABSENT | ~15 min | Source unique des règles de trading |
-| 6 | `agents/risk_manager.md` | ❌ ABSENT | ~10 min | Checklist capital protection avant chaque PR |
-| 7 | `agents/code_auditor.md` | ❌ ABSENT | ~10 min | Detects regressions that slip past make qa |
-| 8 | `agents/dev_engineer.md` | ❌ ABSENT | ~10 min | Onboarding procédure complète |
-| 9 | `agents/quant_researcher.md` | ❌ ABSENT | ~10 min | Checklist anti-biais statistiques |
-| 10 | `architecture/system_design.md` | ❌ ABSENT | ~10 min | Vue d'ensemble pour nouveaux contributeurs |
-| — | `.github/copilot-instructions.md` | ✅ EXISTE | — | Inchangé — déjà conforme |
+| Priorité | Fichier | Statut avant | Effort | % Auto | Impact session |
+|----------|---------|-------------|--------|--------|----------------|
+| 1 | `.claude/rules.md` | ⚠️ (504×2) | 2 min | 100% | Règles de modification inexactes |
+| 2 | `.claude/context.md` | ⚠️ (504×1) | 1 min | 100% | Baseline de test incorrecte |
+| 3 | `CLAUDE.md` | ⚠️ (504×3) | 3 min | 100% | Point d'entrée agent incorrect |
+| 4 | `.github/copilot-instructions.md` | ⚠️ (504×1) | 1 min | 100% | Guide copilot incorrect |
+| 5 | `agents/code_auditor.md` | ⚠️ (504 + pip) | 3 min | 100% | Convention pip obsolète |
+| 6 | `agents/dev_engineer.md` | ⚠️ (504×2) | 2 min | 100% | Commande CI incorrecte |
+| 7 | `architecture/system_design.md` | ⚠️ (504×2) | 2 min | 100% | Doc infra incorrecte |
+| 8 | `agents/quant_researcher.md` | ⚠️ (FCR rôle) | 2 min | 100% | Rôle mal aligné post-rebranding |
+| 9 | `knowledge/trading_constraints.md` | ⚠️ (pip) | 1 min | 100% | Fallback pip non nommé |
+| 10 | `.github/skills/*.md` | ⚠️ (504×3) | 2 min | 100% | Skills CI baseline incorrecte |
+
+**Toutes les corrections ont été appliquées automatiquement dans cette session.**
 
 ---
 
 ## SYNTHÈSE
 
-| Métrique | Valeur |
-|----------|--------|
-| Fichiers existants | 1 (`.github/copilot-instructions.md`) |
-| Fichiers partiels | 0 |
-| Fichiers absents → créés | 10 |
-| Fichiers inchangés | 1 |
-| Nettoyage requis | Aucun |
+| Priorité | Fichier | Statut avant | Statut après | Effort | % Auto | Impact |
+|----------|---------|-------------|-------------|--------|--------|--------|
+| 1 | `.claude/rules.md` | ⚠️ | ✅ | 2 min | 100% | Règles agent exactes |
+| 2 | `.claude/context.md` | ⚠️ | ✅ | 1 min | 100% | Baseline correcte |
+| 3 | `CLAUDE.md` | ⚠️ | ✅ | 3 min | 100% | Point d'entrée exact |
+| 4 | `.github/copilot-instructions.md` | ⚠️ | ✅ | 1 min | 100% | Guide copilot exact |
+| 5 | `agents/code_auditor.md` | ⚠️ | ✅ | 3 min | 100% | Convention pip à jour |
+| 6 | `agents/dev_engineer.md` | ⚠️ | ✅ | 2 min | 100% | CI command exact |
+| 7 | `architecture/system_design.md` | ⚠️ | ✅ | 2 min | 100% | Doc infra exacte |
+| 8 | `agents/quant_researcher.md` | ⚠️ | ✅ | 2 min | 100% | Rôle aligné rebranding |
+| 9 | `knowledge/trading_constraints.md` | ⚠️ | ✅ | 1 min | 100% | `DEFAULT_PIP_SIZE` référencé |
+| 10 | `.github/skills/` | ⚠️ | ✅ | 2 min | 100% | Skills CI baseline exacte |
+| — | `architecture/decisions.md` | ✅ | ✅ | — | — | Conforme (8 ADRs) |
+| — | `knowledge/ibkr_constraints.md` | ✅ | ✅ | — | — | Conforme |
+| — | `agents/risk_manager.md` | ✅ | ✅ | — | — | Conforme |
 
-**QA après audit** : `make qa` → 504 tests ✅ · 0 ruff ✅ · 0 pyright ✅
+**Cause racine unique** : La baseline de tests a progressé de 504 → 574 durant la session d'exécution des corrections C-01/C-10 (audit structural 2026-03-25), et `DEFAULT_PIP_SIZE` a été ajouté à `constants.py` (C-05). Les fichiers AI-Driven n'avaient pas été mis à jour en regard.
+
+**Aucun fichier n'était absent.** Aucun fichier n'a dû être créé from scratch.
+
+✅ File Engineering terminé.
+Créés : 1 (ce fichier) · Complétés : 10 · Mis à jour : 0 (création directe)
+Inchangés : 3 (architecture/decisions.md, knowledge/ibkr_constraints.md, agents/risk_manager.md)

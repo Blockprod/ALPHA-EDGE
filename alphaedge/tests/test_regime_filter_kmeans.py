@@ -175,15 +175,19 @@ class TestDailyRegimeFilterEdgeCases:
         result = flt.predict(date.today(), [])
         assert result == "unknown"
 
-    def test_unknown_on_single_bar(self) -> None:
-        """predict() with a single bar (insufficient) returns 'unknown'."""
+    def test_valid_regime_on_single_daily_bar(self) -> None:
+        """predict() with a single Daily bar must return a valid regime label.
+
+        C-10: _extract_daily_features() now accepts len >= 1 (single Daily bar
+        represents one full trading day — sufficient for feature extraction).
+        """
         flt = DailyRegimeFilter()
         history = _make_history(n_days=30)
         flt.fit(history)
 
         single_bar = [_make_m5_bar(datetime.now(UTC))]
         result = flt.predict(date.today(), single_bar)
-        assert result == "unknown"
+        assert result in {"high_vol", "low_vol"}
 
     def test_fit_empty_history_does_not_raise(self) -> None:
         """fit() on empty list must not raise."""

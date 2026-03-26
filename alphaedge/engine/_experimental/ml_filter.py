@@ -10,10 +10,13 @@
 # ============================================================
 """ALPHAEDGE — T4.3: ML signal filter (logistic regression).
 
-Trains a logistic regression model on trade features (ATR ratio,
-FCR range, volume ratio, spread, day of week) to predict win
-probability.  Uses walk-forward training to prevent look-ahead bias.
+Trains a logistic regression model on trade features (ADX, EMA delta,
+carry differential, ATR ratio, day of week) to predict win probability.
+Uses walk-forward training to prevent look-ahead bias.
 Only passes signals where P(win) exceeds a calibrated threshold.
+
+Features are calibrated for the Momentum+Carry strategy.
+FCR-era features (fcr_range, volume_ratio) have been removed.
 
 EXPERIMENTAL — see alphaedge/engine/_experimental/__init__.py.
 """
@@ -32,12 +35,13 @@ from alphaedge.utils.logger import get_logger
 logger = get_logger()
 
 # Feature names (order matters — must match extract_features)
+# STATUS: features updated for Momentum+Carry — NOT connected to live pipeline
 FEATURE_NAMES: list[str] = [
-    "atr_ratio",
-    "fcr_range",
-    "volume_ratio",
-    "spread",
-    "day_of_week",
+    "adx",  # ADX value at signal time
+    "ema_delta_pct",  # (fast_ema - slow_ema) / slow_ema
+    "carry_diff",  # carry differential (absolute value)
+    "atr_ratio",  # ATR daily / ATR 20-day avg
+    "day_of_week",  # 0=Mon … 4=Fri
 ]
 
 DEFAULT_WIN_THRESHOLD: float = 0.55
@@ -48,21 +52,21 @@ DEFAULT_WIN_THRESHOLD: float = 0.55
 # ------------------------------------------------------------------
 @dataclass
 class SignalFeatures:
-    """Feature vector for a single trade signal."""
+    """Feature vector for a single trade signal (Momentum+Carry)."""
 
-    atr_ratio: float = 0.0
-    fcr_range: float = 0.0
-    volume_ratio: float = 0.0
-    spread: float = 0.0
+    adx: float = 0.0  # ADX value at signal time
+    ema_delta_pct: float = 0.0  # (fast_ema - slow_ema) / slow_ema
+    carry_diff: float = 0.0  # carry differential (absolute value)
+    atr_ratio: float = 0.0  # ATR daily / ATR 20-day avg
     day_of_week: int = 0  # 0=Monday … 4=Friday
 
     def to_array(self) -> list[float]:
         """Convert to flat feature list."""
         return [
+            self.adx,
+            self.ema_delta_pct,
+            self.carry_diff,
             self.atr_ratio,
-            self.fcr_range,
-            self.volume_ratio,
-            self.spread,
             float(self.day_of_week),
         ]
 
@@ -99,8 +103,8 @@ def extract_features(signal: dict[str, Any]) -> SignalFeatures:
     Parameters
     ----------
     signal : dict
-        Signal data with keys: atr_ratio, fcr_range, volume_ratio,
-        spread, entry_time (datetime with weekday info).
+        Signal data with keys: adx, ema_delta_pct, carry_diff,
+        atr_ratio, entry_time (datetime with weekday info).
 
     Returns
     -------
@@ -113,10 +117,10 @@ def extract_features(signal: dict[str, Any]) -> SignalFeatures:
         dow = entry_time.weekday()
 
     return SignalFeatures(
+        adx=float(signal.get("adx", 0.0)),
+        ema_delta_pct=float(signal.get("ema_delta_pct", 0.0)),
+        carry_diff=float(signal.get("carry_diff", 0.0)),
         atr_ratio=float(signal.get("atr_ratio", 0.0)),
-        fcr_range=float(signal.get("fcr_range", 0.0)),
-        volume_ratio=float(signal.get("volume_ratio", 0.0)),
-        spread=float(signal.get("spread", 0.0)),
         day_of_week=dow,
     )
 

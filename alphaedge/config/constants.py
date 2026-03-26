@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Swing Trading Bot
 # FILE         : alphaedge/config/constants.py
 # DESCRIPTION  : Project-wide constants and default values
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: global constants and defaults."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: global constants and defaults."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from __future__ import annotations
 # Project identity
 # ------------------------------------------------------------------
 PROJECT_NAME: str = "ALPHAEDGE"
-PROJECT_TITLE: str = "⚡ ALPHAEDGE — FCR Forex Trading Bot"
+PROJECT_TITLE: str = "⚡ ALPHAEDGE — Momentum+Carry Forex Trading Bot"
 PROJECT_VERSION: str = "1.0.0"
 
 # ------------------------------------------------------------------
@@ -48,6 +48,8 @@ LONDON_TZ: str = "UTC"
 TF_M15: str = "15 mins"
 TF_M5: str = "5 mins"
 TF_M1: str = "1 min"
+TF_H4: str = "4 hours"
+TF_D1: str = "1 day"
 
 # ------------------------------------------------------------------
 # Default trading parameters
@@ -57,10 +59,12 @@ DEFAULT_RISK_PCT: float = 2.0
 DEFAULT_MAX_DAILY_LOSS_PCT: float = 3.0
 DEFAULT_MAX_TRADES_PER_SESSION: int = 2
 DEFAULT_MAX_SPREAD_PIPS: float = 2.0
+EUR_USD_RATE: float = 1.08  # Fallback EUR/USD rate for pnl_eur conversion (journal)
 
 # ------------------------------------------------------------------
 # Pip sizes per pair type
 # ------------------------------------------------------------------
+DEFAULT_PIP_SIZE: float = 0.0001  # Fallback pip size for non-JPY pairs
 PIP_SIZES: dict[str, float] = {
     "EURUSD": 0.0001,
     "GBPUSD": 0.0001,
@@ -84,11 +88,19 @@ IB_PAPER_PORT: int = 4002
 IB_CLIENT_ID: int = 1
 
 # ------------------------------------------------------------------
-# ATR / Gap detection defaults
+# ATR / volatility defaults
 # ------------------------------------------------------------------
 DEFAULT_ATR_PERIOD: int = 14
-DEFAULT_MIN_ATR_RATIO: float = 2.0
-DEFAULT_GAP_TOLERANCE_PIPS: float = 5.0
+
+# ------------------------------------------------------------------
+# Momentum detection defaults (EMA crossover + ADX gate)
+# ------------------------------------------------------------------
+DEFAULT_MOMENTUM_FAST_PERIOD: int = 12  # EMA fast period (Moskowitz 2012)
+DEFAULT_MOMENTUM_SLOW_PERIOD: int = 26  # EMA slow period
+DEFAULT_ADX_PERIOD: int = 14  # ADX smoothing period
+DEFAULT_ADX_THRESHOLD: float = 25.0  # Minimum ADX to confirm trend
+DEFAULT_CARRY_MIN_DIFFERENTIAL: float = 0.5  # Min carry differential (%)
+DEFAULT_MOMENTUM_LOOKBACK_DAYS: int = 252  # Historical window (1 year)
 
 # ------------------------------------------------------------------
 # Volatility regime filter
@@ -97,23 +109,15 @@ REGIME_ATR_LOOKBACK_DAYS: int = 20
 REGIME_ATR_LOW_MULTIPLIER: float = 0.5
 REGIME_ATR_HIGH_MULTIPLIER: float = 2.0
 
+# Regime gate — blocks trades when K-Means predicts the configured regime
+DEFAULT_REGIME_GATE_ENABLED: bool = False  # off until 30 sessions observed
+DEFAULT_REGIME_BLOCK_ON: str = "high_vol"  # regime label that triggers the block
+
 # ------------------------------------------------------------------
 # Volume confirmation defaults
 # ------------------------------------------------------------------
 DEFAULT_VOLUME_PERIOD: int = 20
 DEFAULT_MIN_VOLUME_RATIO: float = 1.0
-
-# ------------------------------------------------------------------
-# FCR detection defaults
-# ------------------------------------------------------------------
-DEFAULT_MIN_RANGE_PIPS: float = 8.0
-DEFAULT_FCR_LOOKBACK: int = 6
-
-# ------------------------------------------------------------------
-# Engulfing quality filter defaults
-# ------------------------------------------------------------------
-DEFAULT_MIN_BODY_RATIO: float = 0.3
-DEFAULT_MAX_WICK_RATIO: float = 1.5
 
 # ------------------------------------------------------------------
 # News filter defaults
@@ -193,6 +197,8 @@ IB_MAX_CONCURRENT_HIST_REQUESTS: int = 3  # IB cancels >~3 simultaneous hist req
 
 # Circuit breaker: open after this many consecutive connection failures
 IB_CIRCUIT_BREAKER_MAX_FAILURES: int = 5
+# Auto-reset cooldown: seconds to wait before retrying after circuit breaker opens
+IB_CIRCUIT_BREAKER_RESET_SECONDS: int = 300
 
 # Kept for backward-compat (no longer driving the throttler)
 IB_MAX_REQUESTS_PER_10S: int = 50

@@ -24,7 +24,7 @@ C — Execution    → corrections applied, make qa green
 ```
 
 > **Never launch B without A complete.**
-> **Never mark C done without `make qa` green (504 tests).**
+> **Never mark C done without `make qa` green (574 tests).**
 
 ## Steps
 
@@ -34,6 +34,12 @@ C — Execution    → corrections applied, make qa green
 #file:tasks/audits/methode/<type>_prompt.md   ← pour audits méthode
 Lance cet audit sur le workspace.
 ```
+
+**Agent suggéré selon le type d'audit :**
+- Code / sécurité → `#file:agents/code_auditor.md`
+- Stratégique / statistique → `#file:agents/quant_researcher.md`
+- Implémentation / correction → `#file:agents/dev_engineer.md`
+- Risque capital → `#file:agents/risk_manager.md`
 
 ### B — Generate Action Plan
 ```
@@ -62,7 +68,7 @@ Full list of audits + sections: `tasks/WORKFLOW.md`
 |-------|-------|-----|
 | Audit result vague, no file:line | Agent didn't cite sources | Re-run audit in Agent mode with `#codebase` |
 | Action plan launched before audit done | Skipped step A | Always check `tasks/audits/resultats/` first |
-| Correction marked ✅ without `make qa` | Incomplete validation | Run `make qa` and verify 504 tests pass |
+| Correction marked ✅ without `make qa` | Incomplete validation | Run `make qa` and verify 574 tests pass |
 | lessons.md not updated after correction | Skipped lesson capture | Add lesson before marking task complete |
 | `.pyx` modified without `make build` | Silently broken runtime | Always `make build` then `make qa` after .pyx change |
 

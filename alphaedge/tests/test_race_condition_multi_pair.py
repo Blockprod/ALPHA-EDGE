@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
-from alphaedge.engine.strategy import CoreModules, FCRStrategy, StrategyState
+from alphaedge.engine.strategy import CoreModules, StrategyState, SwingStrategy
 
 
 # ------------------------------------------------------------------
@@ -34,8 +34,8 @@ def _make_config(pairs: list[str] | None = None) -> AppConfig:
     )
 
 
-def _build_strategy(config: AppConfig | None = None) -> FCRStrategy:
-    """Create FCRStrategy with mocked broker, feeds, and modules."""
+def _build_strategy(config: AppConfig | None = None) -> SwingStrategy:
+    """Create SwingStrategy with mocked broker, feeds, and modules."""
     cfg = config or _make_config()
     with (
         patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,
@@ -61,13 +61,11 @@ def _build_strategy(config: AppConfig | None = None) -> FCRStrategy:
         risk_mock.check_pair_limit.side_effect = _check_pair_limit
 
         mock_modules.return_value = CoreModules(
-            fcr_detector=MagicMock(),
-            gap_detector=MagicMock(),
-            engulfing_detector=MagicMock(),
+            momentum_detector=MagicMock(),
             order_manager=MagicMock(),
             risk_manager=risk_mock,
         )
-        strategy = FCRStrategy(cfg)
+        strategy = SwingStrategy(cfg)
     return strategy
 
 
@@ -100,7 +98,7 @@ class TestAtomicCheckAndExecute:
 
         signal = {
             "detected": True,
-            "signal": 1,
+            "direction": 1,
             "entry_price": 1.2500,
             "stop_loss": 1.2450,
             "take_profit": 1.2600,
@@ -123,7 +121,7 @@ class TestAtomicCheckAndExecute:
 
         signal = {
             "detected": True,
-            "signal": 1,
+            "direction": 1,
             "entry_price": 1.2500,
             "stop_loss": 1.2450,
             "take_profit": 1.2600,
@@ -173,7 +171,7 @@ class TestConcurrentSignalsOnlyOneExecutes:
 
         signal = {
             "detected": True,
-            "signal": 1,
+            "direction": 1,
             "entry_price": 1.2500,
             "stop_loss": 1.2450,
             "take_profit": 1.2600,

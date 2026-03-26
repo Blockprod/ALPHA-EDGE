@@ -78,7 +78,30 @@ class TestPaperLiveConfig:
         with pytest.raises(ValueError, match="IB config mismatch"):
             load_config(config_path=_config_file, env_path=_empty_env_file)
 
-    def test_cli_mode_overrides_loaded_config(self) -> None:
+    def test_cli_mode_live_blocked_when_env_paper_true(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """ALPHAEDGE_PAPER=true must prevent --mode live from applying."""
+        monkeypatch.setenv("ALPHAEDGE_PAPER", "true")
+        config = AppConfig(
+            ib=IBConfig(is_paper=True, port=IB_PAPER_PORT),
+            trading=TradingConfig(),
+            mode="paper",
+        )
+
+        with pytest.raises(SystemExit):
+            _apply_cli_mode(config, "live")
+
+        # Config must remain unchanged
+        assert config.ib.is_paper is True
+        assert config.ib.port == IB_PAPER_PORT
+        assert config.mode == "paper"
+
+    def test_cli_mode_live_allowed_when_env_paper_false(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """ALPHAEDGE_PAPER=false allows CLI --mode live to apply."""
+        monkeypatch.setenv("ALPHAEDGE_PAPER", "false")
         config = AppConfig(
             ib=IBConfig(is_paper=True, port=IB_PAPER_PORT),
             trading=TradingConfig(),

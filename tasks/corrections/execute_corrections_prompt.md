@@ -20,7 +20,7 @@ Scanne le workspace et identifie tous les fichiers
 contenant un plan d'action :
 
 Cherche dans cet ordre :
-  1. tasks/plans/PLAN_ACTION_*.md
+  1. tasks/corrections/plans/PLAN_ACTION_*.md
   2. tasks/*.md avec cases à cocher ⏳
   3. *.md contenant P0, 🔴, corrections, issues
 

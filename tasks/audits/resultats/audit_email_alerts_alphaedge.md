@@ -1,6 +1,15 @@
+---
+modele: sonnet-4.6
+mode: agent
+contexte: codebase
+produit: audit_email_alerts_alphaedge.md
+derniere_revision: 2026-03-25
+creation: 2026-03-25 à 18:00
+---
+
 # AUDIT EMAIL & ALERTES — ALPHAEDGE
-> **Date** : 2026-03-22 à 16:20
-> **Prompt source** : `tasks/prompts/audit_email_alerts_prompt.md`
+> **Date** : 2026-03-25 à 18:00
+> **Prompt source** : `tasks/audits/code/audit_email_alerts_prompt.md`
 > **Scope** : Système d'envoi (Telegram/Discord) · couverture événements · sécurité contenu · protection tempêtes · intégration pipeline IB Gateway
 
 ---
@@ -13,252 +22,177 @@
 
 | Canal | Implémentation | Statut |
 |-------|---------------|--------|
-| Telegram | `send_telegram()` via Bot API + `urlopen` (sync) | ✅ Présent |
-| Discord | `send_discord()` via webhook + `urlopen` (sync) | ✅ Présent |
-| Email / SMTP | Absent | ❌ Non implémenté |
+| Telegram | `send_telegram()` via Bot API HTTPS | ✅ Présent |
+| Discord | `send_discord()` via webhook HTTPS | ✅ Présent |
+| Email / SMTP | Absent | N/A — non requis |
 
 ### 1.2 Retry avec backoff
 
-**Résultat** : ❌ ABSENT
+**Résultat** : ✅ CONFORME
 
-`send_telegram()` (ligne 193) et `send_discord()` (ligne 231) ne font qu'une seule tentative. En cas d'échec réseau temporaire (timeout réseau, API Telegram surchargée), la notification est perdue sans aucun retry.
-
-```python
-# alerting.py:193 — aucun retry
-try:
-    with urlopen(req, timeout=10) as resp:
-        return bool(resp.status == 200)
-except (URLError, OSError) as exc:
-    logger.error(f"Telegram alert failed: {exc}")
-    return False
-```
+`send_telegram()` et `send_discord()` tentent 3 fois avec backoff exponentiel (`time.sleep(2 ** attempt)`). Après 3 échecs, `logger.error()` est appelé et la fonction retourne `False` — aucune exception propagée.
 
 ### 1.3 Cooldown anti-tempête
 
-**Résultat** : ❌ ABSENT
+**Résultat** : ✅ CONFORME
 
-`AlertManager` (lignes 248–330) ne contient aucun mécanisme de déduplication ni de cooldown par `AlertEvent`. En cas de retry loop IB qui déclenche des dizaines de déconnexions par minute, `alert_ib_disconnected()` pourrait être envoyé en boucle.
+`AlertManager` contient `_COOLDOWN_SECONDS` avec des valeurs différenciées :
+- `IB_DISCONNECTED` : 120 s
+- `IB_RECONNECTED` : 60 s
+- `KILL_SWITCH` : 300 s
+- Défaut : 30 s
 
-Aucun champ `_last_sent: dict[AlertEvent, datetime]`, aucun `_cooldown_seconds`, aucun `_dedup_cache`.
+En cas de retry loop IB, `alert_ib_disconnected()` ne sera envoyé qu'une fois toutes les 2 minutes maximum.
 
 ### 1.4 Transport SMTP / TLS
 
-**Résultat** : N/A — Email non implémenté.
-Le système n'utilise pas SMTP. Telegram et Discord sont les seuls canaux. Pas de risque SSL direct.
+**Résultat** : N/A — SMTP non utilisé. HTTPS exclusivement (Telegram Bot API + Discord webhook).
 
-### 1.5 URLs webhooks depuis config / .env
+### 1.5 URLs webhooks depuis config / `.env`
 
 **Résultat** : ✅ CONFORME
 
-`TelegramConfig.bot_token` et `DiscordConfig.webhook_url` sont des champs vides par défaut, remplis depuis `config.yaml` via `build_alert_config()` (ligne 450). Le fichier `config.yaml` (lignes 141–147) confirme : `bot_token: ""`, `webhook_url: ""` — jamais hardcodés.
+`build_alert_config()` lit exclusivement depuis le dict de configuration (`config.yaml`) et `os.environ` pour `ALPHAEDGE_PAPER`. Aucun token, aucune URL, aucun webhook hardcodé dans le code source.
 
-Aucune URL ni token hardcodé trouvé dans le code source.
+`config.yaml` (ligne 135) confirme : `bot_token: ""`, `webhook_url: ""` — vides par défaut, jamais peuplés sans intervention explicite.
 
 ### 1.6 Échecs d'envoi — non-blocking
 
 **Résultat** : ✅ CONFORME
 
-`send_telegram()` et `send_discord()` capturent `(URLError, OSError)` et retournent `False` sans propager l'exception. `AlertManager.send()` logue un warning mais ne raise pas. Le bot continue de fonctionner même si toutes les notifications échouent.
+`send_telegram()` et `send_discord()` catchent `(URLError, OSError)` et retournent `False`. `AlertManager.send()` logue un warning mais ne raise pas. `send_async()` isole l'appel dans un thread pool via `loop.run_in_executor()`. Une notification échouée n'impacte jamais le bot.
 
-### 1.7 Mode async
+### 1.7 Mode paper / live
 
-**Résultat** : ✅ PRÉSENT
+**Résultat** : ✅ CONFORME
 
-`AlertManager.send_async()` (ligne 318) utilise `loop.run_in_executor(None, self.send, alert)` pour ne pas bloquer la boucle asyncio principale.
+`AlertManager` préfixe tous les titres de `[PAPER]` lorsque `paper_mode=True` (lu depuis `ALPHAEDGE_PAPER`). Aucune confusion possible entre environnement de test et Live sur mobile.
+
+### 1.8 Mode async
+
+**Résultat** : ✅ CONFORME
+
+`AlertManager.send_async()` utilise `loop.run_in_executor(None, self.send, alert)` pour ne jamais bloquer la boucle asyncio principale du bot.
 
 ---
 
 ## BLOC 2 — COUVERTURE DES ÉVÉNEMENTS
 
-> ⚠️ **Découverte critique** : `alerting.py` est importé UNIQUEMENT par `tests/test_alerting.py`.
-> **Aucun module engine (`strategy.py`, `session_lifecycle.py`, `broker.py`) n'importe ni n'instancie `AlertManager`.**
-> Tout ce qui suit est donc la couverture du MODULE (ce qu'il PEUT faire), pas ce qu'il FAIT en production.
+> **Contexte actuel** : `AlertManager` est instancié dans `AlphaEdgeSession` et exposé via `self._s._alert_manager`. `session_lifecycle.py` importe `Alert`, `AlertEvent`, `AlertLevel`, `alert_ib_disconnected`, `alert_kill_switch`. Les 7 autres builders de `alerting.py` ne sont **jamais importés ni appelés**.
 
 ### 2.1 Événements d'erreurs système
 
-| Événement | `AlertEvent` défini | Appelé en production | Verdict |
-|-----------|--------------------|--------------------|---------|
-| Exception critique non gérée dans le pipeline | ❌ Non défini | ❌ | NON COUVERT |
-| Échec sauvegarde DailyState / JSON | ❌ Non défini | ❌ | NON COUVERT |
-| Échec connexion IB Gateway (1100-1102) | `IB_DISCONNECTED` ✅ | ❌ non appelé | NON COUVERT |
-| Données de marché manquantes M1/M5 | ❌ Non défini | ❌ | NON COUVERT |
-| Erreur réseau prolongée / déconnexion IB | `IB_DISCONNECTED` ✅ | ❌ non appelé | NON COUVERT |
-| Circuit breaker IB (RequestThrottler) | ❌ Non défini | ❌ | NON COUVERT |
-| Timeout fill (> 10 s) | ❌ Non défini | ❌ | NON COUVERT |
+| Événement | `AlertEvent` défini | Appelé en production | Site d'appel | Verdict |
+|-----------|--------------------|--------------------|-------------|---------|
+| IB Gateway déconnecté | ✅ `IB_DISCONNECTED` | ✅ Oui | `session_lifecycle.py:378` | ✅ |
+| IB Gateway reconnecté | ✅ `IB_RECONNECTED` | ❌ **Non** | — | 🟠 |
+| IB Reconnexion échouée | ✅ `IB_DISCONNECTED` (CRITICAL) | ✅ Oui (ad-hoc) | `session_lifecycle.py:409` | ⚠️ |
+| Kill-switch / daily loss | ✅ `KILL_SWITCH` | ✅ Oui | `session_lifecycle.py:711` | ✅ |
 
-**Fichiers concernés** :
-- `session_lifecycle.py:234` — `logger.critical("ALPHAEDGE: IB Gateway DISCONNECTED")` → loguru only, aucune alerte
-- `session_lifecycle.py:133` — `logger.error("ALPHAEDGE: Parent order not filled within 10s")` → loguru only
-- `broker.py:234` — `logger.critical(f"ALPHAEDGE IB CONNECTION: code={errorCode}")` → loguru only
+> **Note ligne 409** : La reconnexion échouée utilise un `Alert` ad-hoc avec `AlertEvent.IB_DISCONNECTED` plutôt que `AlertEvent.IB_RECONNECTED`. Sémantiquement correct (c'est une déconnexion fatale), mais utiliser un event dédié `IB_RECONNECTION_FAILED` manque à la liste — mineur.
 
-### 2.2 Événements de trading
+### 2.2 Événements trade
 
-| Événement | `AlertEvent` défini | Appelé en production | Verdict |
-|-----------|--------------------|--------------------|---------|
-| Bracket order soumis (prix, SL, TP, lot_size) | `TRADE_EXECUTED` ✅ | ❌ non appelé | NON COUVERT |
-| Fill confirmé (prix réel, slippage, PnL) | `TRADE_EXECUTED` ✅ (partiel) | ❌ non appelé | NON COUVERT |
-| Ordre bloqué (spread, daily limit, is_valid=False) | ❌ Non défini | ❌ | NON COUVERT |
-| Ordre échoué (rejet IB, erreur 321/200) | ❌ Non défini | ❌ | NON COUVERT |
-| Stop-loss déclenché | `TRADE_CLOSED` ✅ | ❌ non appelé | NON COUVERT |
-| Take-profit atteint | `TRADE_CLOSED` ✅ | ❌ non appelé | NON COUVERT |
-| Position ouverte sans confirmation fill | ❌ Non défini | ❌ | NON COUVERT |
+| Événement | `AlertEvent` défini | Builder défini | Appelé en production | Verdict |
+|-----------|--------------------|--------------|--------------------|---------|
+| Trade exécuté (fill confirmé) | ✅ `TRADE_EXECUTED` | ✅ `alert_trade_executed()` | ❌ **Non** (`_record_fill()` log seulement) | 🔴 |
+| Fill timeout (10 s) | ✅ `TRADE_EXECUTED` | N/A (ad-hoc) | ✅ `session_lifecycle.py:153` | ⚠️ |
+| Trade clôturé (SL/TP fill) | ✅ `TRADE_CLOSED` | ✅ `alert_trade_closed()` | ❌ **Non** (`_on_trade_closed()` log seulement) | 🔴 |
+| Signal détecté | ✅ `SIGNAL_DETECTED` | ✅ `alert_signal_detected()` | ❌ **Non** | 🟡 |
 
-**Fichier concerné** :
-- `session_lifecycle.py:222` — `logger.info("ALPHAEDGE: Position closed for {pair}")` → loguru only
-- `session_lifecycle.py:125` — `logger.error("ALPHAEDGE: Bracket order returned empty")` → loguru only
+> **Note ligne 153** : Le fill timeout utilise `AlertEvent.TRADE_EXECUTED` avec `AlertLevel.WARNING`. Sémantique incorrecte — TRADE_EXECUTED implique un trade confirmé, pas un échec de fill. L'opérateur recevant cette alerte peut croire qu'un trade est ouvert alors que la position a été annulée.
 
-### 2.3 Événements de protection du capital
+### 2.3 Événements session
 
-| Événement | `AlertEvent` défini | Appelé en production | Verdict |
-|-----------|--------------------|--------------------|---------|
-| Daily loss limit atteint (halt_trading=True) | `KILL_SWITCH` ✅ | ❌ non appelé | NON COUVERT |
-| Max trades per session atteint | ❌ Non défini | ❌ | NON COUVERT |
-| Spread trop élevé | ❌ Non défini | ❌ | NON COUVERT |
-| calculate_position_size → is_valid=False | ❌ Non défini | ❌ | NON COUVERT |
-| ALPHAEDGE_PAPER=false détecté | ❌ Non défini | ❌ | NON COUVERT |
-
-**Fichier concerné** :
-- `session_lifecycle.py:512` — `_check_daily_loss_shutdown()` → `logger.warning` + shutdown, aucune alerte
+| Événement | `AlertEvent` défini | Builder défini | Appelé en production | Verdict |
+|-----------|--------------------|--------------|--------------------|---------|
+| Fin de session — position ouverte | ✅ `SESSION_END_OPEN` | ✅ `alert_session_end_open()` | ❌ **Non** (`_handle_session_end()` log seulement) | 🟠 |
+| Fin de session — clean | ✅ `SESSION_END_CLEAN` | ✅ `alert_session_end_clean()` | ❌ **Non** | 🟠 |
+| Résumé journalier | ✅ `DAILY_SUMMARY` | ✅ `alert_daily_summary()` | ❌ **Non** | 🟡 |
 
 ---
 
 ## BLOC 3 — QUALITÉ DU CONTENU
 
-### 3.1 Richesse des informations
+### 3.1 Informations dans les messages
 
-**Résultat** : ⚠️ PARTIEL
+| Builder | Champs inclus | Verdict |
+|---------|--------------|---------|
+| `alert_trade_executed()` | pair, direction, entry_price, lot_size, sl_pips, spread_pips | ✅ Complet |
+| `alert_trade_closed()` | pair, direction, exit_price, pnl_pips, pnl_usd, outcome, duration | ✅ Complet |
+| `alert_kill_switch()` | reason, daily_pnl_pct, traceback (500 chars tronqués) | ✅ Complet |
+| `alert_ib_disconnected()` | timestamp, message fixe | ✅ Suffisant |
+| `alert_session_end_open()` | pair, open_count, action | ✅ Complet |
+| `alert_session_end_clean()` | trades_today, pairs | ✅ Complet |
+| `alert_daily_summary()` | trades_today, wins, losses, total_pnl_usd | ✅ Complet |
 
-`alert_trade_executed()` (ligne 336) inclut `entry_price`, `stop_loss`, `take_profit` — mais **pas** `lot_size`, `direction` dans le message (seulement dans le titre), ni horodatage explicite (ajouté par `__post_init__` — ✅).
-
-`alert_kill_switch()` (ligne 381) inclut `reason` et `daily_pnl_pct` — bon niveau de détail.
-`alert_ib_disconnected()` (ligne 395) ne contient que le message générique — pas d'erreur code, pas de timestamp dernier heartbeat.
-
-### 3.2 Traceback dans les alertes d'erreur
-
-**Résultat** : ❌ ABSENT
-
-Aucun builder d'alerte n'accepte ou ne transmet un `traceback` ou `exc_info`. Les alertes d'erreur (IB_DISCONNECTED, KILL_SWITCH) contiennent des messages génériques sans détail technique.
-
-### 3.3 Credentials IB dans le contenu
+### 3.2 Sécurité du contenu
 
 **Résultat** : ✅ CONFORME
 
-Aucun `account_id`, `bot_token`, `webhook_url`, ni aucun secret n'est inclus dans le corps des messages construits par les fonctions `alert_*()`. Le `bot_token` est uniquement dans l'URL de requête, jamais dans le payload.
+- Aucun token, credential, ou valeur de compte IB dans les messages d'alerte.
+- PnL en USD et en pips seulement — pas de solde de compte absolu.
+- `alert_kill_switch()` tronque le traceback à 500 caractères pour éviter la fuite de chemins de fichiers.
 
-### 3.4 Distinction critique vs informatif
-
-**Résultat** : ✅ CONFORME
-
-`AlertLevel` (ligne 30) définit `INFO / WARNING / CRITICAL` avec emoji distinct (`ℹ️ / ⚠️ / 🚨`). Les titres incluent le level dans le format Discord (couleur embed). La distinction est lisible immédiatement.
-
-### 3.5 Horodatages UTC
+### 3.3 Format des alertes
 
 **Résultat** : ✅ CONFORME
 
-`Alert.__post_init__()` (ligne 63) génère `datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")` — UTC strict, sans offset local.
+- Horodatages ISO 8601 UTC inclus dans chaque `Alert`.
+- Formatage Telegram (texte plain) et Discord (embed JSON) séparés via `format_telegram()` / `format_discord()`.
+- Tous les floats arrondis à 1-2 décimales dans les builders.
 
 ---
 
-## BLOC 4 — CAS MANQUANTS ET RISQUES
+## BLOC 4 — CAS MANQUANTS / EDGE CASES
 
-### 4.1 Erreurs swallowées silencieusement
+### 4.1 Silence sur événements opérationnels non-critiques
 
-**Résultat** : ⚠️ RISQUE IDENTIFIÉ
+| Événement | Localisation | Comportement actuel |
+|-----------|-------------|---------------------|
+| Max trades/session atteint | `session_lifecycle.py:530, 629` | `return` silencieux, log DEBUG absent |
+| Spread trop élevé | `session_lifecycle.py:655` | Log `INFO` seulement |
+| Spread spike (position ouverte) | `session_lifecycle.py:669-689` | Log `WARNING` seulement |
 
-`session_lifecycle.py:512` — `_check_daily_loss_shutdown()` :
-```python
-except Exception:
-    logger.exception("ALPHAEDGE daily-loss check failed")
-    continue  # ← l'échec est logué mais aucune alerte externe
-```
-Si la vérification du daily loss échoue silencieusement, le bot continue à trader sans protection. Aucune alerte externe n'est envoyée.
+Ces événements ne justifient pas d'alerte (`🟡`) mais le silence complet (max trades) est notable.
 
-`session_lifecycle.py:195-200` — `_execute_signal()` :
-```python
-except Exception:
-    logger.exception(f"ALPHAEDGE _execute_signal failed: {state.pair}")
-    return False  # ← logué, mais pas alerté
-```
+### 4.2 Exception handling
 
-### 4.2 Événements loggés sans alerte
+**Résultat** : ✅ CONFORME
 
-**Résultat** : ❌ NON COUVERT (systémique)
+Aucun `except: pass` trouvé. Tous les blocs `except Exception` dans `session_lifecycle.py` appellent `logger.exception()`. `send_telegram()` et `send_discord()` catchent explicitement `(URLError, OSError)`.
 
-**Tous** les événements critiques dans le pipeline live (`session_lifecycle.py`, `broker.py`, `strategy.py`) sont loggés via `loguru` uniquement. Aucune intégration `AlertManager.send()` n'existe dans ces modules.
+### 4.3 Cascade d'alertes IB
 
-Exemples concrets :
-- `broker.py:127` — `logger.critical(...)` sur connexion échouée → loguru only
-- `broker.py:192` — `logger.error("reconnection failed")` → loguru only
-- `session_lifecycle.py:254` — `logger.critical("Reconnection FAILED")` → loguru only
+**Résultat** : ✅ PROTÉGÉ
 
-### 4.3 Cascade d'alertes en cas de retry loop
+Cooldown `IB_DISCONNECTED` = 120 s mitigue toute cascade de pacing violations IB. Même en retry loop, l'opérateur ne reçoit au plus qu'une alerte toutes les 2 minutes.
 
-**Résultat** : ❌ RISQUE THÉORIQUE (mais non actuel)
+### 4.4 `config.yaml` — événements configurés
 
-Le module `alerting.py` n'a aucun cooldown. Si `AlertManager` était branché sur le pipeline (ce qui n'est pas le cas actuellement), un retry loop IB pacing pourrait générer des dizaines d'alertes `IB_DISCONNECTED` par minute.
-
-### 4.4 Non-blocking en cas d'échec d'envoi
-
-**Résultat** : ✅ CONFORME (voir Bloc 1.6)
-
-### 4.5 Alertes en mode paper vs live
-
-**Résultat** : ❌ ABSENT de la logique
-
-`AlertConfig` et `AlertManager` n'ont aucune connaissance du mode `ALPHAEDGE_PAPER`. Les alertes (si envoyées) seraient identiques en paper et en live — pas de préfixe `[PAPER]` ni de filtrage par mode.
+Les 9 événements sont listés dans `config.yaml` (lignes 143-152) sous `alerting.events`. Cependant, 5 d'entre eux (`trade_executed`, `trade_closed`, `session_end_open_position`, `session_end_clean`, `ib_reconnected`) ne sont **jamais déclenchés** malgré leur présence dans la config — la config est en avance sur l'implémentation.
 
 ---
 
 ## SYNTHÈSE
 
-### Tableau complet des problèmes
+### Tableau synthèse
 
 | ID | Bloc | Description | Fichier:Ligne | Sévérité | Impact | Effort |
 |----|------|-------------|--------------|----------|--------|--------|
-| A-01 | 2 | `AlertManager` non connecté au pipeline live | `strategy.py`, `session_lifecycle.py`, `broker.py` — aucune importation | **P0** | Zéro alerte reçue en production, quelle que soit la configuration | ~3h |
-| A-02 | 1 | Aucun retry avec backoff sur Telegram/Discord | `alerting.py:193,231` | **P1** | Alertes perdues sur erreur réseau temporaire | ~1h |
-| A-03 | 1 | Aucun cooldown anti-tempête dans `AlertManager` | `alerting.py:248` | **P1** | Cascade possible si A-01 résolu et retry loop IB | ~1h |
-| A-04 | 2 | `_check_daily_loss_shutdown()` échoue silencieusement | `session_lifecycle.py:512` | **P1** | Bot continue à trader sans protection capital | ~30min |
-| A-05 | 3 | `alert_ib_disconnected()` sans code erreur ni contexte | `alerting.py:395` | **P2** | Diagnostic impossible sans ouvrir les logs | ~15min |
-| A-06 | 3 | `alert_trade_executed()` sans `lot_size` dans le message | `alerting.py:336` | **P2** | Information incomplète pour vérification manuelle | ~15min |
-| A-07 | 4 | Pas de préfixe `[PAPER]` / `[LIVE]` dans les alertes | `alerting.py:96` | **P2** | Confusion paper vs live sur mobile | ~30min |
-| A-08 | 2 | Timeout fill (10 s) non alerté | `session_lifecycle.py:133` | **P2** | Ordre annulé sans notification externe | ~30min |
-| A-09 | 2 | Daily loss limit breach non alerté | `session_lifecycle.py:522` | **P1** | Shutdown silencieux sans notification trader | ~30min |
-| A-10 | 3 | Aucun traceback dans les alertes d'erreur | `alerting.py` — tous les builders | **P3** | Diagnostic dépend des logs loguru uniquement | ~1h |
-| A-11 | 2 | Reconnexion IB échouée non alertée | `session_lifecycle.py:254` | **P1** | Shutdown silencieux → perte de trades sans notification | ~30min |
+| E-01 | 2 | `alert_trade_executed()` jamais appelé — fill confirmé sans notification | `session_lifecycle.py:200-221` | 🔴 Critique | Trader aveugle à l'ouverture d'une position en temps réel | ~30 min |
+| E-02 | 2 | `alert_trade_closed()` jamais appelé — SL/TP fill sans notification | `session_lifecycle.py:348-360` | 🔴 Critique | Trader aveugle à la clôture d'une position (résultat inconnu) | ~30 min |
+| M-01 | 2 | `alert_ib_reconnected()` jamais appelé après reconnexion réussie | `session_lifecycle.py:396` | 🟠 Majeur | Opérateur ne sait pas si le système s'est auto-rétabli | ~15 min |
+| M-02 | 2 | `alert_session_end_open/clean()` jamais appelés — fin de session silencieuse | `session_lifecycle.py:_handle_session_end` | 🟠 Majeur | Position ouverte en fin de session invisible sur mobile | ~30 min |
+| M-03 | 2 | Fill timeout ligne 153 utilise `AlertEvent.TRADE_EXECUTED` (sémantique incorrecte) | `session_lifecycle.py:153` | 🟠 Majeur | Opérateur croit qu'un trade est ouvert alors que la position est annulée | ~15 min |
+| N-01 | 2 | `alert_signal_detected()` jamais appelé | `session_lifecycle.py` — aucun site | 🟡 Mineur | Visibilité opérationnelle manquante (nice-to-have) | ~30 min |
+| N-02 | 2 | `alert_daily_summary()` jamais appelé — pas de résumé de fin de journée | `session_lifecycle.py:_handle_session_end` | 🟡 Mineur | Bilan journalier absent sur mobile | ~30 min |
+| N-03 | 4 | Max trades/session atteint — silence total (pas même un log INFO) | `session_lifecycle.py:530, 629` | 🟡 Mineur | Opérateur ne comprend pas pourquoi plus aucun trade n'est pris | ~15 min |
 
----
+**Sévérité** : 🔴 Critique · 🟠 Majeur · 🟡 Mineur
 
-### Événements NON COUVERTS par criticité financière
+### Bilan global
 
-1. **Daily loss limit breached** — le bot s'arrête silencieusement (`session_lifecycle.py:522`). Le trader ne sait pas que le capital est en danger.
-2. **Reconnexion IB échouée après 3 essais** — shutdown silencieux (`session_lifecycle.py:254`), positions ouvertes potentielles.
-3. **Timeout fill (10 s)** — ordre annulé sans notification (`session_lifecycle.py:133`), le trader croit peut-être que l'ordre est passé.
-4. **Bracket order soumis / fill confirmé** — aucune confirmation externe du trade.
-5. **Stop-loss / Take-profit déclenché** — position fermée sans notification.
-6. **Spread trop élevé** — signal bloqué silencieusement.
-7. **`_check_daily_loss_shutdown()` itself fails** — protection désactivée silencieusement.
+Le système d'envoi lui-même est **solide** : retry/backoff, cooldown, non-blocking, async, paper prefix, URLs depuis config. Les problèmes de la version FCR archivée (AlertManager mort, pas de retry, pas de cooldown) sont tous résolus.
 
----
-
-### Top 3 risques immédiats
-
-1. **🔴 A-01 — `AlertManager` jamais instancié en production** : L'intégralité du système d'alertes (`alerting.py`, 480 lignes) est du code mort en production. Le trader ne reçoit aucune notification, quelle que soit la configuration dans `config.yaml`. Conséquence directe : un daily loss limit breach, une déconnexion IB, un ordre annulé passent tous inaperçus.
-
-2. **🔴 A-09 + A-11 — Shutdown silencieux sans alerte** : Deux scénarios critiques déclenchent `self._s._shutdown_requested = True` + loguru uniquement, sans aucune notification externe. Si le trader n'est pas devant ses logs, il ne sait pas que le bot s'est arrêté.
-
-3. **🟠 A-03 — Absence de cooldown** : Dès qu'A-01 sera résolu, le risque de tempête d'alertes sur retry loop IB sera immédiat. À traiter en même temps que A-01.
-
----
-
-### Points forts à conserver
-
-- ✅ Architecture `AlertManager` propre avec canaux découplés (Telegram + Discord indépendants)
-- ✅ `send_async()` via `run_in_executor` — non-blocking, adapté à asyncio
-- ✅ Format Telegram HTML et Discord embeds avec couleurs par niveau
-- ✅ `AlertEvent` enum — liste exhaustive des événements (9 types), extensible
-- ✅ `_is_event_enabled()` — filtrage par événement configurable via `config.yaml`
-- ✅ Aucun credential dans le contenu des messages
-- ✅ Horodatages UTC stricts (`datetime.now(tz=UTC)`)
-- ✅ `build_alert_config()` — constructeur propre depuis YAML, sans valeurs hardcodées
-- ✅ `TelegramConfig.enabled` / `DiscordConfig.enabled` — désactivation granulaire par canal
+Le déficit actuel est uniquement de **couverture** : 5 builders sur 9 définis dans `alerting.py` ne sont jamais appelés depuis `session_lifecycle.py`, malgré leur présence dans `config.yaml`. Les deux cas critiques (trade ouvert, trade clôturé) privent l'opérateur de visibilité temps réel sur l'activité de trading.

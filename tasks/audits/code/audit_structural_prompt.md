@@ -3,7 +3,7 @@ modele: sonnet-4.6
 mode: agent
 contexte: codebase
 produit: audit_structural_alphaedge.md
-derniere_revision: 2026-03-20
+derniere_revision: 2026-03-25
 creation: 2026-03-20 à 15:32
 ---
 
@@ -40,7 +40,7 @@ Tu analyses UNIQUEMENT la structure du repo :
 organisation des modules, couplage, interfaces,
 pipeline de signal, dette technique, configuration.
 
-Tu n'analyses PAS la stratégie FCR, la sécurité
+Tu n'analyses PAS la stratégie Momentum+Carry, la sécurité
 des credentials, ou la concurrence asyncio.
 
 ─────────────────────────────────────────────
@@ -55,9 +55,8 @@ CONTRAINTES ABSOLUES
 BLOC 1 — PIPELINE RÉEL
 ─────────────────────────────────────────────
 Trace le chemin complet :
-data_feed.py → fcr_detector.pyx → gap_detector.pyx
-→ engulfing_detector.pyx → risk_manager.pyx
-→ order_manager.pyx → broker.py
+data_feed.py → momentum_detector.pyx → carry_signal.py
+→ risk_manager.pyx → order_manager.pyx → broker.py
 
 Pour chaque étape :
 - Module source (Python ou Cython ?)
@@ -79,7 +78,7 @@ alphaedge/config/, alphaedge/utils/ :
 - constants.py : valeurs hardcodées en dehors ?
   (pip_size, RR ratio, session times)
 - strategy.py : orchestration pure ou contient
-  de la logique métier FCR ?
+  de la logique métier Momentum+Carry ?
 - Dépendances circulaires entre modules Python ?
 - engine/ importe-t-il directement core/ .pyx
   ou passe-t-il par les stubs _stubs/ ?
@@ -95,6 +94,7 @@ alphaedge/core/_stubs/, alphaedge/stubs/ :
 - Interface publique core/__init__.py cohérente
   avec les signatures dans CLAUDE.md ?
 - _stubs/ : chaque module .pyx a son stub ?
+  (momentum_detector, risk_manager, order_manager)
 - Stubs ont les mêmes signatures que les .pyx ?
 - __init__.pyi présent et à jour ?
 - Les tests utilisent les _stubs/ correctement

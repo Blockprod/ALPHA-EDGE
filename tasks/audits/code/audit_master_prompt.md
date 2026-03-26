@@ -3,7 +3,7 @@ modele: sonnet-4.6
 mode: agent
 contexte: codebase
 produit: audit_master_alphaedge.md
-derniere_revision: 2026-03-20
+derniere_revision: 2026-03-25
 creation: 2026-03-20 à 15:30
 usage: audit complet avant toute mise en production ALPHAEDGE
 ---
@@ -63,18 +63,19 @@ Python 3.11.9 · Cython 3.0 · Windows.
 Mode par défaut : paper trading (ALPHAEDGE_PAPER=true).
 
 Pipeline signal (dépendance stricte top-down) :
-  data_feed.py          → M5 + M1 bar feed
-  fcr_detector.pyx      → détection range FCR (M5)
-  gap_detector.pyx      → filtre volatilité ATR (M1)
-  engulfing_detector.pyx → signal d'entrée (M1)
-  risk_manager.pyx      → sizing + daily loss limit
-  order_manager.pyx     → bracket order construction
-  broker.py             → soumission ordre IB
+  data_feed.py             → Daily bar feed
+  momentum_detector.pyx    → Momentum + ADX signal (Daily)
+  carry_signal.py          → Carry bias filter
+  risk_manager.pyx         → sizing + daily loss limit
+  order_manager.pyx        → bracket order construction
+  broker.py                → soumission ordre IB
 
 Modules critiques à analyser en priorité :
-  alphaedge/core/       → Cython : détecteurs + risk
+  alphaedge/core/       → Cython : momentum_detector,
+                           risk_manager, order_manager
   alphaedge/engine/     → Python : strategy, broker,
-                           data_feed, backtest
+                           data_feed, backtest,
+                           carry_signal, signal_pipeline
   alphaedge/config/     → constants.py, loader.py
   alphaedge/utils/      → logger, timezone,
                            session_manager
@@ -149,9 +150,8 @@ STRUCTURE OBLIGATOIRE DU FICHIER
 - Fill verification implémentée ?
 - Gestion timeout reqHistoricalData ?
 - Return value contracts respectés dans strategy.py :
-  detect_fcr → None = STOP
-  detect_gap → detected=False = STOP
-  detect_engulfing → None = STOP
+  detect_momentum → None = STOP
+  carry bias conflict → STOP
   calculate_position_size → is_valid=False = STOP
   check_daily_limit → halt_trading=True = STOP ALL
   create_bracket_order → is_valid=False = STOP
@@ -179,7 +179,8 @@ STRUCTURE OBLIGATOIRE DU FICHIER
 - Scénarios manquants à risque
 
 ## 9. Build Cython & setup.py
-- setup.py compile les 5 modules .pyx ?
+- setup.py compile les 3 modules .pyx ?
+  (momentum_detector, risk_manager, order_manager)
 - make build reproductible sur CI ?
 - .pyd présents et à jour dans core/ ?
 - _stubs/ couverts par les tests correctement ?

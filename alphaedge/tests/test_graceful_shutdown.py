@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
-from alphaedge.engine.strategy import CoreModules, FCRStrategy
+from alphaedge.engine.strategy import CoreModules, SwingStrategy
 from alphaedge.utils.state_persistence import clear_daily_state, load_daily_state
 
 
@@ -31,7 +31,7 @@ def _make_config() -> AppConfig:
     )
 
 
-def _build_strategy() -> FCRStrategy:
+def _build_strategy() -> SwingStrategy:
     cfg = _make_config()
     with (
         patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,
@@ -44,13 +44,11 @@ def _build_strategy() -> FCRStrategy:
         mock_ib.disconnectedEvent = MagicMock()
         mock_broker_cls.return_value.ib = mock_ib
         mock_modules.return_value = CoreModules(
-            fcr_detector=MagicMock(),
-            gap_detector=MagicMock(),
-            engulfing_detector=MagicMock(),
+            momentum_detector=MagicMock(),
             order_manager=MagicMock(),
             risk_manager=MagicMock(),
         )
-        strategy = FCRStrategy(cfg)
+        strategy = SwingStrategy(cfg)
     return strategy
 
 

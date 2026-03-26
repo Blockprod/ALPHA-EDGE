@@ -105,6 +105,6 @@ Pip sizes : 0.0001 standard, 0.01 pour paires JPY.
 ## Architecture de test
 
 - `alphaedge/core/_stubs/` : stubs Python purs (pas de Cython requis en test)
-- `alphaedge/tests/` : 504 tests, couverture ≥ 80%
+- `alphaedge/tests/` : 574 tests, couverture ≥ 80%
 - `engine/` exclu de la couverture (nécessite IB Gateway)
 - `make qa` : ruff + pyright + pytest --cov-fail-under=80

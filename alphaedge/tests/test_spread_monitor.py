@@ -17,13 +17,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
-from alphaedge.engine.strategy import CoreModules, FCRStrategy, StrategyState
+from alphaedge.engine.strategy import CoreModules, StrategyState, SwingStrategy
 
 
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
-def _make_strategy() -> FCRStrategy:
+def _make_strategy() -> SwingStrategy:
     """Build a strategy with all externals mocked."""
     cfg = AppConfig(ib=IBConfig(is_paper=True), trading=TradingConfig())
 
@@ -44,13 +44,11 @@ def _make_strategy() -> FCRStrategy:
         mock_ib.disconnectedEvent.__iadd__ = _capture
         mock_broker_cls.return_value.ib = mock_ib
         mock_mods.return_value = CoreModules(
-            fcr_detector=MagicMock(),
-            gap_detector=MagicMock(),
-            engulfing_detector=MagicMock(),
+            momentum_detector=MagicMock(),
             order_manager=MagicMock(),
             risk_manager=MagicMock(),
         )
-        strategy = FCRStrategy(cfg)
+        strategy = SwingStrategy(cfg)
     return strategy
 
 
@@ -69,7 +67,7 @@ class TestSpreadCheckBeforeExecution:
         state = StrategyState(pair="EURUSD")
         signal: dict[str, Any] = {
             "detected": True,
-            "signal": 1,
+            "direction": 1,
             "entry_price": 1.0850,
             "stop_loss": 1.0830,
             "take_profit": 1.0910,
@@ -100,7 +98,7 @@ class TestSpreadCheckBeforeExecution:
         state = StrategyState(pair="EURUSD")
         signal: dict[str, Any] = {
             "detected": True,
-            "signal": 1,
+            "direction": 1,
             "entry_price": 1.0850,
             "stop_loss": 1.0830,
             "take_profit": 1.0910,

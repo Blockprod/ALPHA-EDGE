@@ -37,17 +37,17 @@ def _make_training_data(
     labels: list[int] = []
 
     for _ in range(n):
+        adx = rng.uniform(20.0, 40.0)
+        ema_delta_pct = rng.uniform(-0.02, 0.02)
+        carry_diff = rng.uniform(0.0, 1.5)
         atr_ratio = rng.uniform(0.5, 3.0)
-        fcr_range = rng.uniform(5.0, 30.0)
-        volume_ratio = rng.uniform(0.8, 3.0)
-        spread = rng.uniform(0.5, 3.0)
         dow = rng.randint(0, 4)
 
-        # Simple rule: wins tend to have higher ATR ratio and volume
-        win_score = atr_ratio * 0.4 + volume_ratio * 0.3 - spread * 0.2
+        # Simple rule: wins tend to have higher ADX and carry differential
+        win_score = adx * 0.03 + carry_diff * 0.2 + atr_ratio * 0.1
         label = 1 if win_score > 1.0 else 0
 
-        features.append([atr_ratio, fcr_range, volume_ratio, spread, float(dow)])
+        features.append([adx, ema_delta_pct, carry_diff, atr_ratio, float(dow)])
         labels.append(label)
 
     return features, labels
@@ -59,17 +59,17 @@ def _make_training_data(
 class TestSignalFeatures:
     def test_to_array_length(self) -> None:
         sf = SignalFeatures(
-            atr_ratio=1.5, fcr_range=10.0, volume_ratio=1.2, spread=0.8, day_of_week=2
+            adx=28.0, ema_delta_pct=0.005, carry_diff=0.8, atr_ratio=1.5, day_of_week=2
         )
         arr = sf.to_array()
         assert len(arr) == len(FEATURE_NAMES)
 
     def test_to_array_values(self) -> None:
         sf = SignalFeatures(
-            atr_ratio=1.5, fcr_range=10.0, volume_ratio=1.2, spread=0.8, day_of_week=3
+            adx=28.0, ema_delta_pct=0.005, carry_diff=0.8, atr_ratio=1.5, day_of_week=3
         )
         arr = sf.to_array()
-        assert arr == [1.5, 10.0, 1.2, 0.8, 3.0]
+        assert arr == [28.0, 0.005, 0.8, 1.5, 3.0]
 
     def test_defaults(self) -> None:
         sf = SignalFeatures()
@@ -83,17 +83,17 @@ class TestSignalFeatures:
 class TestExtractFeatures:
     def test_extracts_all_fields(self) -> None:
         signal = {
+            "adx": 30.0,
+            "ema_delta_pct": 0.007,
+            "carry_diff": 1.2,
             "atr_ratio": 1.8,
-            "fcr_range": 15.0,
-            "volume_ratio": 1.5,
-            "spread": 1.0,
             "entry_time": datetime(2024, 1, 3, 10, 0, tzinfo=ET),  # Wednesday
         }
         sf = extract_features(signal)
+        assert sf.adx == 30.0
+        assert sf.ema_delta_pct == 0.007
+        assert sf.carry_diff == 1.2
         assert sf.atr_ratio == 1.8
-        assert sf.fcr_range == 15.0
-        assert sf.volume_ratio == 1.5
-        assert sf.spread == 1.0
         assert sf.day_of_week == 2  # Wednesday = 2
 
     def test_missing_fields_default_zero(self) -> None:

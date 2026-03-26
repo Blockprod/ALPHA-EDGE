@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : setup.py
 # DESCRIPTION  : Cython compilation setup for core modules
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: Cython build configuration."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: Cython build configuration."""
 
 from __future__ import annotations
 
@@ -30,24 +30,16 @@ _CORE_DIR = os.path.join("alphaedge", "core")
 
 extensions: list[Extension] = [
     Extension(
-        name="alphaedge.core.fcr_detector",
-        sources=[os.path.join(_CORE_DIR, "fcr_detector.pyx")],
-    ),
-    Extension(
-        name="alphaedge.core.gap_detector",
-        sources=[os.path.join(_CORE_DIR, "gap_detector.pyx")],
-    ),
-    Extension(
-        name="alphaedge.core.engulfing_detector",
-        sources=[os.path.join(_CORE_DIR, "engulfing_detector.pyx")],
-    ),
-    Extension(
         name="alphaedge.core.order_manager",
         sources=[os.path.join(_CORE_DIR, "order_manager.pyx")],
     ),
     Extension(
         name="alphaedge.core.risk_manager",
         sources=[os.path.join(_CORE_DIR, "risk_manager.pyx")],
+    ),
+    Extension(
+        name="alphaedge.core.momentum_detector",
+        sources=[os.path.join(_CORE_DIR, "momentum_detector.pyx")],
     ),
 ]
 

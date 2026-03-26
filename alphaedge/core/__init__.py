@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Swing Trading Bot
 # FILE         : alphaedge/core/__init__.py
 # DESCRIPTION  : Core Cython modules package initializer
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-08
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: Cython core signal and execution modules.
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: Cython core modules.
 
 Attempts to import compiled Cython modules first. If compilation is
 unavailable (e.g. CI without a C compiler), falls back to pure-Python
@@ -102,8 +102,6 @@ def _load_core_module(name: str) -> ModuleType:
         return importlib.import_module(f"alphaedge.core._stubs.{name}")
 
 
-fcr_detector: ModuleType = _load_core_module("fcr_detector")
-gap_detector: ModuleType = _load_core_module("gap_detector")
-engulfing_detector: ModuleType = _load_core_module("engulfing_detector")
 order_manager: ModuleType = _load_core_module("order_manager")
 risk_manager: ModuleType = _load_core_module("risk_manager")
+momentum_detector: ModuleType = _load_core_module("momentum_detector")

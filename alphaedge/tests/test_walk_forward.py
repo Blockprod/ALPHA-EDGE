@@ -170,7 +170,7 @@ class TestRunWalkForward:
     def test_empty_bars(self) -> None:
         from alphaedge.config.loader import AppConfig
 
-        report = run_walk_forward([], [], "EURUSD", AppConfig())
+        report = run_walk_forward([], "EURUSD", AppConfig())
         assert isinstance(report, WalkForwardReport)
         assert len(report.windows) == 0
         assert report.aggregated_oos.total_trades == 0
@@ -180,12 +180,11 @@ class TestRunWalkForward:
         from alphaedge.config.loader import AppConfig
 
         # Create 12 months of bars at session time (10:00 ET)
-        m1_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
-        m5_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=9)
+        daily_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
 
         # Mock _backtest_pair to avoid Cython dependency
-        with patch("alphaedge.engine.backtest._backtest_pair", return_value=[]):
-            report = run_walk_forward(m1_bars, m5_bars, "EURUSD", AppConfig())
+        with patch("alphaedge.engine.backtest._backtest_pair", return_value=([], {})):
+            report = run_walk_forward(daily_bars, "EURUSD", AppConfig())
 
         assert isinstance(report, WalkForwardReport)
         assert len(report.windows) >= 9
@@ -198,40 +197,41 @@ class TestRunWalkForward:
         from alphaedge.config.loader import AppConfig
         from alphaedge.engine.backtest import TradeRecord
 
-        m1_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
-        m5_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=9)
+        daily_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
 
         # Return one winning trade per call
         call_count = 0
 
         def fake_backtest(
             pair: str,
-            _m1: list[dict[str, Any]],
-            _m5: list[dict[str, Any]],
+            _bars: list[dict[str, Any]],
             _cfg: AppConfig,
-        ) -> list[TradeRecord]:
+        ) -> tuple[list[TradeRecord], dict[str, int]]:
             nonlocal call_count
             call_count += 1
-            return [
-                TradeRecord(
-                    pair=pair,
-                    direction=1,
-                    entry_price=1.08500,
-                    stop_loss=1.08400,
-                    take_profit=1.08600,
-                    entry_time=datetime(2024, 1, 1, 10, 0),
-                    exit_price=1.08600,
-                    pnl_pips=10.0,
-                    pnl_usd=100.0,
-                    outcome="win",
-                )
-            ]
+            return (
+                [
+                    TradeRecord(
+                        pair=pair,
+                        direction=1,
+                        entry_price=1.08500,
+                        stop_loss=1.08400,
+                        take_profit=1.08600,
+                        entry_time=datetime(2024, 1, 1, 10, 0),
+                        exit_price=1.08600,
+                        pnl_pips=10.0,
+                        pnl_usd=100.0,
+                        outcome="win",
+                    )
+                ],
+                {},
+            )
 
         with patch(
             "alphaedge.engine.backtest._backtest_pair",
             side_effect=fake_backtest,
         ):
-            report = run_walk_forward(m1_bars, m5_bars, "EURUSD", AppConfig())
+            report = run_walk_forward(daily_bars, "EURUSD", AppConfig())
 
         n_windows = len(report.windows)
         # Each window calls _backtest_pair twice (train + test)
@@ -250,11 +250,10 @@ class TestRunWalkForwardOptimization:
         """Without optimize_fn, optimized_test_stats must be None on every window."""
         from alphaedge.config.loader import AppConfig
 
-        m1_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
-        m5_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=9)
+        daily_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
 
-        with patch("alphaedge.engine.backtest._backtest_pair", return_value=[]):
-            report = run_walk_forward(m1_bars, m5_bars, "EURUSD", AppConfig())
+        with patch("alphaedge.engine.backtest._backtest_pair", return_value=([], {})):
+            report = run_walk_forward(daily_bars, "EURUSD", AppConfig())
 
         for wr in report.windows:
             assert wr.optimized_test_stats is None
@@ -265,14 +264,12 @@ class TestRunWalkForwardOptimization:
         """optimize_fn should be called once per walk-forward window."""
         from alphaedge.config.loader import AppConfig
 
-        m1_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
-        m5_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=9)
+        daily_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
 
         optimize_calls: list[int] = []
 
         def fake_optimize(
-            _m1: list[dict[str, Any]],
-            _m5: list[dict[str, Any]],
+            _bars: list[dict[str, Any]],
             _pair: str,
             _cfg: Any,
         ) -> dict[str, float]:
@@ -280,14 +277,14 @@ class TestRunWalkForwardOptimization:
             return {}
 
         with (
-            patch("alphaedge.engine.backtest._backtest_pair", return_value=[]),
+            patch("alphaedge.engine.backtest._backtest_pair", return_value=([], {})),
             patch(
                 "alphaedge.engine.sensitivity._run_with_params_trades",
                 return_value=[],
             ),
         ):
             report = run_walk_forward(
-                m1_bars, m5_bars, "EURUSD", AppConfig(), optimize_fn=fake_optimize
+                daily_bars, "EURUSD", AppConfig(), optimize_fn=fake_optimize
             )
 
         assert len(optimize_calls) == len(report.windows)
@@ -296,19 +293,17 @@ class TestRunWalkForwardOptimization:
         """Each window's optimized_test_stats should not be None."""
         from alphaedge.config.loader import AppConfig
 
-        m1_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
-        m5_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=9)
+        daily_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
 
         with (
-            patch("alphaedge.engine.backtest._backtest_pair", return_value=[]),
+            patch("alphaedge.engine.backtest._backtest_pair", return_value=([], {})),
             patch(
                 "alphaedge.engine.sensitivity._run_with_params_trades",
                 return_value=[],
             ),
         ):
             report = run_walk_forward(
-                m1_bars,
-                m5_bars,
+                daily_bars,
                 "EURUSD",
                 AppConfig(),
                 optimize_fn=lambda *_: {"rr_ratio": 3.0},
@@ -323,8 +318,7 @@ class TestRunWalkForwardOptimization:
         """Each window stores the params returned by optimize_fn."""
         from alphaedge.config.loader import AppConfig
 
-        m1_bars = _make_bars_range(date(2024, 1, 1), date(2024, 6, 30), hour=10)
-        m5_bars = _make_bars_range(date(2024, 1, 1), date(2024, 6, 30), hour=9)
+        daily_bars = _make_bars_range(date(2024, 1, 1), date(2024, 6, 30), hour=10)
 
         call_idx = 0
         expected_params = [{"rr_ratio": 2.0}, {"rr_ratio": 3.0}, {"rr_ratio": 4.0}]
@@ -336,15 +330,14 @@ class TestRunWalkForwardOptimization:
             return result
 
         with (
-            patch("alphaedge.engine.backtest._backtest_pair", return_value=[]),
+            patch("alphaedge.engine.backtest._backtest_pair", return_value=([], {})),
             patch(
                 "alphaedge.engine.sensitivity._run_with_params_trades",
                 return_value=[],
             ),
         ):
             report = run_walk_forward(
-                m1_bars,
-                m5_bars,
+                daily_bars,
                 "EURUSD",
                 AppConfig(),
                 optimize_fn=cycling_optimize,
@@ -358,8 +351,7 @@ class TestRunWalkForwardOptimization:
         from alphaedge.config.loader import AppConfig
         from alphaedge.engine.backtest import TradeRecord
 
-        m1_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
-        m5_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=9)
+        daily_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
 
         opt_trade = TradeRecord(
             pair="EURUSD",
@@ -375,15 +367,14 @@ class TestRunWalkForwardOptimization:
         )
 
         with (
-            patch("alphaedge.engine.backtest._backtest_pair", return_value=[]),
+            patch("alphaedge.engine.backtest._backtest_pair", return_value=([], {})),
             patch(
                 "alphaedge.engine.sensitivity._run_with_params_trades",
                 return_value=[opt_trade],
             ),
         ):
             report = run_walk_forward(
-                m1_bars,
-                m5_bars,
+                daily_bars,
                 "EURUSD",
                 AppConfig(),
                 optimize_fn=lambda *_: {},
@@ -405,9 +396,9 @@ class TestGridSearchBest:
         from alphaedge.config.loader import AppConfig
         from alphaedge.engine.sensitivity import grid_search_best
 
-        with patch("alphaedge.engine.backtest._backtest_pair", return_value=[]):
+        with patch("alphaedge.engine.backtest._backtest_pair", return_value=([], {})):
             result = grid_search_best(
-                [], [], "EURUSD", AppConfig(), param_names=["rr_ratio"]
+                [], "EURUSD", AppConfig(), param_names=["rr_ratio"]
             )
         assert "rr_ratio" in result
 
@@ -419,31 +410,34 @@ class TestGridSearchBest:
 
         call_count = [0]
 
-        def fake_backtest(*_: Any) -> list[TradeRecord]:
+        def fake_backtest(*_: Any) -> tuple[list[TradeRecord], dict[str, int]]:
             call_count[0] += 1
             # Return more trades for later calls (different rr_ratio values)
             # to produce different Sharpe values
             n = call_count[0]
-            return [
-                TradeRecord(
-                    pair="EURUSD",
-                    direction=1,
-                    entry_price=1.1,
-                    stop_loss=1.09,
-                    take_profit=1.11,
-                    entry_time=datetime(2024, 1, i + 1, 10, 0),
-                    pnl_pips=float(n * 5),
-                    pnl_usd=float(n * 50),
-                    outcome="win",
-                )
-                for i in range(n)
-            ]
+            return (
+                [
+                    TradeRecord(
+                        pair="EURUSD",
+                        direction=1,
+                        entry_price=1.1,
+                        stop_loss=1.09,
+                        take_profit=1.11,
+                        entry_time=datetime(2024, 1, i + 1, 10, 0),
+                        pnl_pips=float(n * 5),
+                        pnl_usd=float(n * 50),
+                        outcome="win",
+                    )
+                    for i in range(n)
+                ],
+                {},
+            )
 
         with patch(
             "alphaedge.engine.backtest._backtest_pair", side_effect=fake_backtest
         ):
             result = grid_search_best(
-                [], [], "EURUSD", AppConfig(), param_names=["rr_ratio"]
+                [], "EURUSD", AppConfig(), param_names=["rr_ratio"]
             )
 
         assert isinstance(result, dict)
@@ -454,9 +448,9 @@ class TestGridSearchBest:
         from alphaedge.config.loader import AppConfig
         from alphaedge.engine.sensitivity import grid_search_best
 
-        with patch("alphaedge.engine.backtest._backtest_pair", return_value=[]):
-            result = grid_search_best([], [], "EURUSD", AppConfig())
+        with patch("alphaedge.engine.backtest._backtest_pair", return_value=([], {})):
+            result = grid_search_best([], "EURUSD", AppConfig())
 
-        assert "min_atr_ratio" in result
-        assert "min_volume_ratio" in result
+        assert "adx_threshold" in result
+        assert "min_body_ratio" in result
         assert "rr_ratio" in result

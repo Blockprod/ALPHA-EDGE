@@ -93,11 +93,6 @@ class TestLoaderValidation:
         with pytest.raises(ValueError, match="min_volume_ratio"):
             _validate_trading_config(cfg)
 
-    def test_fcr_lookback_zero_raises(self) -> None:
-        cfg = TradingConfig(fcr_lookback_candles=0)
-        with pytest.raises(ValueError, match="fcr_lookback_candles"):
-            _validate_trading_config(cfg)
-
 
 class TestPairValidation:
     """Tests for pair validation in _validate_trading_config."""

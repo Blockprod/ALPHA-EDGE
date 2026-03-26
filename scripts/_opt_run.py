@@ -28,7 +28,7 @@ from alphaedge.engine.data_feed import BarDiskCache  # noqa: E402
 cfg = load_config()
 cache = BarDiskCache()
 pairs = cfg.trading.pairs
-bars = {p: (cache.load(p, "1 min") or [], cache.load(p, "5 mins") or []) for p in pairs}
+bars = {p: cache.load(p, "1 day") or [] for p in pairs}
 
 
 def run(atr, rng, vol, rr, body, wick):
@@ -36,18 +36,12 @@ def run(atr, rng, vol, rr, body, wick):
     c.trading.rr_ratio = rr
     c.trading.min_body_ratio = body
     c.trading.max_wick_ratio = wick
+    c.trading.min_atr_ratio = atr
+    c.trading.min_range_pips = rng
+    c.trading.min_volume_ratio = vol
     t = []
     for p in pairs:
-        m1, m5 = bars[p]
-        t += _backtest_pair(
-            p,
-            m1,
-            m5,
-            c,
-            min_atr_ratio=atr,
-            min_range_pips=rng,
-            min_volume_ratio=vol,
-        )
+        t += _backtest_pair(p, bars[p], c)
     if len(t) < 8:
         return None
     _apply_equity_sizing(t, c.trading.starting_equity, c.trading.risk_pct)

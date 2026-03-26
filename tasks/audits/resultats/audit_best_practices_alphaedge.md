@@ -1,262 +1,274 @@
-# AUDIT BEST PRACTICES — ALPHAEDGE
-**Date :** 2026-03-24 à 16:00
-**Mis à jour :** 2026-03-24 à 17:30 (4ème source analysée)
-**Créé le :** 2026-03-24 à 16:00
-**Sources analysées :**
-- https://github.com/shanraisshan/claude-code-best-practice
-- https://claude.com/fr-fr/blog/using-claude-md-files
-- https://claude.com/fr-fr/product/overview
-- https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices
+---
+modele: sonnet-4.6
+mode: agent
+contexte: codebase
+produit: audit_best_practices_alphaedge.md
+derniere_revision: 2026-03-27
+creation: 2026-03-27 à 09:00
+---
 
-**Stack analysée :** Claude Sonnet 4.6 · Copilot Pro+ · VSCode (pas Claude Code CLI)
-**Scope :** Fichiers de contexte AI-Driven · Skills · Prompts · Agents · Workflows · Mémoire
+# Audit — Best Practices IA/Copilot ALPHAEDGE
+**Date :** 2026-03-27 · **Baseline :** 602 tests · 0 Ruff · 0 Pyright
 
 ---
 
-## BEST PRACTICES DÉJÀ EN PLACE
+## 1. Header
 
-| Practice | Source | Fichier:Ligne | Statut |
-|----------|--------|--------------|--------|
-| CLAUDE.md au root — fichier de contexte persistant chargé à chaque session | Anthropic blog | CLAUDE.md:1 | ✅ |
-| copilot-instructions.md dans .github/ — chargé automatiquement par Copilot | Anthropic / GitHub | .github/copilot-instructions.md:1 | ✅ |
-| `copilot-instructions.md` < 200 lignes (165 lignes) | shanraisshan | .github/copilot-instructions.md | ✅ |
-| Agents spécialisés par domaine (pas d'agent générique) | shanraisshan · Boris | agents/code_auditor.md, agents/risk_manager.md, agents/quant_researcher.md, agents/dev_engineer.md | ✅ |
-| Skill avec description rédigée comme trigger ("Use when: …") | shanraisshan · Thariq | .github/skills/cython-build/SKILL.md:3 | ✅ |
-| Section Gotchas / Common Errors dans la skill | shanraisshan · Thariq | .github/skills/cython-build/SKILL.md:35 | ✅ |
-| Prompt files réutilisables pour les workflows inner-loop | Anthropic blog + GitHub | .github/prompts/add-test.prompt.md, cython-build.prompt.md, new-util.prompt.md | ✅ |
-| Fichier leçons apprises relu à chaque session | shanraisshan (planning tips) | tasks/lessons.md | ✅ |
-| Plan mode enforced avant toute implémentation | shanraisshan · Boris | CLAUDE.md:49–55 | ✅ |
-| Checklist de démarrage de session | Anthropic blog (workflows) | CLAUDE.md:10–20 | ✅ |
-| Arborescence du projet documentée dans le contexte | Anthropic blog | copilot-instructions.md:11–22 | ✅ |
-| Commandes build/test documentées (make qa, make build) | Anthropic blog | CLAUDE.md:160–175 ; copilot-instructions.md:105–115 | ✅ |
-| Documentation ADR (Architecture Decision Records) | shanraisshan (architecture docs) | architecture/decisions.md | ✅ |
-| Base de connaissances domaine (IBKR, trading FCR) | Anthropic blog (connect tools) | knowledge/ibkr_constraints.md, knowledge/trading_constraints.md | ✅ |
-| Workflows standards documentés (Audit → Plan → Corrections) | Anthropic blog (standard workflows) | tasks/WORKFLOW.md | ✅ |
-| ASCII diagrams pour l'architecture dans les fichiers de contexte | shanraisshan · Boris | CLAUDE.md:45–58 ; copilot-instructions.md:30–42 | ✅ |
-| Informations sensibles exclues des fichiers de contexte | Anthropic blog | .env exclu, .env.example utilisé, CLAUDE.md:18 | ✅ |
-| "Run the tests and it just works" — one-liner documenté | shanraisshan · Dex | CLAUDE.md:160 (`make qa`) | ✅ |
-| Séparation contexte par sous-agent (Explore subagent) | shanraisshan · Boris | .github/copilot-instructions.md (agents section) | ✅ |
+| Champ | Valeur |
+|-------|--------|
+| Stack IA | Claude Sonnet 4.6 via Copilot Pro+ / VSCode |
+| Scope | Fichiers de contexte AI : `CLAUDE.md` · `copilot-instructions.md` · `skills/` · `prompts/` · `specs/` · `agents/` · `tasks/` · `.claude/` |
+| Baseline tests | 602 |
+
+| # | Source | URL | Statut |
+|---|--------|-----|--------|
+| 1 | shanraisshan/claude-code-best-practice | https://github.com/shanraisshan/claude-code-best-practice | ✅ Analysée |
+| 2 | Anthropic blog — Using CLAUDE.md files | https://claude.com/fr-fr/blog/using-claude-md-files | ✅ Analysée |
+| 3 | claude.com/fr-fr/product/overview | https://claude.com/fr-fr/product/overview | Contenu général — pas de best practices fichiers contexte spécifiques |
+| 4 | platform.claude.com/docs/en/home | https://platform.claude.com/docs/en/home | Documentation API Anthropic — non applicable (CLI/API) |
 
 ---
 
-## BEST PRACTICES MANQUANTES — PERTINENTES COPILOT VSCODE
+## 2. Best Practices Déjà en Place
 
-### BP-01 — CLAUDE.md dépasse 200 lignes (386 lignes actuellement)
+| # | Practice | Source | Fichier:Ligne | Statut |
+|---|----------|--------|---------------|--------|
+| 1 | `CLAUDE.md` au root — chargé automatiquement par Copilot | Anthropic blog | `CLAUDE.md:1` | ✅ |
+| 2 | `.github/copilot-instructions.md` — règles système Copilot | Anthropic blog | `.github/copilot-instructions.md:1` | ✅ |
+| 3 | Checklist de démarrage de session (5 étapes ordonnées) | Anthropic blog | `CLAUDE.md:7–17` | ✅ |
+| 4 | Hard stops listés avec rationales et liens vers fichier source | shanraisshan | `CLAUDE.md:19–32` | ✅ |
+| 5 | Diagramme ASCII du signal pipeline (architecture lisible par IA) | shanraisshan | `.github/copilot-instructions.md:22–32` | ✅ |
+| 6 | Skills dans `.github/skills/` avec descriptions déclencheurs ("Use when:") | shanraisshan | `.github/skills/*/SKILL.md:1–8` | ✅ |
+| 7 | Progressive disclosure dans `cython-build` (examples/ + references/) | shanraisshan | `.github/skills/cython-build/` | ✅ |
+| 8 | Prompts réutilisables dans `.github/prompts/` (add-test, cython-build, new-util) | shanraisshan (commands) | `.github/prompts/*.prompt.md` | ✅ |
+| 9 | Spécifications techniques dans `.github/specs/` (4 contrats comportementaux) | shanraisshan | `.github/specs/*.md` | ✅ |
+| 10 | `tasks/lessons.md` mis à jour après chaque correction | shanraisshan + Anthropic | `tasks/lessons.md:1` | ✅ |
+| 11 | Pipeline A→B→C — workflow par phases avec gates explicites | shanraisshan | `.github/skills/audit-workflow/SKILL.md:18–34` | ✅ |
+| 12 | Rôles agents spécialisés dans `agents/` (code_auditor, dev_engineer, quant_researcher, risk_manager) | shanraisshan (subagents) | `agents/*.md` | ✅ |
+| 13 | Documentation architecture dans `architecture/` (ADR + module responsibilities) | Anthropic blog | `architecture/module_responsibilities.md` | ✅ |
+| 14 | Domain knowledge dans `knowledge/` (IBKR + Forex constraints) | Anthropic blog | `knowledge/*.md` | ✅ |
+| 15 | Return value contracts — tableau 6 fonctions critiques | Anthropic blog | `CLAUDE.md:68–78` | ✅ |
+| 16 | Seuil de couverture documenté par dossier (≥80% sur config/utils/core/) | shanraisshan | `.github/skills/run-qa/SKILL.md:20–27` | ✅ |
+| 17 | Convention de nommage des tests (`test_<module>_<scenario>.py`) | shanraisshan | `.github/copilot-instructions.md:88–93` | ✅ |
+| 18 | `CLAUDE.md` concis (~150 lignes, sous le seuil de 200) | shanraisshan + Anthropic | `CLAUDE.md` | ✅ |
+| 19 | `.claude/context.md` + `.claude/rules.md` — contexte Claude séparé | Anthropic blog | `.claude/` | ✅ |
+| 20 | Politique secrets — `.env` jamais commité, listé dans gitignored | Anthropic blog | `CLAUDE.md:146–150` | ✅ |
 
-**Source :** shanraisshan ("CLAUDE.md should target under 200 lines") + Anthropic blog ("restez concis")
-**Description :** Un fichier de contexte trop long dilue le signal. Au-delà de 200 lignes, Claude commence à ignorer des règles même marquées MUST.
-**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :** `CLAUDE.md` est injecté dans chaque session Copilot via `#codebase`. À 386 lignes, il consomme du contexte pour des sections rarement pertinentes (ex: interfaces Cython publiques complètes, retails de reconnexion).
+---
+
+## 3. Best Practices Manquantes
+
+### BP-01 — Tags XML `<important>` sur les règles critiques
+
+**Source :** shanraisshan (context engineering — tips)
+**Description :** Baliser les règles irréversibles avec des tags XML sémantiques (`<important if="...">`) dans les fichiers de contexte pour que le modèle accorde une priorité accrue aux gardes high-stakes.
+**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :**
+`CLAUDE.md` et `copilot-instructions.md` utilisent bold + emoji (⛔) qui sont traités comme du texte plat par le transformer. Les balises XML créent une structure sémantique explicite que le modèle interprète comme un signal de priorité — particulièrement utile en session longue où le contexte se dilue. Ce projet a 10 hard stops irréversibles (`ALPHAEDGE_PAPER=false`, `core/*.pyx` sans instruction, `.env` commit…) — s'assurer qu'aucun n'est ignoré est critique.
 **Comment l'appliquer concrètement :**
-  - Extraire les interfaces Cython publiques → `docs/ALPHAEDGE_INTERFACES.md`
-  - Extraire le tableau des modules → `architecture/module_responsibilities.md` (existe déjà partiellement dans `architecture/system_design.md`)
-  - Garder dans CLAUDE.md : startup checklist, hard stops (10 règles), workflow orchestration, core principles
-  - Référencer avec `@path` en bas du CLAUDE.md (compatible Claude Code) ou via `#file:` dans les prompts Copilot
-  - **Cible :** CLAUDE.md ≤ 200 lignes
-
-**Effort :** S
-**Impact estimé :** Meilleure attention sur les règles critiques (hard stops), réduction du contexte consommé par conversation.
-
----
-
-### BP-02 — Une seule skill (cython-build) — manque de couverture des workflows répétitifs
-
-**Source :** shanraisshan · Boris ("if you do something more than once a day, turn it into a skill or command")
-**Description :** Les skills doivent couvrir tous les workflows inner-loop fréquents, pas seulement le build Cython.
-**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :** Les workflows `make qa`, `make test`, lancement d'un backtest, création d'un plan d'action depuis un audit — sont répétés quotidiennement et méritent chacun une skill.
-**Comment l'appliquer concrètement :**
-  - `.github/skills/run-qa/SKILL.md` — workflow QA complet (ruff + mypy + pytest), erreurs fréquentes, seuils coverage
-  - `.github/skills/run-backtest/SKILL.md` — paramètres backtest, lecture des résultats, pièges courants (warmup, DST)
-  - `.github/skills/audit-workflow/SKILL.md` — pipeline A→B→C, référence vers WORKFLOW.md
-  - Description de chaque skill rédigée comme trigger : "Use when: …"
-  - Chaque skill avec section **Common Errors / Gotchas**
-
-**Effort :** M (3 skills à créer)
-**Impact estimé :** Copilot invoque automatiquement la bonne skill selon le contexte, sans prompt manuel répétitif.
-
----
-
-### BP-03 — Structure progressive dans les skills (pas de subdirectories)
-
-**Source :** shanraisshan · Thariq ("skills are folders, not files — use references/, scripts/, examples/ subdirectories")
-**Description :** Une skill peut grandir sans bloater le SKILL.md principal. Les sous-répertoires permettent la disclosure progressive.
-**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :** `cython-build` est pour l'instant un fichier plat. Quand les cas d'erreur croissent, le SKILL.md va dépasser 100 lignes.
-**Comment l'appliquer concrètement :**
-```
-.github/skills/cython-build/
-├── SKILL.md              ← corps principal (≤ 60 lignes)
-├── examples/
-│   ├── add_field.md      ← exemple concret d'ajout d'un champ Cython
-│   └── new_module.md     ← exemple ajout d'un nouveau .pyx
-└── references/
-    └── cython_types.md   ← types Cython autorisés, équivalences Python
-```
-  - Le SKILL.md principal référence les sous-fichiers via des liens relatifs
-  - Copilot charge le SKILL.md principal, et accède aux sous-fichiers via #file: si besoin
-
-**Effort :** XS
-**Impact estimé :** Skill maintenable sur le long terme, disclosure progressive sans bruit.
-
----
-
-### BP-04 — Pas de spec files par feature
-
-**Source :** shanraisshan (Spec Kit, spec-driven development) + Anthropic blog
-**Description :** Chaque feature majeure devrait avoir un fichier de spec markdown décrivant comportement attendu, interface, edge cases — avant le code.
-**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :** ALPHAEDGE n'a pas de spec pour `fcr_detector`, `gap_detector`, `risk_manager`, etc. Le "Return Value Contracts" dans CLAUDE.md est un début mais n'est pas un spec complet.
-**Comment l'appliquer concrètement :**
-```
-.github/specs/
-├── fcr-detection.md      ← comportement attendu, inputs/outputs, edge cases
-├── risk-management.md    ← daily loss limit, position sizing, contrats retour
-├── order-execution.md    ← bracket order, spread check, fill handling
-└── backtest-engine.md    ← hypothèses, biais à éviter, métriques de sortie
-```
-  - Usage Copilot : `#file:.github/specs/risk-management.md` dans un prompt de modification
-  - Valeur immédiate : Copilot peut valider ses implémentations contre la spec
-
-**Effort :** M (4 specs à rédiger depuis le code existant)
-**Impact estimé :** Réduction des hallucinations sur les interfaces core, validation comportementale explicite.
-
----
-
-### BP-05 — CLAUDE.md duplique des infos présentes dans copilot-instructions.md
-
-**Source :** Anthropic blog ("évitez les doublons, scindez en fichiers référencés")
-**Description :** Les deux fichiers contiennent le pipeline d'architecture, les hard stops, les règles Python 3.11, les return value contracts — en quasi-doublon.
-**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :** Doublon = maintenance double + risque de désynchronisation + contexte consommé deux fois.
-**Comment l'appliquer concrètement :**
-  - `copilot-instructions.md` = règles Copilot (chargé auto par GitHub Copilot) → garder complet
-  - `CLAUDE.md` = entry point Claude/session → référencer copilot-instructions.md pour les règles communes plutôt que les dupliquer
-  - Supprimer de CLAUDE.md les sections déjà couvertes par copilot-instructions.md (architecture pipeline, return contracts, QA commands)
-
-**Effort :** S
-**Impact estimé :** CLAUDE.md descend sous 200 lignes (BP-01 résolu en partie), maintenance centralisée.
-
----
-
-### BP-06 — Pas de XML structuring dans les fichiers de prompt
-
-**Source :** Anthropic API Docs — Prompting best practices ("Structure prompts with XML tags")
-**Description :** Envelopper les instructions, le contexte et les exemples dans des balises XML (`<instructions>`, `<context>`, `<output_format>`) réduit les mauvaises interprétations sur les prompts complexes qui mêlent instructions, contexte repo et critères de sortie.
-**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :** Les fichiers `tasks/audits/methode/*.md` et `.github/prompts/*.prompt.md` utilisent un formatage markdown plat (titres, tirets). Sur des prompts longs (audit complet = 60+ lignes), Claude peut confondre les sections.
-**Comment l'appliquer concrètement :**
-  - Convertir les sections MISSION + FILTRE des prompt files en `<instructions>`…`</instructions>`
-  - Envelopper le format attendu en sortie dans `<output_format>`…`</output_format>`
-  - Utiliser des noms de balises cohérents à travers tous les prompts du projet
-  - Applicable immédiatement à `best practices_prompt.md`, `audit_structural_prompt.md`, `audit_ai_driven_prompt.md`
-
-**Effort :** XS (modifications rédactionnelles, pas de code)
-**Impact estimé :** Réduction des mauvaises interprétations sur les prompts d'audit complexes — validé par Anthropic comme technique de réduction d'erreur.
-
----
-
-### BP-07 — Aucun exemple few-shot dans les fichiers de prompt
-
-**Source :** Anthropic API Docs — Prompting best practices ("Use examples effectively — few-shot / multishot prompting")
-**Description :** 3–5 exemples concrets dans des balises `<example>` améliorent significativement l'alignement du format et du niveau de détail. Claude généralise le style depuis les exemples et les applique à de nouveaux cas.
-**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :** Les prompts d'audit (`best practices_prompt.md`, `audit_structural_prompt.md`, `audit_ai_driven_prompt.md`) ne contiennent aucun exemple du format attendu en sortie. Claude doit deviner le niveau d'analyse voulu (résumé bullet vs tableau détaillé avec source + ligne + statut).
-**Comment l'appliquer concrètement :**
-  - Ajouter un court `<example>` dans chaque prompt d'audit, montrant 1 entrée complète du tableau attendu (source, description, pertinence, application concrète, statut)
-  - Les exemples doivent être variés : 1 BP "déjà en place ✅" et 1 BP "manquante 🔴" pour couvrir les deux cas
-  - Un exemple doit couvrir un cas "non applicable (CLI)" pour que Claude sache comment traiter ce cas
-
-**Effort :** S
-**Impact estimé :** Output des audits plus homogène entre les relances, niveau de détail prévisible, réduction des omissions de champs.
-
----
-
-### BP-08 — Pas d'instruction explicite "lire avant de répondre" dans les agents/prompts
-
-**Source :** Anthropic API Docs — Prompting best practices ("Minimizing hallucinations in agentic coding — `<investigate_before_answering>`")
-**Description :** "Never speculate about code you have not opened. If the user references a specific file, you MUST read the file before answering." Envelopper dans un bloc XML `<investigate_before_answering>` donne un poids structurel à cette contrainte.
-**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :** Plusieurs sessions ont produit des réponses incorrectes parce que Copilot a inféré l'état d'un fichier sans le lire (ex: réponse "l'audit existe déjà" sans lire le prompt pour détecter le changement). Le motif `<investigate_before_answering>` est une défense explicite contre ce type d'erreur.
-**Comment l'appliquer concrètement :**
-  - Ajouter dans `agents/dev_engineer.md` et `agents/code_auditor.md` :
+  - Dans `CLAUDE.md` section ⛔ Hard Stops, encapsuler le bloc de règles :
+    ```xml
+    <important if="modifying any file">
+    Never set ALPHAEDGE_PAPER=false in any file, ever.
+    Never modify core/*.pyx without explicit user instruction.
+    Never commit .env, *.log, or proprietary action plan files.
+    </important>
     ```
-    <investigate_before_answering>
-    Never speculate about code you have not opened. Read relevant files before
-    answering questions about the codebase. If the user references a file or
-    prompt, read it first to detect any changes before assuming its current state.
-    </investigate_before_answering>
-    ```
-  - Ajouter dans les prompts d'audit (`best practices_prompt.md`, `audit_structural_prompt.md`) : "Lis toujours le fichier prompt complet avant de vérifier si un audit existant est encore valide."
+  - Idem dans `.github/copilot-instructions.md` section "Hard Stops — Never Do These"
+  - Réserver ces balises aux règles irréversibles uniquement — ne pas sur-baliser les sections informatives.
 
-**Effort :** XS
-**Impact estimé :** Réduction directe des erreurs de type "réponse sans lecture préalable" — pattern validé par Anthropic dans leur guide de prompting agentic.
+**Effort :** XS (15 min)
+**Impact estimé :** Réduction du risque de dérive sur les gardes de sécurité en session longue.
 
 ---
 
-### BP-09 — Règles sans motivation (WHY manquant dans copilot-instructions.md)
+### BP-02 — Liens Lessons → Skills (Gotchas cross-référencés)
 
-**Source :** Anthropic API Docs — Prompting best practices ("Add context to improve performance — provide the reason why a behavior is important")
-**Description :** Fournir le contexte/la motivation derrière les règles aide Claude à généraliser correctement dans des situations non explicitement prévues. Un modèle suffisamment intelligent peut inférer le comportement juste si il comprend l'intention.
-**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :** Plusieurs Hard Stops dans `copilot-instructions.md` et `CLAUDE.md` donnent le QUOI sans le POURQUOI. Ex: "Never use `# type: ignore`" — sans explication, Claude peut contourner cette règle s'il juge que la situation est "différente".
+**Source :** shanraisshan — "Gotchas: highest-signal content — add Claude's failure points over time"
+**Description :** Chaque skill doit exposer une section **Gotchas** référençant les leçons pertinentes de `tasks/lessons.md`, transformant les expériences passées en guardrails actifs.
+**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :**
+`tasks/lessons.md` accumule des leçons critiques réelles (ex: "`ruff check` seul ne détecte pas ARG01", "stub alignment silencieux après .pyx edit", "PROJECT_TITLE ⚡ crashe Rich Windows") mais ces connaissances restent inactives dans les skills correspondantes. Résultat : un agent qui invoque `run-qa` ignorera que `ruff check` doit être complété par `--select ARG`. Un agent qui invoque `cython-build` ne sait pas vérifier l'alignement `_stubs/` après edit. Les leçons qui coûtent 1h à apprendre se répètent à chaque session.
 **Comment l'appliquer concrètement :**
-  - Pour chaque Hard Stop, ajouter une justification courte entre parenthèses ou en sous-bullet :
-    - `"Never use # type: ignore` — silences real type errors; fix the root cause instead"
-    - `"Never hardcode risk parameters outside constants.py` — breaks single source of truth, creates silent divergence between backtest and live"
-    - `"Never run make build unless .pyx was modified` — Cython compilation is slow and irreversible mid-session"
-  - Cible : 5–8 règles prioritaires (Hard Stops), pas toutes les règles
-  - Ne pas surcharger — 1 ligne de justification max par règle
+  - Dans `.github/skills/run-qa/SKILL.md`, ajouter après "Common Errors" :
+    ```markdown
+    ## Gotchas (from tasks/lessons.md)
+    - `ruff check` seul ne détecte pas les paramètres orphelins → toujours lancer `ruff check --select ARG` (2026-03-22)
+    - Un paramètre `_param`-préfixé doit être utilisé dans le corps de fonction — le préfixe `_` n'est pas un blanc-seing (2026-03-23)
+    - `# type: ignore` est interdit → trouver et corriger la cause racine (projet rule)
+    ```
+  - Dans `.github/skills/cython-build/SKILL.md`, ajouter après "Common Errors" :
+    ```markdown
+    ## Gotchas (from tasks/lessons.md)
+    - Après tout edit `.pyx`, vérifier `_stubs/<module>.py` — une divergence de signature est silencieuse au chargement du `.pyd` (2026-03-22)
+    - `make build` ne doit JAMAIS être lancé sans modification `.pyx` intentionnelle (règle permanente)
+    ```
+  - Dans `.github/skills/run-backtest/SKILL.md`, ajouter :
+    ```markdown
+    ## Gotchas (from tasks/lessons.md)
+    - EURUSD utilise London Open (08:00–09:00 UTC), pas NYSE — tout diagnostic NYSE sur EURUSD produit de faux positifs (2026-03-24)
+    - `PROJECT_TITLE` contient ⚡ (U+26A1) — ne jamais passer directement à Rich `Text()`/`Panel()` (2026-03-24)
+    - Un taux signal ~1-2% sur EURUSD London Open est normal — ne pas ajuster FCR sans N ≥ 30 trades (2026-03-24)
+    ```
+  - **Règle d'entretien :** à chaque mise à jour de `tasks/lessons.md`, évaluer si la leçon appartient à un skill — si oui, la propager.
 
-**Effort :** S
-**Impact estimé :** Meilleure généralisation des règles dans des situations limites imprévues, réduction des contournements inadvertants.
-
----
-
-## BEST PRACTICES NON APPLICABLES (Claude Code CLI uniquement)
-
-| Practice | Source | Raison |
-|----------|--------|--------|
-| Hooks (PreToolUse, PostToolUse) | shanraisshan | Requiert la commande `claude` CLI |
-| `.claude/commands/` slash commands | shanraisshan / Anthropic | Spécifique Claude Code CLI — `.github/prompts/*.prompt.md` est l'équivalent Copilot |
-| `/init` pour générer CLAUDE.md | Anthropic blog | Commande Claude Code CLI |
-| `/compact`, `/clear`, `/rewind` | shanraisshan | Commandes Claude Code CLI |
-| `/loop`, `/schedule` (tâches récurrentes) | shanraisshan | Claude Code CLI + infrastructure Anthropic |
-| `.claude/settings.json` | shanraisshan | Fichier de config Claude Code CLI |
-| `.mcp.json` — MCP servers | shanraisshan | API directe Anthropic / Claude Code |
-| `.claude/rules/` (split instructions) | shanraisshan | Claude Code CLI — équivalent Copilot: multiple `.instructions.md` |
-| Git worktrees + agent teams (tmux) | shanraisshan | Requiert environnement multi-agents CLI |
-| `attribution.commit:` (settings.json) | shanraisshan | Claude Code CLI uniquement |
-| `/voice`, `/model`, `/context` | shanraisshan | Commandes Claude Code CLI |
-| CLAUDE.md auto-exécution | shanraisshan | Le CLAUDE.md est utile comme **contexte** Copilot (#file:CLAUDE.md) mais n'est pas auto-exécuté comme en Claude Code |
-| Paramètre `effort` (low/medium/high) | Anthropic API Docs | API Anthropic directe — non exposé via Copilot Pro+ |
-| Extended thinking / `budget_tokens` | Anthropic API Docs | Configuration API directe — non disponible via Copilot |
-| Prefilled responses (assistant-turn) | Anthropic API Docs | Manipulation directe de la conversation API — hors scope Copilot |
-| Adaptive thinking (`thinking: {type: "adaptive"}`) | Anthropic API Docs | API directe — Copilot gère le thinking de façon transparente |
-| Subagent orchestration via API | Anthropic API Docs | API directe — l'équivalent Copilot est le subagent `Explore` déjà utilisé |
-| Model migration config (Sonnet 4.5 → 4.6) | Anthropic API Docs | Paramètres API — non applicable à Copilot Pro+ |
-| LaTeX output control (`\( \)`, MathJax) | Anthropic API Docs | Hors scope — ALPHAEDGE est un projet Python/trading, pas de rendu mathématique |
+**Effort :** S (1h — 3 skills à enrichir)
+**Impact estimé :** 🔴 Direct — élimine la répétition des mêmes erreurs IA qui ont déjà coûté des corrections en session.
 
 ---
 
-## BEST PRACTICES MANQUANTES — NON PERTINENTES (Claude Code CLI ou hors scope)
+### BP-03 — Arbre de répertoires clés dans CLAUDE.md
 
-| Practice | Source | Raison non pertinente |
-|----------|--------|-----------------------|
-| Ralph Wiggum Loop (autonomous dev loop) | shanraisshan | Nécessite Claude Code CLI en local |
-| Cross-model workflow (Claude Code + Codex) | shanraisshan | Hors scope VSCode Copilot |
-| Checkpointing automatique (git-based) | shanraisshan | Fonctionnalité Claude Code interne |
-| Status line (context usage bar) | shanraisshan | Interface Claude Code CLI |
-| Agent Teams avec coordination parallèle | shanraisshan | Multi-agents CLI simultanés |
+**Source :** Anthropic blog — "Include a high-level directory tree showing which directories contain what types of code"
+**Description :** Ajouter un arbre de répertoires non exhaustif dans la section Architecture de `CLAUDE.md`, indiquant la responsabilité de chaque dossier pertinent pour l'IA.
+**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :**
+La section Architecture actuelle de `CLAUDE.md` contient 2 liens uniquement. Un agent débutant une tâche doit explorer le workspace (`list_dir`, `file_search`) pour découvrir que les tests sont dans `alphaedge/tests/`, les prompts dans `.github/prompts/`, les specs dans `.github/specs/`, les leçons dans `tasks/lessons.md`, etc. Un arbre compact élimine 2-3 appels outils d'exploration systématique.
+**Comment l'appliquer concrètement :**
+  - Remplacer la section Architecture dans `CLAUDE.md` par :
+    ```markdown
+    ## Architecture
+    > Contrats complets : [docs/ALPHAEDGE_INTERFACES.md](docs/ALPHAEDGE_INTERFACES.md)
+    > Modules + responsabilités : [architecture/module_responsibilities.md](architecture/module_responsibilities.md)
+
+    ```
+    alphaedge/
+      config/       — constantes + loader YAML (toujours éditer constants.py, jamais hardcoder)
+      core/         — détecteurs Cython (.pyx) + stubs Python (_stubs/) — ne jamais éditer sans instruction
+      engine/       — orchestration live + backtest (engine/ exclue de la couverture)
+      tests/        — pytest (602 tests, couverture ≥80% sur config/utils/core/)
+    .github/
+      skills/       — workflows réutilisables (audit-workflow, cython-build, run-qa, run-backtest)
+      prompts/      — templates tâches récurrentes (add-test, cython-build, new-util)
+      specs/        — contrats comportement fonctions critiques (fcr, order, risk, backtest)
+    tasks/
+      audits/       — prompts code/ et methode/ + resultats/ (rapports d'audit)
+      corrections/  — plans d'action + prompts d'exécution
+      lessons.md    — leçons IA accumulées — LIRE EN PREMIER
+    agents/         — rôles spécialisés (#file:agents/<role>.md pour activer)
+    architecture/   — ADR + responsabilités modules
+    knowledge/      — contraintes IBKR + marché Forex
+    ```
+  - Ne pas lister `build/`, `logs/`, `reports/`, `scripts/` — non pertinents pour l'IA.
+
+**Effort :** XS (20 min)
+**Impact estimé :** 🟠 Réduit la phase d'exploration initiale des agents — navigation directe vers les bons fichiers.
 
 ---
 
-## SYNTHÈSE PRIORITAIRE
+### BP-04 — Checklist pré-code 4 questions dans le workflow
 
-| ID | Description | Effort | Impact | Priorité |
-|----|-------------|--------|--------|----------|
-| BP-01 | Réduire CLAUDE.md (386→≤200 lignes) | S | 🔴 Élevé | 1 |
-| BP-05 | Dédupliquer CLAUDE.md / copilot-instructions.md | S | 🟠 Moyen | 2 |
-| BP-02 | Créer 3 skills manquantes (qa, backtest, audit) | M | 🟠 Moyen | 3 |
-| BP-08 | Ajouter `<investigate_before_answering>` dans agents/prompts | XS | 🟠 Moyen | 4 |
-| BP-09 | Ajouter motivations (WHY) aux Hard Stops | S | 🟠 Moyen | 5 |
-| BP-06 | XML structuring dans les fichiers de prompt | XS | 🟡 Mineur | 6 |
-| BP-04 | Créer spec files features core | M | 🟡 Futur | 7 |
-| BP-07 | Ajouter exemples few-shot dans les prompts d'audit | S | 🟡 Mineur | 8 |
-| BP-03 | Structure progressive dans skills | XS | 🟡 Mineur | 9 |
+**Source :** Anthropic blog — "Define standard workflows for different task types"
+**Description :** Ajouter 4 questions de réflexion obligatoires avant toute modification de code pour prévenir les modifications prématurées.
+**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :**
+"Plan mode obligatoire pour ≥ 3 étapes" est en place mais sans checklist pré-code structurée. Des erreurs passées auraient été évitées : le diagnostic EURUSD basé sur NYSE (2026-03-24) se serait arrêté à la question "ai-je lu les fichiers impliqués ?". La règle "Audit Before Modify" dans Core Principles est déclarative — la transformer en 4 questions concrètes la rend actionnable.
+**Comment l'appliquer concrètement :**
+  - Dans `CLAUDE.md` section Workflow Orchestration, ajouter après le premier bullet :
+    ```markdown
+    **Avant toute modification de code — 4 questions :**
+    1. Ai-je lu tous les fichiers que je vais modifier ? (citer fichier:ligne)
+    2. Ai-je un plan en N étapes validé avant d'agir ?
+    3. Y a-t-il des informations manquantes ? (explorer d'abord, modifier ensuite)
+    4. Comment vais-je valider le changement ? (`make qa` suffit ? test dédié requis ?)
+    ```
+  - Idem dans `.claude/rules.md` section modification priority (alignement Claude-specific).
+
+**Effort :** XS (10 min)
+**Impact estimé :** 🟠 Prévient les diagnostics erronés — opérationnalise le principe "Audit Before Modify" déjà posé.
 
 ---
 
-*Audit généré par analyse statique + sources web — validé sur codebase ALPHAEDGE au 2026-03-24.*
-*Mis à jour le 2026-03-24 après analyse de la 4ème source : Anthropic API Docs — Prompting best practices.*
+### BP-05 — Progressive disclosure dans les skills sans sous-dossiers
+
+**Source :** shanraisshan — "Skills are folders, not just files — use references/, scripts/, examples/ subdirs for heavy content"
+**Description :** Les skills `audit-workflow`, `run-qa` et `run-backtest` n'ont qu'un `SKILL.md` seul. `cython-build` est déjà exemplaire avec `examples/` et `references/`.
+**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :**
+- `audit-workflow` sans exemples de format de sortie → un agent peut produire un audit qui ne respecte pas les sections obligatoires (Date, Blocs, Synthèse, severité 🔴/🟠/🟡).
+- `run-qa` sans référence aux erreurs Ruff/Mypy réelles vues sur ce projet → l'agent doit réinférer les patterns à chaque session.
+- `run-backtest` sans référence aux paramètres `config.yaml` clés → l'agent doit explorer `constants.py` avant d'interpréter un résultat.
+**Comment l'appliquer concrètement :**
+  - `audit-workflow/examples/` → créer `example_audit_section.md` : extrait de bloc d'un audit existant (`audit_trade_journal_alphaedge.md`) comme modèle de format
+  - `run-qa/references/` → créer `known_errors.md` : erreurs Ruff/Pyright réelles du projet (ARG001, E501, S101, N803, missing return type)
+  - `run-backtest/references/` → créer `config_params.md` : table des paramètres `config.yaml` + `constants.py` clés avec valeurs nominales
+
+**Effort :** S (2h — 3 skills, 1 fichier référence chacun)
+**Impact estimé :** 🟡 Améliore la cohérence et la rapidité des sorties skills.
+
+---
+
+### BP-06 — Référence aux `agents/` dans CLAUDE.md et audit-workflow
+
+**Source :** shanraisshan — "Use subagents for different phases — isolate context"
+**Description :** Le dossier `agents/` contient 4 rôles spécialisés mais ni `CLAUDE.md` ni `copilot-instructions.md` ne les mentionnent, ni n'indiquent quand les invoquer.
+**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :**
+Un agent recevant une demande de validation de stratégie ne sait pas instancier `#file:agents/quant_researcher.md` pour activer le mode anti-biais. Un audit de sécurité ne sait pas utiliser `#file:agents/code_auditor.md`. Ces rôles restent des fichiers morts — une seule ligne dans `CLAUDE.md` suffit à les rendre découvrables et utilisables.
+**Comment l'appliquer concrètement :**
+  - Dans `CLAUDE.md` section Workflow Orchestration, ajouter :
+    ```markdown
+    - **Agents spécialisés :** `#file:agents/<role>.md` pour activer un rôle contextuel
+      (`code_auditor` · `dev_engineer` · `quant_researcher` · `risk_manager`)
+    ```
+  - Dans `.github/skills/audit-workflow/SKILL.md`, section Steps → ajouter :
+    ```markdown
+    **Agent suggéré :** `#file:agents/code_auditor.md` (audits code) · `#file:agents/quant_researcher.md` (audits stratégiques)
+    ```
+
+**Effort :** XS (15 min)
+**Impact estimé :** 🟡 Rend les agents spécialisés découvrables — passage de fichiers morts à outils actifs.
+
+---
+
+### BP-07 — Stratégie git documentée (commits fréquents + convention messages)
+
+**Source :** shanraisshan — "commit at least once per hour, as soon as the task is completed; keep PRs small and focused (squash merge)"
+**Description :** Aucun fichier de contexte AI ne documente une stratégie git au-delà du format `cython: <description>` (dans cython-build uniquement).
+**Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :**
+Les corrections multi-étapes (ex: 8 corrections Audit #10) sont appliquées en série sans point de sauvegarde git intermédiaire. Si un commit tardif échoue QA, toute la session est à risque. Une convention de commit générale (pas seulement Cython) avec fréquence recommandée réduit ce risque sans alourdir le workflow.
+**Comment l'appliquer concrètement :**
+  - Dans `CLAUDE.md` section Core Principles (ou nouvelle entrée Workflow), ajouter :
+    ```markdown
+    **Git workflow :**
+    - Committer dès qu'une correction passe `make qa` — ne pas attendre la fin du plan multi-étapes
+    - Format : `type(scope): description` → ex: `fix(journal): atomic CSV write`, `feat(backtest): add sl_pips column`
+    - PRs focalisées : une correction / un audit par PR (squash merge)
+    ```
+
+**Effort :** XS (15 min)
+**Impact estimé :** 🟡 Réduit le risque de perte en session longue — sécurité du code produit.
+
+---
+
+## 4. Best Practices Non Applicables (CLI / API uniquement)
+
+| Practice | Source | Raison d'exclusion |
+|----------|--------|--------------------|
+| Hooks PreToolUse / PostToolUse | shanraisshan | Requiert la commande `claude` CLI — non disponible dans Copilot VSCode |
+| `/compact`, `/clear`, `/init`, `/loop` | shanraisshan | Commandes Claude Code CLI exclusivement |
+| `/sandbox` (isolation réseau) | shanraisshan | Claude Code CLI — mode bac à sable CLI |
+| Git worktrees + multi-agent swarms | shanraisshan | Nécessite Claude Code CLI avec plusieurs instances concurrentes |
+| CLAUDE.md auto-exécuté par Claude Code | shanraisshan + Anthropic | Dans Copilot, `CLAUDE.md` est contexte passif (#codebase) — non exécuté automatiquement |
+| MCP Servers integration | shanraisshan | Requiert API Anthropic ou Claude Code CLI avec configuration `.claude/mcp.json` |
+| Auto mode beta | shanraisshan | Claude Code CLI uniquement |
+| `claude` install global + permissions JSON | shanraisshan | CLI — hors scope Copilot VSCode |
+| `/schedule` + cloud tasks | shanraisshan | Claude.ai cloud tasks — non disponible en Copilot |
+| Token API Anthropic direct | platform.claude.com/docs | Toute la doc platform.claude.com est pour l'API REST — non applicable |
+
+---
+
+## 5. Tableau Synthèse Prioritaire
+
+| ID | Description | Source | Fichier cible | Sévérité | Impact | Effort |
+|----|-------------|--------|--------------|----------|--------|--------|
+| BP-02 | Liens Lessons → Skills (Gotchas cross-référencés) | shanraisshan | `.github/skills/*/SKILL.md` | 🔴 Critique | Élimination répétition erreurs IA | S |
+| BP-03 | Arbre répertoires clés dans CLAUDE.md | Anthropic blog | `CLAUDE.md` section Architecture | 🟠 Majeur | Réduction phase exploration initiale | XS |
+| BP-04 | Checklist pré-code 4 questions | Anthropic blog | `CLAUDE.md` + `.claude/rules.md` | 🟠 Majeur | Prévention modifications prématurées | XS |
+| BP-01 | Tags XML `<important>` sur hard stops | shanraisshan | `CLAUDE.md` + `copilot-instructions.md` | 🟡 Mineur | Résilience gardes en session longue | XS |
+| BP-05 | Progressive disclosure skills (audit-workflow, run-qa, run-backtest) | shanraisshan | `.github/skills/*/` | 🟡 Mineur | Cohérence des sorties skills | S |
+| BP-06 | Référence `agents/` dans CLAUDE.md + audit-workflow skill | shanraisshan | `CLAUDE.md` + audit SKILL.md | 🟡 Mineur | Rend les rôles agents utilisables | XS |
+| BP-07 | Stratégie git documentée (commits fréquents + convention) | shanraisshan | `CLAUDE.md` | 🟡 Mineur | Sécurité sessions longues multi-étapes | XS |
+
+**Synthèse :** 🔴 1 · 🟠 2 · 🟡 4
+
+**Effort total estimé :** ~4h30
+
+**Ordre d'exécution recommandé :**
+1. **Lot XS** — BP-03 + BP-04 + BP-06 + BP-01 + BP-07 en une passe (~1h30 total)
+2. **BP-02** — Gotchas dans 3 skills (~1h)
+3. **BP-05** — Fichiers référence dans 3 skills (~2h — impact le plus modeste, en dernier)

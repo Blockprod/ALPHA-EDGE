@@ -3,7 +3,7 @@ modele: sonnet-4.6
 mode: agent
 contexte: codebase
 produit: tasks/audits/AUDIT_LATENCE_ALPHAEDGE.md
-derniere_revision: 2026-03-23
+derniere_revision: 2026-03-25
 creation: 2026-03-23 à 20:08
 usage: audit latence institutionnel avant mise en production live
 ---
@@ -131,9 +131,7 @@ catastrophique en production.
 
 2.2 Quantification de l'impact latence Cython vs stub
     Pour chaque module Cython critique :
-    - `fcr_detector.pyx` : gain estimé vs stub Python
-    - `gap_detector.pyx` : gain estimé vs stub Python
-    - `engulfing_detector.pyx` : gain estimé vs stub Python
+    - `momentum_detector.pyx` : gain estimé vs stub Python
     - `risk_manager.pyx` : gain estimé vs stub Python
     - `order_manager.pyx` : gain estimé vs stub Python
 

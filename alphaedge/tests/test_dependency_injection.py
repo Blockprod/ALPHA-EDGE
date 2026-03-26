@@ -1,7 +1,7 @@
 # ============================================================
 # PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
 # FILE         : alphaedge/tests/test_dependency_injection.py
-# DESCRIPTION  : Tests for dependency injection in FCRStrategy (T2.8)
+# DESCRIPTION  : Tests for dependency injection in SwingStrategy (T2.8)
 # AUTHOR       : ALPHAEDGE Dev Team
 # WORKFLOW     : VSCode + Claude + Copilot Pro + File Engineering
 # PYTHON       : 3.11.9
@@ -18,15 +18,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
-from alphaedge.engine.strategy import CoreModules, FCRStrategy, StrategyState
+from alphaedge.engine.strategy import CoreModules, StrategyState, SwingStrategy
 
 
 def _mock_modules() -> CoreModules:
     """Build a CoreModules with all MagicMock modules."""
     return CoreModules(
-        fcr_detector=MagicMock(),
-        gap_detector=MagicMock(),
-        engulfing_detector=MagicMock(),
+        momentum_detector=MagicMock(),
         order_manager=MagicMock(),
         risk_manager=MagicMock(),
     )
@@ -45,15 +43,15 @@ def _mock_broker() -> MagicMock:
 # Tests
 # ==================================================================
 class TestDependencyInjection:
-    """Verify FCRStrategy accepts injected dependencies."""
+    """Verify SwingStrategy accepts injected dependencies."""
 
     def test_accepts_injected_broker(self) -> None:
-        """FCRStrategy should use injected broker instead of creating one."""
+        """SwingStrategy should use injected broker instead of creating one."""
         cfg = AppConfig(ib=IBConfig(), trading=TradingConfig())
         broker = _mock_broker()
         modules = _mock_modules()
 
-        strategy = FCRStrategy(
+        strategy = SwingStrategy(
             cfg,
             broker=broker,
             core_modules=modules,
@@ -62,14 +60,14 @@ class TestDependencyInjection:
         assert strategy._broker is broker
 
     def test_accepts_injected_feeds(self) -> None:
-        """FCRStrategy should use injected feeds."""
+        """SwingStrategy should use injected feeds."""
         cfg = AppConfig(ib=IBConfig(), trading=TradingConfig())
         broker = _mock_broker()
         modules = _mock_modules()
         hist = MagicMock()
         rt = MagicMock()
 
-        strategy = FCRStrategy(
+        strategy = SwingStrategy(
             cfg,
             broker=broker,
             historical_feed=hist,
@@ -81,12 +79,12 @@ class TestDependencyInjection:
         assert strategy._rt_feed is rt
 
     def test_accepts_injected_core_modules(self) -> None:
-        """FCRStrategy should use injected CoreModules."""
+        """SwingStrategy should use injected CoreModules."""
         cfg = AppConfig(ib=IBConfig(), trading=TradingConfig())
         broker = _mock_broker()
         modules = _mock_modules()
 
-        strategy = FCRStrategy(
+        strategy = SwingStrategy(
             cfg,
             broker=broker,
             core_modules=modules,
@@ -104,7 +102,7 @@ class TestDependencyInjection:
         modules = _mock_modules()
         rt_feed = MagicMock()
 
-        strategy = FCRStrategy(
+        strategy = SwingStrategy(
             cfg,
             broker=broker,
             realtime_feed=rt_feed,
@@ -114,7 +112,7 @@ class TestDependencyInjection:
         state = StrategyState(pair="EURUSD", starting_equity=10000.0)
         signal: dict[str, Any] = {
             "detected": True,
-            "signal": 1,
+            "direction": 1,
             "entry_price": 1.0850,
             "stop_loss": 1.0830,
             "take_profit": 1.0910,

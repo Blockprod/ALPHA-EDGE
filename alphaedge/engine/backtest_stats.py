@@ -33,6 +33,7 @@ def compute_stats(
     trades: list[TradeRecord],
     eur_usd_rate: float = 1.08,
     starting_equity: float = 10000.0,
+    filter_rejection_counts: dict[str, int] | None = None,
 ) -> BacktestStats:
     """
     Calculate aggregate backtest statistics.
@@ -43,6 +44,9 @@ def compute_stats(
         Completed trade records.
     eur_usd_rate : float
         EUR/USD conversion rate for EUR P&L display.
+    filter_rejection_counts : dict[str, int] | None
+        Per-filter rejection counts from the backtest run
+        (e.g. adx_gate, carry_conflict).
 
     Returns
     -------
@@ -50,6 +54,7 @@ def compute_stats(
         Aggregate performance metrics.
     """
     stats = BacktestStats()
+    stats.filter_rejection_counts = filter_rejection_counts or {}
     stats.total_trades = len(trades)
 
     if not trades:
@@ -79,6 +84,16 @@ def compute_stats(
         stats.winrate, stats.avg_win_pips, stats.avg_loss_pips
     )
     stats.max_consec_wins, stats.max_consec_losses = _compute_consec_wins_losses(trades)
+    stats.best_day_pnl_pct, stats.best_day_date = _compute_best_day_concentration(
+        trades
+    )
+    if stats.best_day_pnl_pct > 50.0:
+        logger.warning(
+            "ALPHAEDGE: P&L jackpot risk — %.1f%% of net P&L on single day %s. "
+            "Edge may be event-driven, not systematic.",
+            stats.best_day_pnl_pct,
+            stats.best_day_date,
+        )
 
     return stats
 
@@ -138,6 +153,35 @@ def _compute_consec_wins_losses(
         max_wins = max(max_wins, cur_wins)
         max_losses = max(max_losses, cur_losses)
     return max_wins, max_losses
+
+
+def _compute_best_day_concentration(
+    trades: list[TradeRecord],
+) -> tuple[float, str]:
+    """Return (pct_of_net_pnl, date_str) for the single best calendar day.
+
+    Groups trades by entry_time date, sums pnl_usd per day, then computes
+    what fraction of total net P&L the best day represents.
+    Returns (0.0, "") when total P&L is zero or non-positive.
+    """
+    if not trades:
+        return 0.0, ""
+
+    from collections import defaultdict
+
+    by_day: dict[str, float] = defaultdict(float)
+    for t in trades:
+        day_key = t.entry_time.strftime("%Y-%m-%d") if t.entry_time else "unknown"
+        by_day[day_key] += t.pnl_usd
+
+    total_pnl = sum(by_day.values())
+    if total_pnl <= 0.0:
+        return 0.0, ""
+
+    best_day = max(by_day, key=lambda d: by_day[d])
+    best_pnl = by_day[best_day]
+    pct = (best_pnl / total_pnl) * 100.0
+    return pct, best_day
 
 
 def _compute_max_drawdown(
@@ -402,6 +446,16 @@ def _log_stats_summary(
     logger.info(f"    Avg win:              {stats.avg_win_pips:+.1f} pips")
     logger.info(f"    Avg loss:             {stats.avg_loss_pips:+.1f} pips")
     logger.info(f"    Expectancy:           {stats.expectancy_pips:+.2f} pips/trade")
+    if stats.best_day_date:
+        logger.info(
+            f"    Best day:             {stats.best_day_date}  "
+            f"({stats.best_day_pnl_pct:.1f}% of net P&L)"
+        )
+    if stats.filter_rejection_counts:
+        counts_str = "  ".join(
+            f"{k}={v}" for k, v in sorted(stats.filter_rejection_counts.items())
+        )
+        logger.info(f"    Filter rejections:    {counts_str}")
     logger.info(sep)
 
 
@@ -585,7 +639,8 @@ def print_rich_summary(
             f"[{c}]€{pnl_eur:+,.2f}[/{c}]",
         )
 
-    title = Text(f"⚡ {PROJECT_TITLE} — BACKTEST RESULTS", style="bold yellow")
+    _safe_title = PROJECT_TITLE.replace("\u26a1 ", "").replace("\u26a1", "")
+    title = Text(f"ALPHAEDGE || {_safe_title} -- BACKTEST RESULTS", style="bold yellow")
     _console.print()
     _console.print(Panel(title, border_style="yellow", expand=False))
     _console.print(Columns([tbl, pair_tbl], equal=True, expand=True))

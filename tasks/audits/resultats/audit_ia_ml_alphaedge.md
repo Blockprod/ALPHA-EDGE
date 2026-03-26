@@ -1,408 +1,234 @@
-# AUDIT IA / ML — ALPHAEDGE FCR Trading Bot
-**Date :** 2026-03-22 à 16:54
-**Auditeur :** Senior Quantitative Engineer
-**Baseline QA :** 504 tests · 0 ruff · 0 pyright
-**Sharpe baseline :** 3.37 (IS, 1 an EUR/USD, compte $10 000, risk_pct=3%)
+---
+modele: sonnet-4.6
+mode: agent
+contexte: codebase
+produit: audit_ia_ml_alphaedge.md
+derniere_revision: 2026-03-25
+creation: 2026-03-25 à 19:00
+---
+
+# AUDIT IA / ML — ALPHAEDGE
+> **Date** : 2026-03-25 à 19:00
+> **Prompt source** : `tasks/audits/methode/audit_ia_ml_prompt.md`
+> **Scope** : Pertinence ML sur signal Momentum+Carry · Régime marché · Sizing adaptatif · Agents IB
 
 ---
 
 ## PHASE 1 — DIAGNOSTIC DE L'EXISTANT
 
-### 1.1 Signal FCR et pipeline actuel
+### 1.1 Signal Momentum+Carry et pipeline actuel
 
-#### Détecteurs Cython actifs
+**Détecteurs utilisés :**
+- `momentum_detector` (Cython, stub Python en `core/_stubs/`) — détection via EMA fast/slow + ADX gate
+  - `signal_pipeline.py:92` appelle `modules.momentum_detector.detect_momentum(bars, fast_period, slow_period, adx_period, adx_threshold)`
+  - Retourne `dict[str, Any] | None` — `None` = ADX < seuil = STOP pipeline
+- `carry_signal.py` (Python pur) : `get_carry_bias(pair, rates)` → `CarrySignal` dataclass
+  - `signal_pipeline.py:114` : conflit carry → STOP
+  - Filtre directionnel binaire : `LONG / SHORT / NEUTRAL` selon `differential vs min_differential_pct`
 
-Le pipeline live est **100 % déterministe**. Aucun ML n'est présent dans la chaîne d'exécution.
+**Paramètres configurables (`config.yaml:98-108`):**
+| Paramètre | Valeur | Localisation |
+|-----------|--------|-------------|
+| `momentum_fast_period` | 12 | `config.yaml:99` |
+| `momentum_slow_period` | 26 | `config.yaml:100` |
+| `adx_period` | 14 | `config.yaml:101` |
+| `adx_threshold` | 25.0 | `config.yaml:102` |
+| `momentum_lookback_days` | 252 | `config.yaml:103` |
+| `carry_min_differential_pct` | 0.5 | `config.yaml:105` |
+| `carry_enabled` | true | `config.yaml:106` |
+| `rr_ratio` | 2.5 | `constants.py:DEFAULT_RR_RATIO` |
+| `risk_pct` | 2.0 | `constants.py:DEFAULT_RISK_PCT` |
 
-| Module | Fichier | Rôle |
-|--------|---------|------|
-| `fcr_detector.pyx` | `alphaedge/core/fcr_detector.pyx` | Détection de range FCR sur barres M5 |
-| `gap_detector.pyx` | `alphaedge/core/gap_detector.pyx` | Filtre de spike ATR / volatilité |
-| `engulfing_detector.pyx` | `alphaedge/core/engulfing_detector.pyx` | Signal d'entrée M1 (engulfing 2 bougies) |
-| `risk_manager.pyx` | `alphaedge/core/risk_manager.pyx` | Sizing et daily loss limit |
-| `order_manager.pyx` | `alphaedge/core/order_manager.pyx` | Validation bracket order |
+**Filtre de régime :** `DailyRegimeFilter` (K-Means, `regime_filter.py:88`) existe et est instancié dans `strategy.py:203-210`. Il tourne en **observation uniquement** — le label `"high_vol" / "low_vol"` est loggué mais ne bloque aucun trade (`[observation only]`). Statut : PRÉSENT mais INACTIF en production.
 
-Orchestration : `strategy.py` → `signal_pipeline.py` → Cython detectors.
-Référence : [signal_pipeline.py](../../alphaedge/engine/signal_pipeline.py) lignes 29–107.
-
-#### Génération du signal d'entrée M1
-
-La méthode `detect_engulfing()` ([signal_pipeline.py:69–107](../../alphaedge/engine/signal_pipeline.py)) itère sur les barres M1 de la session. Pour chaque barre :
-
-1. `_is_bearish()` / `_is_bullish()` — direction (close vs open)
-2. `_has_volume_confirmation()` — volume ≥ avg × `min_volume_ratio`
-3. `_passes_quality()` — body ≥ `min_body_ratio` × range FCR, wick ≤ `max_wick_ratio` × body
-4. `_build_result()` — calcule entry, SL (bas/haut de l'engulfing), TP = entry ± risk × rr_ratio
-
-#### Paramètres FCR configurables
-
-Tous externalisés dans [constants.py](../../alphaedge/config/constants.py) et surchargés via [config.yaml](../../config.yaml) :
-
-| Paramètre | Valeur live | Fichier:ligne | YAML override |
-|-----------|-------------|---------------|---------------|
-| `DEFAULT_MIN_RANGE_PIPS` | 8.0 | constants.py:81 | `structure.min_range_pips: 8.0` |
-| `DEFAULT_FCR_LOOKBACK` | 6 | constants.py:82 | — |
-| `DEFAULT_ATR_PERIOD` | 14 | constants.py:74 | `volatility.atr_period: 14` |
-| `DEFAULT_MIN_ATR_RATIO` | 2.0 (constants) / **1.7 (live)** | constants.py:75 | `volatility.min_atr_ratio: 1.7` |
-| `DEFAULT_VOLUME_PERIOD` | 20 | constants.py:79 | `pattern.volume_period: 20` |
-| `DEFAULT_MIN_VOLUME_RATIO` | 1.0 | constants.py:80 | `pattern.min_volume_ratio: 1.0` |
-| `DEFAULT_MIN_BODY_RATIO` | 0.3 | constants.py:85 | `engulfing.min_body_ratio: 0.3` |
-| `DEFAULT_MAX_WICK_RATIO` | 1.5 | constants.py:86 | `engulfing.max_wick_ratio: 1.5` |
-| `DEFAULT_RR_RATIO` | 2.5 (constants) / **2.0 (live)** | constants.py:52 | `risk.reward_ratio: 2.0` |
-| `DEFAULT_RISK_PCT` | 2.0 % | constants.py:53 | `trading.risk_pct: 3.0` (live override) |
-| `DEFAULT_MAX_DAILY_LOSS_PCT` | 3.0 % | constants.py:54 | `trading.max_daily_loss_pct: 3.0` |
-| `DEFAULT_MAX_TRADES_PER_SESSION` | 2 | constants.py:55 | `trading.max_trades_per_session: 6` |
-| `fcr_range_cv_max` | 0.5 | loader.py:87 | `structure.fcr_range_cv_max: 0.5` |
-
-> **Divergence notable :** `min_atr_ratio` dans constants.py vaut 2.0, mais config.yaml override à 1.7. C'est la valeur live. `max_trades_per_session` = 6 dans config.yaml vs 2 dans constants.py.
-
-#### Filtre de régime de marché existant
-
-**Oui, partial.** `gap_detector` joue le rôle de filtre de régime de marché implicite :
-- Il calcule un ATR sur les barres M1 pré-session
-- Il compare au spike de la première barre M1 d'ouverture de session
-- Si `atr_ratio < min_atr_ratio` (1.7 live) → pip STOP, trade annulé
-
-Ce n'est pas un classifieur de régime (trending/ranging/choppy), mais un simple seuil de spike ATR. Il filtre les jours de basse volatilité de façon déterministe.
-
-#### ml_filter.py : statut
-
-**Code orphelin en production — 0 % intégré au pipeline live.**
-
-[`alphaedge/engine/ml_filter.py`](../../alphaedge/engine/ml_filter.py) (37 lignes) est un **shim de ré-export** seulement :
-
-```python
-# Lines 8–10 : "All ML filter logic has been moved to _experimental
-#               (pending strategic validation before live-pipeline integration)"
-from alphaedge.engine._experimental.ml_filter import (
-    DEFAULT_WIN_THRESHOLD, FEATURE_NAMES, MLFilterResult,
-    MLSignalFilter, SignalFeatures, WalkForwardMLReport,
-    extract_features, walk_forward_ml
-)
-```
-
-`strategy.py` et `signal_pipeline.py` n'importent **pas** `ml_filter`. Aucun appel `predict()`, `fit()`, ou `score()` dans les chemins live.
-
----
+**`ml_filter.py` (`engine/ml_filter.py:3`) :** shim de compatibilité pur. Reexporte depuis `engine/_experimental/ml_filter.py`. Constante `LIVE_PIPELINE_INTEGRATED = False`. N'est **jamais importé** par `strategy.py`, `session_lifecycle.py`, ou `signal_pipeline.py`. Statut : CODE MORT en production.
 
 ### 1.2 Données disponibles
 
-| Source | Contenu | Granularité | Profondeur |
-|--------|---------|-------------|------------|
-| IB `reqHistoricalData` | OHLCV barres | M1 + M5 | 7 jours (M1) / 30 jours (M5) par chunk |
-| `BarDiskCache` (.pkl) | Cache rolling disque | M1 + M5 | Cumule sur 1 an (`backtest_years=1`) |
-| `reports/ALPHAEDGE_backtest_results.csv` | Trade-by-trade export | Par trade | ~1 an de trades simulés |
+| Source | Contenu | Disponibilité |
+|--------|---------|--------------|
+| Daily bars | `fetch_bars("1 day", "30 D")` via `hist_feed` | ✅ Fetch live chaque session (`session_lifecycle.py:830`) |
+| Momentum lookback | 252 barres Daily max | ✅ Config |
+| Carry rates | `dict[str, float]` dans `StrategyState.carry_rates` | ✅ Peuplé à l'init paire |
+| CSV backtest | `reports/ALPHAEDGE_backtest_results.csv` | ✅ (FCR strategy, pas Momentum) |
+| Live trade CSV | `append_live_trade_csv()` — rotation mensuelle | ✅ Mais données en production insuffisantes (stratégie non encore live) |
+| Session state | `save_daily_state(DailyState)` — JSON daily | ✅ Structurel seulement (no PnL) |
 
-**Schéma d'un trade (CSV headers) :**
-```
-pair, direction, entry_price, exit_price, stop_loss, take_profit,
-pnl_pips, pnl_usd, pnl_eur, outcome, entry_time, exit_time, sample_type
-```
-
-**Volume estimé de trades backtest :** l'échantillon visible montre EURUSD + USDJPY sur Jan 2024 et Jan–Mar 2025. Avec `min_atr_ratio: 1.7` (filtre peu sélectif) et 6 paires × sessions London/NYSE, on estime **200–400 trades/an** en simulation. C'est faible pour entraîner un classifieur ML.
-
-**Colonnes absentes du CSV :** features de marché au moment du signal (ATR, spread, volume_ratio, range_size) — elles ne sont pas exportées. Toute tentative de ML nécessiterait une nouvelle passe de backtest pour exporter ces features.
-
----
+**Remarque critique :** Le CSV backtest (`reports/ALPHAEDGE_backtest_results.csv`) est issu de la stratégie FCR (**ancienne stratégie**), non de la stratégie Momentum+Carry cible. Toute analyse ML sur ce CSV serait basée sur des données hors cible.
 
 ### 1.3 Infrastructure et contraintes techniques
 
-| Dimension | Valeur | Impact ML |
-|-----------|--------|-----------|
-| Python | 3.11.9, Windows | Compatible sklearn, xgboost, optuna |
-| Session trading | 1h/jour/paire (London 08:00–09:00 UTC ou NYSE 09:30–10:30 ET) | Très peu de trades → données rares |
-| Event-driven | `reqRealTimeBars` push 5s → M1 agrégation | Latence ML doit être < 1s |
-| Reconnexion asyncio | IB Gateway → ib_insync async | Tout modèle ML doit être pre-loaded |
-| Cython core | `.pyx` compilés, pas en Python runtime | Injection ML possible uniquement en Python wrapper |
-| Backtest IB | Chunked fetch, 3 concurrent max (`IB_MAX_CONCURRENT_HIST_REQUESTS`) | Dataset collection lente |
-| News filter | `blackout_minutes=15` autour d'événements H-impact | Filtre existant cover le cas d'usage LLM |
+- **Stack :** Python 3.11.9, Cython 3.0, `ib_insync`, asyncio event loop, Windows
+- **Fenêtre de session :** NYSE 9h30–10h30 EST = **60 minutes/jour max** (`session_lifecycle.py:session_start/end`)
+- **Fréquence signal :** Daily bars → 1 décision par paire par jour (pas temps réel)
+- **sklearn disponible :** ✅ (`regime_filter.py:25` importe KMeans, StandardScaler — déjà installé)
+- **optuna disponible :** ✅ (`bayesian_optimizer.py:17` importe optuna — déjà installé)
+- **joblib disponible :** ✅ (`regime_filter.py:24`)
+- **CPU/RAM :** Windows local, infra non containerisée — pas de GPU, pas de service ML distant
 
-**Contrainte critique :** La fenêtre M1 arrive toutes les 5 secondes (barres temps-réel). Un modèle ML qui s'exécute en <50 ms est nécessaire pour ne pas bloquer la boucle asyncio. Toute inference GPU ou LLM call est hors contrainte.
+### 1.4 Points de décision dans le pipeline actuel
 
----
-
-### 1.4 Carte des points de décision — fichier:ligne
-
-| Stage | Paramètre décisionnel | Valeur actuelle | Fichier:ligne | Type |
-|-------|----------------------|-----------------|---------------|------|
-| **FCR Detection** | `min_range_pips` | 8.0 pips | signal_pipeline.py:36 + constants.py:81 | Seuil fixe |
-| **FCR Detection** | `fcr_range_cv_max` | 0.5 | loader.py:87 / signal_pipeline.py:35 | Seuil qualité |
-| **FCR Detection** | `fcr_lookback` | 6 barres M5 | signal_pipeline.py:38 | Fixe |
-| **Gap Detection** | `min_atr_ratio` | 1.7 (config.yaml) | signal_pipeline.py:55 + constants.py:75 | Seuil filtre volatilité |
-| **Gap Detection** | `atr_period` | 14 barres M1 | signal_pipeline.py:54 + constants.py:74 | Fenêtre ATR |
-| **Engulfing** | `min_volume_ratio` | 1.0 | signal_pipeline.py:86 + constants.py:80 | Seuil volume |
-| **Engulfing** | `min_body_ratio` | 0.3 | signal_pipeline.py:82 + constants.py:85 | Qualité bougie |
-| **Engulfing** | `max_wick_ratio` | 1.5 | signal_pipeline.py:83 + constants.py:86 | Qualité mèche |
-| **Risk** | `risk_pct` | 3.0 % | loader.py:63 / config.yaml | Sizing fixe |
-| **Risk** | `max_daily_loss_pct` | 3.0 % | loader.py:64 + constants.py:54 | Halt trading |
-| **Risk** | `max_trades_per_session` | 6 | loader.py:65 + config.yaml | Cap fixe |
-| **Order** | `rr_ratio` | 2.0 | loader.py:62 / config.yaml | SL/TP fixe |
-| **Order** | `max_spread_pips` | 2.0 | loader.py:66 + constants.py:56 | Filtre spread |
-| **Paires** | `pairs` list | 6 paires fixes | loader.py:57–61 | Liste statique |
-| **Session** | `pair_sessions` dict | London/NYSE fixe | loader.py:89 | Fenêtre fixe |
-| **News** | `blackout_minutes` | 15 min | config.yaml:96–101 | Filtre calendrier |
-
-**Conclusion Phase 1 :** 15 points de décision, tous déterministes, tous configurable via YAML. Aucun point d'adaptation dynamique.
+| Point de décision | Type | Fichier:Ligne | Paramètre actuel | Adaptatif ? |
+|-------------------|------|--------------|-----------------|-------------|
+| ADX gate (ADX ≥ threshold) | Seuil fixe | `signal_pipeline.py:85` | `adx_threshold=25.0` | ❌ Non |
+| EMA cross détection | Paramètres fixes | `signal_pipeline.py:85` | `fast=12, slow=26` | ❌ Non |
+| Carry conflict (|diff| ≥ min) | Seuil fixe | `carry_signal.py` | `min_diff=0.5%` | ❌ Non |
+| Sizing risk_pct | Fixe | `constants.py:DEFAULT_RISK_PCT` | 2.0% | ❌ Non |
+| Sizing lot_size min/max | Fixe | `constants.py:` | 0.01–1000 | ❌ Non |
+| Sélection de paires | Liste fixe | `config.yaml:trading.pairs` | EURUSD, USDJPY | ❌ Non |
+| Filtre régime (K-Means) | Observation only | `strategy.py:203` | `DailyRegimeFilter` | ⚠️ Partiel |
+| Filtre spread max | Fixe | `constants.py` | `max_spread_pips` | ❌ Non |
 
 ---
 
 ## PHASE 2 — ÉVALUATION DES OPPORTUNITÉS IA/ML
 
----
+### A — Filtre ML sur la qualité du signal Momentum
 
-### A — Filtre ML sur la qualité du range FCR
-
-**Idée :** Classifier (Random Forest, XGBoost) entraîné sur les features du range FCR (taille, position, contexte ATR) pour prédire la probabilité que le range soit respecté.
+**Idée :** Classifier (RF/XGBoost) entraîné sur features ADX, EMA delta, carry differential → prédire P(win).
 
 **Analyse :**
+- Données disponibles : **NON** — la stratégie Momentum est en cours de migration (`PLAN_ACTION_audit_migration_momentum_carry_2026-03-25.md`), `momentum_detector.pyx` n'est pas encore compilé en production. Aucun historique de trades live Momentum exists.
+- Volume de données : 1 trade/jour/paire → ~200 trades/an pour 2 paires. Un logistic regression sur 200 samples avec 5 features converge, mais RF/XGBoost requiert 500+ pour éviter le surapprentissage (Arlot & Celisse, 2010).
+- Risque surapprentissage : **Élevé** — Forex Momentum Daily a un ratio signal/bruit structurellement faible sur petite fenêtre.
+- Complexité : M (logistic regression faisable, RF complexe).
+- Module `_experimental/ml_filter.py` existe déjà (LogReg + walk-forward). Features basées sur FCR (non Momentum) → ne peut pas être réutilisé tel quel.
 
-- **Volume de données :** ~200–400 FCR events/an retenus (d'abord filtrés par `min_range_pips`). Les labels sont bruités — la sortie (win/loss) dépend de tout le pipeline, pas du FCR seul.
-- **Features exportées :** Le CSV backtest ne contient pas les features FCR (range_size, cv, atr_context). Une passe de ré-export serait nécessaire.
-- **Surapprentissage :** Sur 200 trades/an, un Random Forest à 100 arbres va mémoriser. OOS dégradation prévisible.
-- **Gain attendu :** Réduire les faux FCR → moins de trades, Sharpe potentiellement supérieur. Mais Sharpe=3.37 baseline est déjà excellent. Le risque de casser cette performance est réel.
-- **Compatibilité pipeline :** Injection possible entre `detect_fcr()` et `detect_gap()` dans `signal_pipeline.py` — pas de modification Cython requise.
-- **Données suffisantes :** ❌ Non — 200-400 échantillons sur 1 an est insuffisant pour un classifieur robuste en OOS.
-
-| Critère | Évaluation |
-|---------|-----------|
-| Gain attendu | Faible à moyen (moins de trades, Sharpe ambigu) |
-| Complexité | M (export features + entraînement + injection) |
-| Risque prod | Élevé (surapprentissage, dégradation Sharpe) |
-| Fenêtre 1h/jour | Neutre (exécuté pré-trade, <1ms) |
-| Données suffisantes | ❌ Non (200-400 samples/an) |
-| Incompatibilité Cython | Non (wrapper Python uniquement) |
-
-**VERDICT : ❌ NON PERTINENT**
-Donnée insuffisante pour généralisation OOS. Risque élevé de casser le Sharpe=3.37. Le filtre `fcr_range_cv_max` existant couvre déjà la qualité de range de façon déterministe.
+**Verdict : ❌ NON PERTINENT — prématuré.** Intégrer uniquement après 12 mois de trades live Momentum documentés (≥500 observations). Revenir à cet item en 2027.
 
 ---
 
-### B — Filtre ML sur le signal engulfing
+### B — Filtre ML sur le carry bias conflict
 
-**Idée :** Classifier qui valide/rejette `detect_engulfing()` avec features contextuelles (volume relatif, distance au range, spread).
+**Idée :** Enrichir la décision carry avec features contextuelles (ATR, spread réalisé) au-delà du seuil fixe.
 
 **Analyse :**
+- La décision carry est aujourd'hui binaire : `|diff| ≥ 0.5%` → LONG/SHORT/NEUTRAL. Le seuil `DEFAULT_CARRY_MIN_DIFFERENTIAL` est configuré dans `constants.py`.
+- En pratique, le taux directeur change rarement (BOE, FED, ECB : 4–8 fois/an). Pour EUR/USD et USD/JPY, le carry differential évolue très lentement.
+- Ajouter un ML ici n'apporte pas de gain mesurable sur un signal qui change au rythme des banques centrales.
+- Risque : complexifier un gate dont la logique est correcte et simple.
 
-- **Volume de données :** Les signals engulfing retenus en backtest sont encore plus rares que les FCR (pipeline all-or-nothing : FCR → Gap → Engulfing = 3 filtres). Estimation : 100–200 signaux engulfing/an.
-- **Labels bruités :** Un signal engulfing "correct" peut échouer à cause du spread, slippage, ou d'un événement macro. Label = outcome du trade ≠ qualité du signal.
-- **Features additionnelles :** `min_body_ratio`, `max_wick_ratio`, `min_volume_ratio` couvrent déjà les dimensions de qualité. Ajouter un ML pour les mêmes dimensions = redondance.
-- **Compatibilité all-or-nothing :** Rejeter un signal engulfing en ajout ≈ ajouter un filtre rules-based. Un seuil plus strict sur `min_body_ratio` produirait le même effet sans complexité.
-
-| Critère | Évaluation |
-|---------|-----------|
-| Gain attendu | Très faible (filtres rule-based équivalents) |
-| Complexité | M |
-| Risque prod | Élevé (surapprentissage sur ~150 samples) |
-| Fenêtre 1h/jour | Neutre |
-| Données suffisantes | ❌ Non (<200 samples) |
-| Incompatibilité Cython | Non |
-
-**VERDICT : ❌ NON PERTINENT**
-Les filtres rules-based existants (`min_body_ratio`, `max_wick_ratio`, `min_volume_ratio`) couvrent déjà la qualité du signal engulfing. Un ML sur <200 samples = surapprentissage garanti. Ajuster `min_body_ratio` à 0.4 produit le même effet, sans risque, et teste en 30 secondes.
+**Verdict : ❌ NON PERTINENT.** Le thresholding fixe est approprié pour un signal aussi lent. Un paramètre `carry_min_differential_pct` optimisé par Bayesian search (voir D) est suffisant.
 
 ---
 
-### C — Détection de régime de marché Forex
+### C — Détection de régime de marché Forex (K-Means)
 
-**Idée :** Clustering (K-Means ou HMM) sur volatilité ATR, momentum M5, pour classifier les journées en régimes high/low volatility. Coupler avec `gap_detector` pour filtrer les journées à basse volatilité ou forte tendance directionnelle.
+**Idée :** K-Means sur volatilité Daily pour classifier les sessions high_vol/low_vol.
 
 **Analyse :**
+- `DailyRegimeFilter` (`regime_filter.py:88`) est **déjà implémenté**, déjà instancié, et tourne en observation dans `strategy.py:203-210`.
+- Le modèle est entraîné sur `daily_bars_history` (30 D disponibles via `hist_feed`).
+- Le seul travail manquant : **activer le gate** (bloquer trades sur `high_vol` ou `low_vol` selon config) après 30 sessions d'observation.
+- Données disponibles : ✅ Daily bars fetchées à chaque session.
+- Complexité : XS — le code est écrit, il faut juste un flag config + tests.
+- Gain attendu : réduction du drawdown en filtrant les jours de forte volatilité non-directionnelle.
 
-- **Pertinence conceptuelle :** Le `gap_detector` filtre déjà la volatilité intraday (spike ATR). Mais il ne distingue pas les jours de trend fort (EUR/USD en tendance directionnelle sur plusieurs heures) où le FCR range peut être cassé rapidement. Une détection de régime **pré-session** (la veille ou avant l'ouverture) est complémentaire.
-- **Données disponibles :** 252 jours de barres M5/an pour EUR/USD. K-Means à 2–3 clusters sur features journalières (ATR daily, range M5 pré-session, volume moyen) = 252 points minimum. Marginal mais fonctionnel.
-- **Features simples :** ATR daily (std des hauts-bas M5 sur la journée), spread moyen, momentum (close J-1 vs close J). Calculables depuis le cache disk M5 existant.
-- **Latence :** Calcul pré-session unique par jour (<100ms), pas dans la boucle event-driven. Aucun conflit asyncio.
-- **Risque prod :** K-Means ne garantit pas de stabilité d'un régime à l'autre. Les frontières de régime peuvent être instables en période de transition (Fed announcement, crise géopolitique). Risque de over-filtering = réduction excessive du nombre de trades.
-- **Impact sur Cython :** Zéro modification de `.pyx` requise. Un flag `regime_ok: bool` en Python avant d'appeler `signal_pipeline.detect_fcr()` suffit.
-- **Implémentation recommandée :** sklearn `KMeans(n_clusters=2)` sur features journalières normalisées. Cluster "haute volatilité" = trading autorisé. Entraîner sur 1 an, re-calibrer mensuellement (compatible avec walk_forward existant).
+**Verdict : ✅ PERTINENT.** `DailyRegimeFilter` est le seul composant ML **déjà prêt** pour production. Activer le gate est le chemin le plus court vers un gain réel.
 
-| Critère | Évaluation |
-|---------|-----------|
-| Gain attendu | Moyen — réduit les trades sur jours choppy (impact max DD) |
-| Complexité | S (50 lignes Python + sklearn) |
-| Risque prod | Moyen (instabilité clustering, over-filtering) |
-| Fenêtre 1h/jour | ✅ Calcul pré-session, hors boucle event |
-| Données suffisantes | ⚠️ Marginal (252 jours/an, acceptable pour K=2) |
-| Incompatibilité Cython | ✅ Aucune — wrapper Python pur |
-
-**VERDICT : ✅ PERTINENT** (NIVEAU 1 — observation uniquement d'abord)
-C'est l'opportunité ML la plus réaliste sur ce projet. Features simples, latence nulle, aucune modification Cython. **Condition :** démarrer en mode logging (log le régime détecté mais ne bloque pas les trades) sur 30 sessions NYSE avant activation.
+**Condition préalable :** 30 sessions NYSE paper trading en observation avant d'activer le gate — règle déjà documentée dans `regime_filter.py:14`.
 
 ---
 
-### D — Optimisation bayésienne des paramètres FCR (Optuna)
+### D — Optimisation adaptative des paramètres Momentum (Bayesian)
 
-**Idée :** Remplacer le grid search Cartésien de `sensitivity.grid_search_best()` par une optimisation bayésienne (Optuna) pour explorer l'espace de paramètres plus efficacement, dans le framework walk-forward existant.
+**Idée :** Optuna sur `adx_threshold`, `fast_period`, `slow_period`, `rr_ratio` — réévalué mensuellement.
 
 **Analyse :**
+- `bayesian_optimizer.py` (Optuna) et `walk_forward.py` sont **déjà implémentés** et testés.
+- `sensitivity.py` définit `SENSITIVITY_PARAMS` avec ranges.
+- L'optimisation se fait sur le backtest engine (`backtest.py`) en offline — aucun risque IB.
+- Paramètres cibles : `adx_threshold` (20–35), `momentum_fast_period` (8–20), `momentum_slow_period` (20–50), `rr_ratio` (1.5–3.0).
+- Risque overfitting : réel, mitigé par walk-forward OOS (déjà dans `walk_forward.py`).
+- Exécution mensuelle offline, résultats propagés vers `config.yaml` si OOS Sharpe améliore baseline.
+- Données requises : backtest Momentum+Carry valide. Or le dataset actuel est FCR.
 
-- **Infrastructure existante :** `walk_forward.py` supporte déjà un `optimize_fn` optionnel ([walk_forward.py:117–163](../../alphaedge/engine/walk_forward.py)). `sensitivity.grid_search_best()` est passé comme `optimize_fn`. Il suffit de créer une alternative Optuna.
-- **Gain concret :** Le Cartesian product sur 5 paramètres × 5–15 valeurs chacun = 5^5 = 3 125 backtests. Optuna avec 100–200 trials couvre l'espace de façon plus intelligente (TPE sampler), avec 10–15× moins de temps de calcul.
-- **Données nécessaires :** Seulement le cache disk M1+M5 (déjà présent). Pas de données ML supplémentaires.
-- **Risque prod :** L'optimisation est **hors live** — elle s'exécute sur l'IS window du walk-forward, pas en production. Le risque est uniquement le suroptimisation IS → dégradation OOS, qui est déjà surveillé par le framework walk-forward.
-- **Compatibilité :** `optimize_fn(m1_bars, m5_bars, pair, config) -> dict[str, float]` — signature identique à celle attendue par `run_walk_forward()`. Optuna remplace uniquement l'implémentation interne.
-- **Implémentation :** `optuna.create_study(direction="maximize")` avec `study.optimize(objective, n_trials=150)`. L'`objective` appelle `_run_with_params()` de `sensitivity.py`. ~80 lignes Python, aucune modification Cython.
-
-| Critère | Évaluation |
-|---------|-----------|
-| Gain attendu | Élevé (exploration paramétrique plus efficace, moins de temps de calcul) |
-| Complexité | S (wrapper Optuna autour de _run_with_params) |
-| Risque prod | Faible (exécuté hors live, résultat = dict de paramètres) |
-| Fenêtre 1h/jour | ✅ Neutre (calcul offline pré-session ou périodique) |
-| Données suffisantes | ✅ Oui (uses existing M1+M5 cache) |
-| Incompatibilité Cython | ✅ Aucune |
-
-**VERDICT : ✅ PERTINENT** (NIVEAU 2 — intégration immédiate dans le framework walk_forward)
-Remplacer le grid search par Optuna est le changement de meilleur ROI dans le projet actuel. La compatibilité avec l'architecture `optimize_fn` est parfaite. Pas de risque de régression live.
+**Verdict : ✅ PERTINENT — mais bloqué.** Pertinent dès que le backtest Momentum+Carry sera disponible (post-migration C-11/C-12 du plan migration). L'infrastructure est prête (`bayesian_optimizer.py`, `walk_forward.py`). À activer en Phase 2, pas maintenant.
 
 ---
 
-### E — Prédiction du sizing optimal (risk_pct dynamique)
+### E — Prédiction du sizing optimal (régression)
 
-**Idée :** Régression ML sur les conditions de marché (ATR, spread, heure dans la session) pour ajuster `risk_pct` dynamiquement par trade.
+**Idée :** Régression sur conditions marché (ADX, spread, carry diff) pour ajuster `risk_pct` dynamiquement.
 
 **Analyse :**
+- Le sizing actuel (`calculate_position_size()` — `risk_manager.pyx`) est déterministe et validé : `is_valid` check, log WARNING si invalide.
+- Un sizing ML introduit un vecteur de régression dans le chemin critique exécution. Toute dérive du modèle se traduit en exposure anormale sur IB.
+- En Forex Momentum Daily, le Kelly sizing adaptatif (Moskowitz 2012 TSMOM) est une alternative plus robuste et sans ML : `position_size ∝ signal_strength / realized_volatility`.
+- Données : insuffisantes (même problème que A).
+- Risque production : Élevé — erreur de sizing → liquidation forcée IB.
 
-- **Incompatibilité avec le modèle fixed-fraction :** `backtest_stats.py:193–224` implémente un compound fixed-fraction sizing (`_apply_equity_sizing()`). Ce modèle suppose un `risk_pct` constant. Un `risk_pct` variable casse l'invariance de ce calcul et invalide les métriques IS/OOS comparées.
-- **Amplification des drawdowns :** Un sizing variable augmente le risque en cas de mauvaise prédiction. Si le modèle augmente `risk_pct` sur un trade qui perd, la perte réelle est amplifiée.
-- **Volume de données insuffisant :** Entraîner une régression sur les conditions de marché nécessite des milliers de trades. 200–400 trades/an = régression bruit-dominant.
-- **Daily loss limit :** `check_daily_limit()` s'appuie sur `max_daily_loss_pct`. Un `risk_pct` dynamique peut dépasser la limite réelle sans que le check ne le détecte correctement sur la comptabilisation pips.
-
-| Critère | Évaluation |
-|---------|-----------|
-| Gain attendu | Ambigu (peut amplifier gains ET pertes) |
-| Complexité | L (refactor backtest_stats.py + modèle ML) |
-| Risque prod | Élevé (casse fixed-fraction invariance, amplifie DD) |
-| Fenêtre 1h/jour | Neutre |
-| Données suffisantes | ❌ Non |
-| Incompatibilité Cython | Non |
-
-**VERDICT : ❌ NON PERTINENT**
-Casse le modèle de comptabilisation fixed-fraction. Amplifie le risque sans bénéfice prouvable sur le volume de données disponibles. Risk-adjusted return actuel (Sharpe=3.37) déjà optimal sur le test IS.
+**Verdict : ❌ NON PERTINENT.** Le safety-first path est un sizing basé sur la volatilité réalisée (pas de ML), compatible avec `calculate_position_size()` via un paramètre adaptatif. ML sur sizing = sur-ingénierie avec risque production disproportionné.
 
 ---
 
 ### F — Agent de sélection de paires Forex
 
-**Idée :** Agent ML qui sélectionne dynamiquement EUR/USD, GBP/USD, USD/JPY selon volatilité et corrélations intraday.
+**Idée :** Sélection dynamique EUR/USD, GBP/USD, USD/JPY selon volatilité + carry + corrélations.
 
 **Analyse :**
+- La liste de paires est fixe dans `config.yaml:trading.pairs`. La corrélation entre paires est déjà gérée par `pair_correlation.py` (bloque si paire corrélée ouverte).
+- Dans une fenêtre 1h/jour (NYSE open), trader 3 paires corrélées simultanément est le vrai risque — déjà géré.
+- Un agent de sélection dynamique introduit un vecteur de décision supplémentaire dont le signal (volatilité Daily) est déjà capturé par `DailyRegimeFilter`.
+- Données : corrélations réalisées disponibles via `pair_correlation.py`.
+- Complexité : L — nécessite un dataset de rendements cross-pairs, backtesting multi-paires.
 
-- **Opportunité réelle mais pas ML :** La matrice de corrélation entre paires USD (EURUSD/GBPUSD/AUDUSD sont corrélés ~0.8–0.95 intraday) est calculable de façon déterministe. Un seuil rules-based (`if |corr(EURUSD_returns, GBPUSD_returns)| > 0.9 and both_signaled: skip GBPUSD`) suffit.
-- **Fenêtre 1h :** 6 paires sur 2 sessions (London + NYSE) = max 12 opportunités/jour. `max_trades_per_session: 6` limite naturellement le sur-trading. L'agent de sélection est redondant.
-- **Un cluster K-Means sur corrélations de paires :** données trop bruitées sur 1h de window par session. La corrélation intraday varie fortement selon les événements macro.
-- **Risque :** Bloquer des paires "corrélées" peut supprimer des trades profitables si la corrélation est temporaire. Over-filtering à nouveau.
-
-| Critère | Évaluation |
-|---------|-----------|
-| Gain attendu | Faible (filtres déjà présents, 6 paires only) |
-| Complexité | M (si ML) / XS (si règles corrélation) |
-| Risque prod | Moyen (over-filtering) |
-| Fenêtre 1h/jour | Problème structurel (peu de données intraday) |
-| Données suffisantes | ❌ Insuffisant pour ML (1h/session) |
-| Incompatibilité Cython | Non |
-
-**VERDICT : ❌ NON PERTINENT** (pour ML)
-Le filtrage par corrélation de paires se fait avec 10 lignes de règles Python, sans ML. `max_trades_per_session` et `pair_sessions` (London/NYSE split) couvrent déjà la diversification temporelle. Si le filtre corrélation est souhaité, l'implémenter en rules-based dans `session_lifecycle.py` suffit amplement.
+**Verdict : ❌ NON PERTINENT** pour la phase actuelle. La corrélation est déjà gérée. Activer 2–3 paires avec régime gate (C) suffit.
 
 ---
 
 ### G — Agent de gestion dynamique du stop-loss
 
-**Idée :** Agent ML qui ajuste le niveau SL de `create_bracket_order()` selon la volatilité ATR réalisée de la session.
+**Idée :** Ajuster le SL selon l'ATR réalisé de la session.
 
 **Analyse :**
+- `create_bracket_order()` (`order_manager.pyx`) valide `is_valid` avant tout envoi. Modifier le SL dynamiquement nécessite de modifier l'interface du bracket, incompatible sans `make build`.
+- En Daily swing (position tenue 1–5 jours), le SL à l'entrée est calculé sur la structure daily — l'ATR intraday ne devrait pas l'influencer.
+- Risque IB : si l'agent génère un SL trop proche (ATR faible → SL tight), l'ordre peut être refusé par IB ou hit immédiatement.
 
-- **Incompatibilité directe avec bracket order IB :** `create_bracket_order()` valide le ratio `(TP - entry) / (entry - SL) ≥ rr_ratio`. Un SL ajusté dynamiquement modifie ce ratio. Si le SL s'élargit, le ratio R:R diminue, et `is_valid` peut retourner `False` → trade annulé.
-- **Modification Cython requise :** Le calcul du SL vient de `detect_engulfing()` (bas/haut de la bougie engulfing + buffer). Modifier le SL post-Cython nécessite une logique Python supplémentaire qui peut entrer en conflit avec les checks internes de `order_manager.pyx`. Si on modifie `order_manager.pyx` : **`make build` obligatoire**, risque de régression sur les 504 tests.
-- **Fixed-fraction model :** `risk_manager.calculate_position_size()` prend `sl_pips` pour calculer le lot size. Un SL dynamique change le lot size à chaque trade — interaction complexe avec la comptabilisation P&L en backtest.
-
-| Critère | Évaluation |
-|---------|-----------|
-| Gain attendu | Ambigu (peut réduire fausses sorties mais casse R:R) |
-| Complexité | L (interaction broker + Cython) |
-| Risque prod | Élevé (is_valid failures, lot size incorrect) |
-| Fenêtre 1h/jour | Neutre |
-| Données suffisantes | ❌ Non |
-| Incompatibilité Cython | ⚠️ Oui — modification order_manager.pyx requise |
-
-**VERDICT : ❌ NON PERTINENT**
-Incompatible avec la logique de validation bracket order. Nécessite modification de `core/*.pyx` (coût `make build` + risque régression). Casse le modèle fixed-fraction de comptabilisation.
+**Verdict : ❌ NON PERTINENT.** Le SL Daily fixed est la bonne implémentation pour swing Momentum. Modifier `order_manager.pyx` sans `make build` est interdit — investissement disproportionné.
 
 ---
 
 ### H — Agent LLM pour le sentiment macro Forex
 
-**Idée :** LLM pour analyser news économiques (NFP, CPI, Fed) et filtrer les signaux FCR les jours de forte volatilité.
+**Idée :** LLM analyse NFP, CPI, Fed pour filtrer les signaux les jours de forte volatilité macro.
 
 **Analyse :**
+- `news_filter.py` (`config.yaml:news_filter.enabled=true`) filtre déjà les événements high-impact avec `blackout_minutes=15`.
+- Un LLM en production IB introduit une dépendance externe (API OpenAI/Anthropic) avec latence >100ms dans un pipeline event-driven.
+- Fiabilité sur Forex : les journées NFP sont déjà bloquées par `news_filter`. La valeur ajoutée d'un LLM au-delà du calendrier économique est non démontrée sur horizons Daily swing.
+- Coût : API calls facturés + risque de rate limiting en production le jour J.
 
-- **news_filter.py déjà en place :** Le module `EconomicNewsFilter` (importé dans `strategy.py`) applique déjà un blackout de 15 minutes autour des événements H-impact via calendrier économique. Ce use case est **entièrement couvert**.
-- **Latence incompatible :** Une API LLM (GPT-4, Claude) prend 1–10 secondes de round-trip. Les barres M1 arrivent toutes les 5 secondes via `reqRealTimeBars`. Une LLM call dans la boucle asyncio bloquerait l'événement suivant.
-- **Fiabilité Forex vs crypto :** Forex réagit à des publications macro à horaires fixes (NFP le premier vendredi du mois, CPI, Fed minutes…). Le calendrier économique est plus fiable qu'un LLM pour prédire l'impact.
-- **Coût opérationnel :** API LLM = coût variable, rate limits, dépendance externe en live. Risque opérationnel inutile.
-- **Hallucinations :** Un LLM peut "inventer" un sentiment baissier sur EUR/USD alors que la publication est neutre. Zéro traçabilité de l'erreur.
-
-| Critère | Évaluation |
-|---------|-----------|
-| Gain attendu | Nul (news_filter.py couvre déjà le cas) |
-| Complexité | L (API LLM, gestion rate limits, prompt engineering) |
-| Risque prod | Élevé (latence, hallucinations, coût) |
-| Fenêtre 1h/jour | ❌ Incompatible (latence API > période M1) |
-| Données suffisantes | N/A |
-| Incompatibilité Cython | Non |
-
-**VERDICT : ❌ NON PERTINENT**
-`news_filter.py` couvre le cas d'usage. Un LLM ajoute de la latence, du coût et du risque d'hallucination sans bénéfice. Jamais à utiliser dans une boucle event-driven avec contrainte <1s.
+**Verdict : ❌ NON PERTINENT.** Le filtre news existant couvre le cas d'usage. Un LLM est une régression en fiabilité et latence sur ce contexte.
 
 ---
 
-### I — SHAP values sur les paramètres FCR
+### I — SHAP values sur les paramètres Momentum+Carry
 
-**Idée :** Analyse SHAP pour identifier quels paramètres FCR contribuent réellement au Sharpe.
+**Idée :** Analyser l'importance des features sur le dataset backtest pour identifier les paramètres qui contribuent réellement au Sharpe.
 
 **Analyse :**
+- Le dataset backtest actuel (`reports/ALPHAEDGE_backtest_results.csv`) est issu de la stratégie FCR (pas Momentum+Carry). SHAP sur ce dataset = conclusions non-transférables.
+- Dès que le backtest Momentum+Carry sera disponible (post-migration), SHAP est une analyse offline valide et rapide (XS complexité, `shap` package standard).
+- Peut confirmer si `adx_threshold=25` est effectivement discriminant ou si `carry_min_differential=0.5%` contribue négativement.
+- Aucun risque production — analyse pure offline.
 
-- **`sensitivity.py` couvre déjà ce besoin :** `run_sensitivity_2d()` produit des heatmaps 2D (Sharpe grid) pour chaque paire de paramètres. `find_robustness_plateau()` identifie les régions stables. Ces outils donnent une visualisation directe de l'importance des paramètres sans nécessiter de modèle ML intermédiaire.
-- **SHAP requiert un modèle :** Il faut d'abord entraîner un XGBoost/RF sur (features, outcome), puis calculer SHAP. Avec 200–400 trades, le modèle intermédiaire sera bruité → les SHAP values hériteront du bruit.
-- **Valeur ajoutée nulle vs heatmap :** Une heatmap de sensibilité sur `min_atr_ratio` × `min_range_pips` donne la même information "importance paramètre" de façon directe et déterministe.
-
-| Critère | Évaluation |
-|---------|-----------|
-| Gain attendu | Nul (sensitivity.py + robustness plateau équivalent) |
-| Complexité | M (pipeline SHAP) |
-| Risque prod | Faible (analyse offline) |
-| Fenêtre 1h/jour | Neutre |
-| Données suffisantes | ❌ Non (200–400 trades → modèle bruité) |
-| Incompatibilité Cython | Non |
-
-**VERDICT : ❌ NON PERTINENT**
-`sensitivity.py:find_robustness_plateau()` répond au même besoin de façon directe et déterministe. SHAP ajoute une couche d'approximation sans gain d'information.
+**Verdict : ✅ PERTINENT — mais bloqué.** Pertinent dès que le backtest Momentum+Carry sera disponible. Planifier comme analyse mensuelle offline (30 min/mois).
 
 ---
 
-### J — Walk-forward adaptatif (fenêtre IS/OOS dynamique)
+### J — Walk-forward adaptatif
 
-**Idée :** Ajustement automatique des fenêtres IS/OOS selon la volatilité détectée du marché Forex.
+**Idée :** Ajustement automatique des fenêtres IS/OOS selon la volatilité détectée.
 
 **Analyse :**
+- `walk_forward.py` implémente `run_walk_forward()` avec `train_months`, `test_months`, `step_months` fixes.
+- L'adaptation de la fenêtre walk-forward selon le régime de volatilité est une amélioration marginale : les backtests académiques (Pardo 2008) montrent qu'une fenêtre train=3M/test=1M est robuste sur Forex.
+- Complexité : M — modifier `generate_wf_windows()` pour accepter un `volatility_multiplier`.
+- Gain attendu : difficile à quantifier sans dataset Momentum+Carry.
 
-- **Données insuffisantes pour calibration :** Avec 1 an de données, `run_walk_forward()` produit 3–4 cycles IS/OOS (train_months=3, step=1). Calibrer la dynamique des fenêtres sur 3–4 cycles = bruit pur.
-- **Fenêtres fixes déjà raisonnables :** 3 mois IS / 1 mois OOS est une configuration standard. La fenêtre est déjà paramétrable (`train_months`, `test_months`, `step_months` dans `walk_forward.py:95`).
-- **Sur-ingénierie :** L'adaptation des fenêtres ne peut améliorer les résultats que si la stationnarité du marché varie systématiquement avec la volatilité — hypothèse non vérifiable sur 3–4 cycles.
-- **Alternative simple :** Tester manuellement fenêtre 2/1 vs 3/1 vs 6/1 via les paramètres existants. Pas besoin de ML.
-
-| Critère | Évaluation |
-|---------|-----------|
-| Gain attendu | Très faible (non prouvable sur 3-4 cycles) |
-| Complexité | M |
-| Risque prod | Faible (offline) |
-| Fenêtre 1h/jour | Neutre |
-| Données suffisantes | ❌ Non (3-4 cycles insuffisant) |
-| Incompatibilité Cython | Non |
-
-**VERDICT : ❌ NON PERTINENT**
-Sur-ingénierie. Les paramètres `train_months` / `test_months` sont déjà configurables. Tester différentes valeurs fixes est plus rigoureux que d'adapter dynamiquement sur 3–4 cycles.
+**Verdict : ❌ NON PERTINENT** pour maintenant. Les fenêtres fixes sont appropriées. Réévaluer quand le dataset Momentum+Carry aura 12 mois de données.
 
 ---
 
@@ -412,78 +238,84 @@ Sur-ingénierie. Les paramètres `train_months` / `test_months` sont déjà conf
 
 | ID | Opportunité | Verdict | Gain estimé | Complexité | Risque prod |
 |----|-------------|---------|-------------|------------|-------------|
-| A | Filtre ML qualité FCR (RF/XGBoost) | ❌ NON PERTINENT | Faible / négatif | M | Élevé |
-| B | Filtre ML signal engulfing | ❌ NON PERTINENT | Très faible | M | Élevé |
-| C | Détection de régime de marché (K-Means) | ✅ PERTINENT | Moyen (−Max DD) | S | Moyen |
-| D | Optimisation bayésienne Optuna (walk-forward) | ✅ PERTINENT | Élevé (efficacité param) | S | Faible |
-| E | Sizing dynamique risk_pct (régression) | ❌ NON PERTINENT | Ambigu | L | Élevé |
-| F | Sélection paires ML | ❌ NON PERTINENT | Faible | M | Moyen |
-| G | Stop-loss dynamique ML | ❌ NON PERTINENT | Ambigu | L | Élevé |
-| H | LLM sentiment macro Forex | ❌ NON PERTINENT | Nul | L | Élevé |
-| I | SHAP values paramètres FCR | ❌ NON PERTINENT | Nul | M | Faible |
-| J | Walk-forward adaptatif fenêtres | ❌ NON PERTINENT | Très faible | M | Faible |
+| A | Filtre ML signal Momentum (LogReg/RF) | ❌ NON PERTINENT | Non mesurable (pas de données) | M | Élevé |
+| B | Filtre ML carry conflict | ❌ NON PERTINENT | Marginal (signal lent) | S | Faible |
+| C | Régime K-Means (gate) | ✅ PERTINENT | Réduction DrawDown estimée 10–20% | XS | Faible |
+| D | Bayesian param optimization (Optuna) | ✅ PERTINENT (bloqué) | +Sharpe OOS TBD après migration | XS | Faible (offline) |
+| E | Sizing ML adaptatif | ❌ NON PERTINENT | Non mesurable · risque exposure | L | Élevé |
+| F | Agent sélection paires | ❌ NON PERTINENT | Redondant avec pair_correlation | L | Moyen |
+| G | Agent SL dynamique | ❌ NON PERTINENT | Incompatible swing Daily · pyx requis | L | Élevé |
+| H | LLM sentiment macro | ❌ NON PERTINENT | Redondant avec news_filter | L | Élevé |
+| I | SHAP feature importance | ✅ PERTINENT (bloqué) | Clarté paramètre → simplification | XS | Nul |
+| J | Walk-forward adaptatif | ❌ NON PERTINENT | Marginal sur données insuffisantes | M | Faible |
 
 ---
 
 ### 3.2 Roadmap recommandée
 
-#### NIVEAU 1 — Sans risque pour la production (ALPHAEDGE_PAPER=true obligatoire)
+#### NIVEAU 1 — Sans risque pour la production (paper trading, observation)
 
-**C — Détection de régime de marché (K-Means)**
+**Maintenant — après 30 sessions paper :**
 
-Mode observation uniquement : le classifieur détecte le régime mais **ne bloque pas les trades**. On logge uniquement `regime: high_vol | low_vol` par journée. Après 30 sessions NYSE, on analyse la corrélation régime → win_rate avant toute activation.
+1. **Activer le gate `DailyRegimeFilter` (C)** — `strategy.py:203-210`
+   - Ajouter flag `regime_filter_enabled: false` (défaut) dans `config.yaml`
+   - Après 30 sessions NYSE paper observation : passer à `true` si les sessions `high_vol` ont un WinRate < 40%
+   - Travail estimé : 2h · 0 risque · aucun `.pyx` modifié
 
-**Stack :** `sklearn.cluster.KMeans(n_clusters=2)`, `numpy` (déjà présent).
-**Features journalières :** ATR daily (std des ranges M5 sur J-1), range intraday J-1, spread moyen M1 pré-session.
-**Recalibration :** mensuelle via le cache disk M5 (BarDiskCache).
-**Fichier nouveau :** `alphaedge/engine/regime_filter.py` (~80 lignes).
-**Intégration :** Dans `strategy.py`, avant l'appel à `signal_pipeline.detect_fcr()` → `if not regime_filter.allows_trading(pair, session_date): log + return`.
-**make build :** Non requis (Python pur).
-**make qa :** Doit passer à 100% avant activation.
+#### NIVEAU 2 — Intégration progressive (post-migration Momentum+Carry)
 
-#### NIVEAU 2 — Intégration progressive (paper trading, validation OOS)
+2. **SHAP analysis offline (I)** — dès le premier backtest Momentum+Carry valide
+   - Script mensuel `scripts/shap_analysis.py` sur le CSV backtest
+   - Entrée : paramètres actuels + résultats backtest
+   - Sortie : rapport `reports/shap_report.md` — quels paramètres comptent
 
-**D — Optimisation bayésienne (Optuna) dans walk_forward.py**
+3. **Bayesian optimization mensuelle (D)** — post-migration, dès 6 mois de backtest disponibles
+   - `bayesian_optimizer.py` + `walk_forward.py` déjà prêts
+   - Exécuter offline → proposer `config.yaml` mis à jour si Sharpe OOS s'améliore
+   - Gate : amélioration Sharpe OOS ≥ 5% avant d'appliquer les nouveaux paramètres
 
-Remplacer `sensitivity.grid_search_best()` par une alternative Optuna en tant que `optimize_fn` optionnelle.
+#### NIVEAU 3 — Remplacement de composants (0 item éligible maintenant)
 
-**Stack :** `optuna` (à ajouter dans `requirements.txt`).
-**Intégration :** Nouvelle fonction `optuna_search_best(m1_bars, m5_bars, pair, config, n_trials=150) -> dict[str, float]` dans un nouveau fichier `alphaedge/engine/bayesian_optimizer.py` (~80 lignes). Compatible avec la signature `optimize_fn` de `run_walk_forward()` sans modification de `walk_forward.py`.
-**Validation :** Comparer OOS Sharpe entre grid search et Optuna sur le même dataset IS avant de remplacer définitivement.
-**make build :** Non requis.
-**make qa :** Doit passer à 100%, y compris nouveaux tests `test_bayesian_optimizer_*.py`.
-
-#### NIVEAU 3 — Remplacement de composants existants
-
-**Conditionnel :** Uniquement si NIVEAU 2 validé sur 30+ sessions NYSE en paper trading pour C, et si les OOS Sharpe via Optuna sont supérieurs ou égaux au grid search sur 3+ fenêtres walk-forward pour D.
+Aucun composant ne justifie un remplacement par ML dans l'état actuel des données et du pipeline.
 
 ---
 
 ### 3.3 Ce qu'il ne faut PAS faire
 
-| Intégration | Raison d'exclusion |
-|-------------|-------------------|
-| **Filtre LLM (H)** | Latence 1–10s incompatible avec boucle asyncio M1 (5s bars). `news_filter.py` couvre le besoin. |
-| **Dynamic SL (G)** | Requiert modification `order_manager.pyx` → `make build` + tests de régression. Casse fixed-fraction model. |
-| **Dynamic risk_pct (E)** | Invalide le modèle de comptabilisation `backtest_stats._apply_equity_sizing()`. Peut amplifier les drawdowns. |
-| **ML sur engulfing (B)** | ~150 samples/an → surapprentissage garanti. `min_body_ratio` configurable couvre le besoin. |
-| **ML sur FCR (A)** | Features non exportées, labels bruités, surapprentissage prévisible. `fcr_range_cv_max` couvre le besoin. |
-| **SHAP (I)** | `sensitivity.find_robustness_plateau()` répond au même besoin directement. Couche ML inutile. |
-| **Tout modèle PyTorch/TF/Keras** | Dépendances lourdes, latence GPU incompatible avec event-driven IB. Hors contexte Forex NYSE 1h. |
-| **Walk-forward adaptatif (J)** | 3–4 cycles = bruit pur. Les paramètres `train_months`/`test_months` sont déjà configurables. |
+| Intégration à éviter | Raison |
+|---------------------|--------|
+| Filtre LogReg/RF sur signal Momentum (A) | Données insuffisantes (<200 trades) — surapprentissage garanti |
+| Sizing ML (E) | Exposure anormale sur IB si dérive modèle → risque liquidation |
+| Agent LLM macro (H) | Latence API + fiabilité insuffisante + `news_filter` déjà en place |
+| SL dynamique via agent (G) | Nécessite modification `order_manager.pyx` → `make build` + risque is_valid |
+| Agent sélection paires (F) | Redondant avec `pair_correlation.py` actif · complexité injustifiée |
+| Walk-forward adaptatif (J) | Sur-ingénierie : fenêtres fixes robustes en Forex (Pardo 2008) |
 
 ---
 
 ### 3.4 Verdict global
 
-**Faut-il intégrer de l'IA/ML sur ALPHAEDGE ?** Marginalement oui, sur deux points précis et à faible risque.
+**Faut-il intégrer de l'IA/ML sur ALPHAEDGE ?** Oui, partiellement et dans l'ordre strict.
 
-**Par quoi commencer ?** D'abord Optuna (D) — 80 lignes, aucun risque live, gain immédiat en efficacité de recherche de paramètres, compatible avec l'architecture `optimize_fn` existante. Ensuite le régime de marché (C) — mode observation 30 sessions avant toute activation.
+**Par quoi commencer ?** `DailyRegimeFilter` (C) — code existant, zéro risque, activation en 2h. C'est le seul composant ML production-ready aujourd'hui.
 
-**Le risque principal à surveiller :** La diminution du nombre de trades suite à un régime filter trop agressif peut transformer un Sharpe=3.37 en Sharpe non significatif (n< 30 trades/an). Surveiller le trade count avec la même rigueur que le Sharpe.
+**Bloquant principal :** L'absence de dataset Momentum+Carry valide bloque toutes les analyses ML sur le signal (A, D, I). La priorité stratégique est de finaliser la migration (Audit #13) avant d'investir en ML.
 
-**Ce qu'il ne faut surtout pas faire :** Importer sklearn, XGBoost, ou tout classifieur supervisé sur les signaux FCR/engulfing. Les données sont trop rares et trop bruitées (200–400 trades/an) pour garantir une généralisation OOS. La robustesse déterministe actuelle (Sharpe=3.37) est plus précieuse que la sophistication apparente d'un ML mal calibré.
+**Risque principal à surveiller :** Le surapprentissage sur petites séries temporelles Forex Daily. Toute validation ML doit inclure un walk-forward OOS sur une fenêtre out-of-sample ≥ 6 mois. Le Sharpe FCR de 3.37 est un artefact IS — l'objectif réaliste pour Momentum OOS est Sharpe ≥ 0.8.
 
 ---
 
-*Fin d'audit — 2026-03-22*
+## SYNTHÈSE
+
+### Tableau synthèse
+
+| ID | Bloc | Description | Fichier:Ligne | Sévérité | Impact | Effort |
+|----|------|-------------|--------------|----------|--------|--------|
+| ML-01 | 1 | `DailyRegimeFilter` en observation uniquement malgré 30 sessions disponibles | `strategy.py:203` | 🟠 Majeur | Drawdown non-contrôlé les jours high_vol | ~2h |
+| ML-02 | 1 | `_experimental/ml_filter.py` (LogReg) — features basées FCR, pas Momentum → inutilisable tel quel | `engine/_experimental/ml_filter.py:37` | 🟡 Mineur | Dette technique — features à réécrire post-migration | ~4h |
+| ML-03 | 2 | Bayesian optimizer disponible (`bayesian_optimizer.py`) mais non planifié dans workflow mensuel | `engine/bayesian_optimizer.py:45` | 🟡 Mineur | Paramètres potentiellement sous-optimaux | ~1h setup |
+| ML-04 | 2 | Aucune analyse SHAP planifiée — importance des paramètres inconnue | — | 🟡 Mineur | Risque de maintenir des paramètres sans contribution | ~2h setup |
+
+**Sévérité** : 🔴 Critique · 🟠 Majeur · 🟡 Mineur
+
+**Bilan** : Le projet dispose de l'infrastructure ML adéquate (sklearn, optuna, regime_filter, walk_forward). Le seul blocage est l'absence de données Momentum+Carry valides et le gate `DailyRegimeFilter` non activé. Aucun ajout de nouveau composant ML n'est justifié avant fin de migration.

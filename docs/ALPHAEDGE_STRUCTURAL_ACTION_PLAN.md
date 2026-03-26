@@ -627,3 +627,35 @@ Test-Path .github/copilot-instructions.md
 | E — Documentation | 5/10 | 8/10 |
 | F — Security | 7/10 | 9/10 |
 | **Total** | **5.2/10** | **8.3/10** |
+
+---
+
+## Known Algorithmic Divergences
+
+### DIV-01 — Corrélation : live vs backtest
+
+**Statut :** 🟠 Majeur — documenté, non corrigé
+**Découvert :** Audit #12 Master (2026-03-27)
+
+**Description :**
+Le filtre de corrélation en live (`engine/signal_pipeline.py`) utilise une **matrice de corrélation de Pearson ρ** calculée sur les 20 dernières barres M5 pour chaque paire active. Le backtest (`engine/backtest_simulation.py`) applique un filtre d'**exposition directionnelle USD** : si deux trades ouverts simultanément sont tous les deux USD-long (ou USD-short), le second est bloqué.
+
+Ces deux approches ne produisent pas les mêmes décisions de filtrage :
+
+| Critère | Live (Pearson ρ) | Backtest (USD exposure) |
+|---------|-----------------|-------------------------|
+| Signal bloqué si | ρ > 0.85 entre deux paires actives | Exposition USD nette > 1 position ouverte dans le même sens |
+| Cas EUR/USD + GBP/USD en trend EUR-fort | Bloqué si ρ récent > 0.85 | Bloqué (deux positions USD-short) |
+| Cas EUR/USD long + USD/JPY long | Non bloqué (ρ faible) | Bloqué (deux positions USD-long) |
+| Base de données | Barres live M5 temps réel | Données OHLCV historiques du backtest |
+
+**Risque :** Les statistiques de drawdown et Win Rate du backtest ne reflètent pas fidèlement le comportement live. Les backtests peuvent sous-estimer la corrélation intra-session.
+
+**Chemin de correction :**
+1. Unifier sur une seule logique — soit migrer le live vers l'exposition directionnelle USD, soit implémenter ρ dans le backtest.
+2. Adapter les tests de régression pour couvrir les deux cas limites (EUR/USD + GBP/USD co-trending, EUR/USD + USD/JPY opposing).
+3. Re-backtester sur la période de validation après unification.
+
+**Fichiers concernés :**
+- `alphaedge/engine/signal_pipeline.py` — filtre corrélation live
+- `alphaedge/engine/backtest_simulation.py` — filtre exposition USD backtest

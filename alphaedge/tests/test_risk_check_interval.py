@@ -19,14 +19,14 @@ from alphaedge.config.constants import (
     RISK_CHECK_INTERVAL_POSITION,
 )
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
-from alphaedge.engine.strategy import CoreModules, FCRStrategy, StrategyState
+from alphaedge.engine.strategy import CoreModules, StrategyState, SwingStrategy
 
 
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
-def _build_strategy() -> FCRStrategy:
-    """Build FCRStrategy with mocked externals."""
+def _build_strategy() -> SwingStrategy:
+    """Build SwingStrategy with mocked externals."""
     cfg = AppConfig(ib=IBConfig(is_paper=True), trading=TradingConfig())
     with (
         patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,
@@ -45,13 +45,11 @@ def _build_strategy() -> FCRStrategy:
         mock_ib.disconnectedEvent.__iadd__ = _capture
         mock_broker_cls.return_value.ib = mock_ib
         mock_mods.return_value = CoreModules(
-            fcr_detector=MagicMock(),
-            gap_detector=MagicMock(),
-            engulfing_detector=MagicMock(),
+            momentum_detector=MagicMock(),
             order_manager=MagicMock(),
             risk_manager=MagicMock(),
         )
-        strategy = FCRStrategy(cfg)
+        strategy = SwingStrategy(cfg)
     return strategy
 
 

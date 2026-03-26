@@ -3,7 +3,7 @@ modele: sonnet-4.6
 mode: agent
 contexte: codebase
 produit: audit_ia_ml_alphaedge.md
-derniere_revision: 2026-03-20
+derniere_revision: 2026-03-25
 creation: 2026-03-20 à 15:39
 ---
 
@@ -47,22 +47,23 @@ PHASE 1 — DIAGNOSTIC DE L'EXISTANT
 Avant toute recommandation, analyse ce qui est
 déjà en place dans le code :
 
-1.1 Signal FCR et pipeline actuel
+1.1 Signal Momentum+Carry et pipeline actuel
     - Quels détecteurs Cython sont utilisés ?
-      (fcr_detector, gap_detector, engulfing_detector)
-    - Comment le signal d'entrée M1 est-il généré ?
-    - Quels paramètres FCR sont configurables ?
-      (min_range_pips, rr_ratio, atr_period,
-       min_atr_ratio, volume_period, min_volume_ratio)
+      (momentum_detector + carry_signal.py en Python pur)
+    - Comment le signal d'entrée Daily est-il généré ?
+    - Quels paramètres Momentum+Carry sont configurables ?
+      (momentum_fast_period, momentum_slow_period, momentum_adx_period,
+       momentum_adx_threshold, momentum_lookback_days,
+       carry_enabled, carry_min_differential_pct, rr_ratio)
     - Y a-t-il déjà un filtre de régime de marché ?
-      (gap_detector comme filtre ATR compte-t-il ?)
+      (carry_signal.py comme filtre directionnel compte-t-il ?)
     - ml_filter.py : actif dans le pipeline live ?
       Connecté à strategy.py ou code orphelin ?
 
 1.2 Données disponibles
     - Quelles données sont persistées ?
-      (M5 bars, M1 bars, session state, logs)
-    - Granularité temporelle FCR : M5 + M1
+      (Daily bars, session state, logs, carry rates)
+    - Granularité temporelle Momentum+Carry : Daily bars
     - Profondeur historique via reqHistoricalData ?
     - Données de performance par paire disponibles ?
       (reports/ALPHAEDGE_backtest_results.csv)
@@ -83,9 +84,8 @@ déjà en place dans le code :
     Identifie TOUS les endroits dans le code où
     une décision est prise de façon déterministe
     et qui pourrait bénéficier d'un modèle adaptatif :
-    - Détection FCR : seuil min_range_pips
-    - Filtre gap ATR : min_atr_ratio
-    - Signal engulfing : min_volume_ratio
+    - Détection Momentum : fast/slow periods, ADX threshold
+    - Filtre carry bias : carry_min_differential_pct
     - Sizing : risk_pct, lot_size min/max
     - Sélection de paire : liste fixe ou dynamique ?
     - Filtre de session NYSE : fixe ou adaptatif ?
@@ -108,43 +108,42 @@ Critères d'évaluation pour chaque opportunité :
   - Incompatibilité avec pipeline Cython existant ?
   - Verdict : PERTINENT / NON PERTINENT + pourquoi
 
-2.1 Machine Learning sur les signaux FCR
+2.1 Machine Learning sur les signaux Momentum+Carry
 
-  A. Filtre ML sur la qualité du range FCR
+  A. Filtre ML sur la qualité du signal Momentum
      Classifier (Random Forest, XGBoost) entraîné
-     sur les features du range FCR (taille, position
-     dans la journée, contexte ATR) pour prédire
-     si le range a une probabilité élevée d'être
-     respecté → enrichit fcr_detector sans le modifier
-     → Données historiques FCR suffisantes ?
-     → Risque de surapprentissage sur petite fenêtre ?
+     sur les features du signal Momentum (ADX value,
+     fast/slow delta, lookback window context, carry diff)
+     pour prédire si le signal a une probabilité élevée
+     d'être profitable → enrichit momentum_detector sans le modifier
+     → Données historiques Momentum suffisantes ?
+     → Risque de surapprentissage sur petite fenêtre daily ?
 
-  B. Filtre ML sur le signal engulfing
-     Classifier qui valide ou rejette le signal
-     detect_engulfing() en ajoutant des features
-     contextuelles (volume relatif, distance au range,
-     conditions macro)
+  B. Filtre ML sur le carry bias conflict
+     Classifier qui affine la décision carry conflict
+     en ajoutant des features contextuelles (volatilité ATR,
+     spread réalisé, conditions macro) au-delà du seuil fixe
+     carry_min_differential_pct
      → Compatible avec le pipeline all-or-nothing ?
-     → Peut-il réduire les faux signaux ?
+     → Peut-il réduire les faux conflits carry ?
 
   C. Détection de régime de marché Forex
-     (clustering K-Means ou HMM sur volatilité ATR,
-     spread bid-ask, momentum M5)
-     → Peut-on améliorer le filtre gap_detector
-     en détectant les jours à haute/faible volatilité ?
-     → Données Forex NYSE session suffisantes ?
+     (clustering K-Means ou HMM sur volatilité Daily,
+     spread bid-ask, momentum Daily)
+     → Peut-on améliorer le filtre carry en détectant
+     les jours à forte corrélation USD vs jours neutres ?
+     → Données Forex Daily suffisantes ?
 
-  D. Optimisation adaptative des paramètres FCR
+  D. Optimisation adaptative des paramètres Momentum
      Optimisation bayésienne (Optuna) ou
-     grid search sur min_range_pips, min_atr_ratio,
-     rr_ratio — réévalué mensuellement
-     → Améliore-t-il la stabilité OOS
-     par rapport au baseline Sharpe=3.37 actuel ?
+     grid search sur momentum_fast_period, momentum_slow_period,
+     momentum_adx_threshold, rr_ratio — réévalué mensuellement
+     → Améliore-t-il la stabilité OOS ?
      → Risque de suroptimisation sur EUR/USD, GBP/USD ?
 
   E. Prédiction du sizing optimal
      Régression sur les conditions de marché
-     (ATR, spread, heure dans la session NYSE)
+     (ADX, spread, carry differential du jour)
      pour ajuster risk_pct dynamiquement
      → Compatible avec calculate_position_size() ?
      → Améliore le risk-adjusted return ?
@@ -153,9 +152,9 @@ Critères d'évaluation pour chaque opportunité :
 
   F. Agent de sélection de paires Forex
      Un agent qui sélectionne dynamiquement
-     EUR/USD, GBP/USD, USD/JPY selon la volatilité
-     et les corrélations intraday du jour
-     → Données intraday suffisantes ?
+     EUR/USD, GBP/USD, USD/JPY selon la volatilité,
+     le carry differential et les corrélations daily
+     → Données daily suffisantes ?
      → Risque de sur-trading sur fenêtre 1h ?
 
   G. Agent de gestion dynamique du stop-loss
@@ -168,17 +167,17 @@ Critères d'évaluation pour chaque opportunité :
   H. Agent LLM pour le sentiment macro Forex
      Utilisation d'un LLM pour analyser
      news économiques (NFP, CPI, Fed) et filtrer
-     les signaux FCR les jours de forte volatilité
+     les signaux Momentum+Carry les jours de forte volatilité
      → Latence compatible avec event-driven IB ?
      → Fiabilité sur Forex vs crypto ?
      → Calendrier économique suffit-il ?
 
 2.3 Amélioration du backtest par ML
 
-  I. SHAP values sur les paramètres FCR
+  I. SHAP values sur les paramètres Momentum+Carry
      Analyse d'importance des features sur
      le dataset backtest reports/ pour identifier
-     quels paramètres FCR contribuent réellement
+     quels paramètres Momentum+Carry contribuent réellement
      au Sharpe versus du bruit
      → Peut simplifier constants.py ?
      → Compatible avec stubs Cython en backtest ?

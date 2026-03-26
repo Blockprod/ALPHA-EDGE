@@ -80,7 +80,7 @@ config.yaml + .env
 ## Infrastructure de test
 
 ```
-alphaedge/tests/        504 tests
+alphaedge/tests/        574 tests
     conftest.py         fixtures communes
     test_*.py           1 fichier = 1 scénario
 alphaedge/core/_stubs/  stubs Python purs (pas de Cython en CI)
@@ -97,7 +97,7 @@ reports/                coverage HTML
 make qa
   ├── ruff check alphaedge/        (lint + isort)
   ├── pyright alphaedge/           (type checking)
-  └── pytest --cov-fail-under=80  (504 tests, ≥80% coverage)
+  └── pytest --cov-fail-under=80  (574 tests, ≥80% coverage)
 
 make qa-strict
   ├── make qa

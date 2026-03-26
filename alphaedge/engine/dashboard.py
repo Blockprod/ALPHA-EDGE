@@ -53,7 +53,8 @@ def _build_header(ib_connected: bool) -> Panel:
     """
     status_icon = "[bold green]●[/]" if ib_connected else "[bold red]●[/]"
     status_text = "CONNECTED" if ib_connected else "DISCONNECTED"
-    title_text = Text(PROJECT_TITLE, style="bold cyan")
+    _safe_proj_title = PROJECT_TITLE.replace("\u26a1 ", "").replace("\u26a1", "")
+    title_text = Text(_safe_proj_title, style="bold cyan")
 
     header_content = f"{title_text}\nIB Gateway: {status_icon} {status_text}"
     return Panel(header_content, style="bold white", border_style="cyan")
@@ -165,8 +166,8 @@ def _format_signal(signal: dict[str, Any] | None) -> str:
     if signal is None:
         return "[dim]Waiting...[/]"
     if signal.get("detected"):
-        direction = "SELL" if signal["signal"] == -1 else "BUY"
-        color = "red" if signal["signal"] == -1 else "green"
+        direction = "SELL" if signal["direction"] == -1 else "BUY"
+        color = "red" if signal["direction"] == -1 else "green"
         return f"[bold {color}]{direction}[/]"
     return "[dim]None[/]"
 

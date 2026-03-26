@@ -19,7 +19,7 @@ Implémenter des modifications du code en respectant les conventions ALPHAEDGE e
 .\.venv\Scripts\Activate.ps1
 
 # Confirmer que la baseline est verte
-python -m pytest alphaedge/tests/ -q  # doit afficher "504 passed"
+python -m pytest alphaedge/tests/ -q  # doit afficher "574 passed"
 python -m ruff check alphaedge/       # doit afficher "All checks passed!"
 python -m pyright alphaedge/          # doit afficher "0 errors"
 ```
@@ -57,7 +57,7 @@ python -m pyright alphaedge/
 python -m pytest alphaedge/tests/ --cov=alphaedge --cov-fail-under=80 -q
 ```
 
-**504 tests doivent passer. 0 erreur lint. 0 erreur type. ≥ 80% coverage.**
+**574 tests doivent passer. 0 erreur lint. 0 erreur type. ≥ 80% coverage.**
 
 ---
 

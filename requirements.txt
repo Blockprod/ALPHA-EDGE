@@ -37,6 +37,7 @@ bandit==1.9.4
 # --- Machine Learning (regime filter — observation mode) ---
 scikit-learn>=1.4.0
 joblib>=1.3.0
+shap==0.45.0  # offline feature importance analysis — not used in live pipeline. Pinned: 0.46+ requires numpy>=2 (conflicts with vectorbt<2)
 
 # --- Bayesian Optimization (walk-forward parameter search) ---
 optuna>=3.6.0

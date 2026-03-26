@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from typing import Any
 
 import matplotlib
@@ -66,12 +67,27 @@ def export_results_csv(
                 "entry_time": t.entry_time,
                 "exit_time": t.exit_time,
                 "sample_type": t.sample_type,
+                "sl_pips": round(t.sl_pips, 2),
+                "spread_cost_pips": round(t.spread_cost_pips, 2),
             }
         )
 
     df = pd.DataFrame(rows)
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    df.to_csv(output_path, index=False)
+    dest = output_path
+    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(dest) or ".",
+        suffix=".tmp",
+        prefix="backtest_export_",
+    )
+    try:
+        with os.fdopen(tmp_fd, "w", newline="", encoding="utf-8") as fh:
+            df.to_csv(fh, index=False)
+        os.replace(tmp_path, dest)
+    except OSError:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
     logger.info(
         f"ALPHAEDGE backtest results exported to {output_path} "
         f"({stats.total_trades} trades \u00b7 ${stats.total_pnl_usd:+,.2f} P&L)"

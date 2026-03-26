@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Swing Trading Bot
 # FILE         : alphaedge/engine/data_feed.py
 # DESCRIPTION  : Async real-time and historical data feed from IB
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,12 +7,13 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: IB market data feed handler."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: IB market data feed handler."""
 
 from __future__ import annotations
 
 import asyncio
 import pickle
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -64,7 +65,17 @@ class BarDiskCache:
         p = self._path(pair, timeframe)
         if p.exists():
             with p.open("rb") as fh:
-                return pickle.load(fh)  # nosec B301 — local trusted cache file, not user input
+                try:
+                    return pickle.load(fh)  # nosec B301 — local trusted cache file, not user input
+                except Exception:
+                    logger.warning(
+                        "ALPHAEDGE cache: corrupt cache file %s — purging", p
+                    )
+                    try:
+                        p.unlink()
+                    except OSError:
+                        pass
+                    return None
         return None
 
     def save(self, pair: str, timeframe: str, bars: list[dict[str, Any]]) -> None:
@@ -244,6 +255,10 @@ class HistoricalDataFeed:
             return 30
         if "15 min" in timeframe:
             return 60
+        if "4 hour" in timeframe:
+            return 30
+        if "1 day" in timeframe:
+            return 365
         return 365
 
     @staticmethod
@@ -618,12 +633,15 @@ class HistoricalDataFeed:
 class RealtimeDataFeed:
     """Streams real-time M1 bar data from IB Gateway."""
 
+    _MAX_TICK_STALENESS_SECONDS: int = 30
+
     def __init__(self, broker: BrokerConnection) -> None:
         """Initialize with a broker connection."""
         self._broker = broker
         self._subscriptions: dict[str, Any] = {}
         self._bar_callbacks: list[Any] = []
         self._aggregator = M1BarAggregator()
+        self._last_tick_ts: dict[str, float] = {}
 
     def on_bar(self, callback: Any) -> None:
         """
@@ -683,6 +701,7 @@ class RealtimeDataFeed:
             return
 
         bar_5s = _bar_to_dict(bars[-1])
+        self._last_tick_ts[pair] = time.monotonic()
         m1_candle = self._aggregator.process(pair, bar_5s)
         if m1_candle is not None:
             for callback in self._bar_callbacks:
@@ -726,6 +745,13 @@ class RealtimeDataFeed:
         """
         self._broker._ensure_connected()
 
+        stale_for = time.monotonic() - self._last_tick_ts.get(pair, 0.0)
+        if stale_for > self._MAX_TICK_STALENESS_SECONDS:
+            logger.warning(
+                "ALPHAEDGE STALE TICK: %s — no bar update for %.0fs", pair, stale_for
+            )
+            return None
+
         try:
             ticker = self._broker.ib.ticker(build_forex_contract(pair))
             if ticker and ticker.bid > 0 and ticker.ask > 0:
@@ -753,6 +779,13 @@ class RealtimeDataFeed:
             Mid price ((bid + ask) / 2), or None if unavailable.
         """
         self._broker._ensure_connected()
+
+        stale_for = time.monotonic() - self._last_tick_ts.get(pair, 0.0)
+        if stale_for > self._MAX_TICK_STALENESS_SECONDS:
+            logger.warning(
+                "ALPHAEDGE STALE TICK: %s — no bar update for %.0fs", pair, stale_for
+            )
+            return None
 
         try:
             ticker = self._broker.ib.ticker(build_forex_contract(pair))

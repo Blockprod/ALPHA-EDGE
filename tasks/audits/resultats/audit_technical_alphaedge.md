@@ -1,150 +1,279 @@
-**Date :** 2026-03-22 à 17:44
+---
+modele: sonnet-4.6
+mode: agent
+contexte: codebase
+produit: audit_technical_alphaedge.md
+derniere_revision: 2026-03-25
+creation: 2026-03-25
+---
 
-## BLOC 1 — SÉCURITÉ CREDENTIALS IB
+# AUDIT TECHNIQUE & SÉCURITÉ — ALPHAEDGE
+**Date :** 2026-03-25 · **Rédacteur :** Copilot Agent (sonnet-4.6)
+**Périmètre :** Sécurité credentials IB · Séparation paper/live · Robustesse IB Gateway · Persistance · Couverture tests sécurité
 
-### Constat positif
+---
 
-- Les credentials IB sont chargés depuis l'environnement via `load_dotenv()` puis `os.getenv(...)` dans [alphaedge/config/loader.py:220](c:/Users/averr/AlphaEdge/alphaedge/config/loader.py#L220), [alphaedge/config/loader.py:248](c:/Users/averr/AlphaEdge/alphaedge/config/loader.py#L248), [alphaedge/config/loader.py:253](c:/Users/averr/AlphaEdge/alphaedge/config/loader.py#L253) et [alphaedge/config/loader.py:257](c:/Users/averr/AlphaEdge/alphaedge/config/loader.py#L257).
-- `.env.example` contient bien `ALPHAEDGE_PAPER=true` et avertit explicitement sur le mode live.
-- `.gitignore` protège `.env`, `alphaedge/logs/*.log`, `alphaedge/logs/*.txt`, `alphaedge/cache/` et l'état runtime `alphaedge_daily_state.json`.
-- Aucune occurrence de `ALPHAEDGE_PAPER=false` n'a été trouvée dans le code Python exécutable inspecté.
+## BLOC 1 — SÉCURITÉ CREDENTIALS IB GATEWAY
 
-### Problèmes
+### 1.1 Chargement des credentials
 
-| ID | Description | Fichier:Ligne | Sévérité | Impact | Effort |
-|----|-------------|---------------|----------|--------|--------|
-| T-01 | `IBConfig` expose `account_id` dans une dataclass sans `__repr__` masqué. Si l'objet config est loggé ou dumpé en debug, l'identifiant de compte peut fuiter en clair. | `alphaedge/config/loader.py:134`, `alphaedge/config/loader.py:140`, `alphaedge/config/loader.py:257` | 🟡 | Fuite potentielle d'identifiant IB dans logs/debug dumps | XS |
+`loader.py:278–283` — `ALPHAEDGE_IB_HOST`, `ALPHAEDGE_IB_PORT`,
+`ALPHAEDGE_IB_CLIENT_ID`, `ALPHAEDGE_IB_ACCOUNT` chargés exclusivement via
+`os.getenv()`. Aucun credential hardcodé dans le code source détecté.
+**✅ Conforme.**
 
-### Évaluation
+### 1.2 ALPHAEDGE_PAPER=true dans .env.example
 
-- **Credentials IB uniquement depuis env ?** Oui en pratique, avec fallback YAML pour `host`, `port`, `client_id`, `account_id` via [alphaedge/config/loader.py:248](c:/Users/averr/AlphaEdge/alphaedge/config/loader.py#L248) à [alphaedge/config/loader.py:257](c:/Users/averr/AlphaEdge/alphaedge/config/loader.py#L257).
-- **`ALPHAEDGE_PAPER=true` présent dans `.env.example` ?** Oui.
-- **`.gitignore` protège `.env`, `*.log`, `alphaedge/logs/` ?** Oui.
-- **Fragment de credential dans les logs loguru ?** Non prouvé dans le code inspecté; les logs de connexion n'impriment que `host`, `port`, `paper` via [alphaedge/engine/broker.py:152](c:/Users/averr/AlphaEdge/alphaedge/engine/broker.py#L152).
-- **`Config.__repr__` masque les données sensibles ?** Non. Aucune méthode dédiée; la dataclass standard garde `account_id` visible.
+`.env.example:26` — `ALPHAEDGE_PAPER=true` présent avec commentaire
+d'avertissement explicite (`⚠️ WARNING: Setting to "false" enables LIVE TRADING with real money!`).
+**✅ Conforme.**
+
+### 1.3 ALPHAEDGE_PAPER=false absent du code source
+
+Aucune occurrence de `ALPHAEDGE_PAPER=false` dans le code source
+(`alphaedge/`, `scripts/`, fichiers de config commitables).
+Les seules occurrences sont dans les tests via `monkeypatch.setenv("ALPHAEDGE_PAPER", "false")` — usage légitime.
+**✅ Conforme.**
+
+### 1.4 Protection .gitignore
+
+`.gitignore:25` — `.env` ignoré.
+`.gitignore:28–29` — `alphaedge/logs/*.log` et `alphaedge/logs/*.txt` ignorés.
+`.gitignore:45` — `alphaedge_daily_state.json` (state runtime) ignoré.
+
+**À VÉRIFIER** : Le workspace contient des fichiers `alphaedge/logs/backtest_result.txt`,
+`bt_final.txt`, `bt_full.txt`, `bt_stderr.txt`, `opt.txt`. La règle `.gitignore:29`
+(`alphaedge/logs/*.txt`) doit les couvrir, mais si ces fichiers étaient trackés avant
+l'ajout de la règle, `git status` les montrerait toujours. Vérifier via `git ls-files alphaedge/logs/`.
+**→ ID T-05** (voir Synthèse).
+
+### 1.5 Credentials absents des logs
+
+`broker.py:200` — log de connexion : `host`, `port`, `is_paper` uniquement.
+`account_id` non loggé.
+
+`loader.py:150` — `account_id: str = field(default="", repr=False)` — exclu de `__repr__`, ne peut pas fuiter via logging de l'objet `IBConfig`.
+**✅ Conforme.**
+
+### Tableau Bloc 1
+
+| Contrôle | Résultat | Fichier:Ligne |
+|----------|----------|---------------|
+| Credentials depuis env var | ✅ | `loader.py:278–283` |
+| ALPHAEDGE_PAPER=true dans .env.example | ✅ | `.env.example:26` |
+| ALPHAEDGE_PAPER=false absent du code | ✅ | — |
+| .gitignore protège .env et logs | ✅ (⚠️ T-05 à vérifier) | `.gitignore:25,28–29` |
+| account_id absent des logs | ✅ | `loader.py:150` · `broker.py:200` |
 
 ---
 
 ## BLOC 2 — SÉPARATION PAPER / LIVE
 
-### Constat positif
+### 2.1 Branche paper vs live dans broker.py
 
-- Le mode paper par défaut est bien dérivé de `ALPHAEDGE_PAPER` dans [alphaedge/config/loader.py:248](c:/Users/averr/AlphaEdge/alphaedge/config/loader.py#L248).
-- Le CLI affiche un avertissement explicite avant `--mode live` dans [alphaedge/engine/strategy.py:313](c:/Users/averr/AlphaEdge/alphaedge/engine/strategy.py#L313).
-- En mode `--mode paper`, le code force `config.ib.is_paper = True` et `config.ib.port = 4002` dans [alphaedge/engine/strategy.py:330](c:/Users/averr/AlphaEdge/alphaedge/engine/strategy.py#L330) à [alphaedge/engine/strategy.py:332](c:/Users/averr/AlphaEdge/alphaedge/engine/strategy.py#L332).
+La séparation est **port-based** : port 4002 → IB paper account, port 4001 → IB live account. IB Gateway assure la ségrégation côté serveur.
 
-### Problèmes
+`loader.py:_resolve_ib_mode_and_port()` lignes 296–323 — validation croisée stricte :
+si `ALPHAEDGE_PAPER=false` ET port=4002, `ValueError("ALPHAEDGE IB config mismatch")` est levée.
+La combinaison ambigu est rendue impossible au chargement de config.
+**✅ Conforme.**
 
-| ID | Description | Fichier:Ligne | Sévérité | Impact | Effort |
-|----|-------------|---------------|----------|--------|--------|
-| T-02 | La séparation paper/live est contournable: `is_paper` vient de `ALPHAEDGE_PAPER`, mais `port` peut être surchargé indépendamment via `ALPHAEDGE_IB_PORT`. Le code accepte donc un état incohérent `is_paper=True` + `port=4001`, puis `placeOrder()` soumet de vrais ordres sans garde supplémentaire. | `alphaedge/config/loader.py:248`, `alphaedge/config/loader.py:249`, `alphaedge/config/loader.py:253`, `alphaedge/engine/broker.py:140`, `alphaedge/engine/broker.py:305`, `alphaedge/engine/broker.py:346` | 🔴 | Risque de soumission réelle à IB malgré un drapeau paper affiché comme vrai | M |
-| T-03 | Le mode `live` du CLI n'impose pas lui-même `config.ib.is_paper = False` ni `port = 4001`. Il dépend encore des variables d'environnement chargées juste avant. Le chemin `--mode live` est donc ambigu et non auto-cohérent. | `alphaedge/engine/strategy.py:313`, `alphaedge/engine/strategy.py:330`, `alphaedge/config/loader.py:248`, `alphaedge/config/loader.py:253` | 🟠 | Comportement non déterministe entre intention CLI et configuration réellement utilisée | S |
+Absence de guard hardware dans `broker.py:place_bracket_order()` (pas de `if is_paper: raise`) — mais le guard existe au niveau config loader via le ValueError, ce qui est plus robuste car intercepté avant connexion.
 
-### Évaluation
+### 2.2 ALPHAEDGE_PAPER lu au démarrage uniquement
 
-- **Branche paper vs live clairement séparée et non contournable ?** Non.
-- **`ALPHAEDGE_PAPER` lu au démarrage uniquement ?** Oui, dans `load_config()`, mais la cohérence avec le port n'est pas verrouillée.
-- **En mode paper, aucun ordre réel soumis à IB ?** Non garanti par le code; la sécurité dépend du port réellement configuré, pas d'un garde-fou dans `OrderExecutor`.
-- **Logs indiquent clairement PAPER ou LIVE au démarrage ?** Partiellement. Le log affiche `(paper={self._config.is_paper})` dans [alphaedge/engine/broker.py:152](c:/Users/averr/AlphaEdge/alphaedge/engine/broker.py#L152), mais ce booléen peut être incohérent avec le port réel.
-- **Test couvrant le basculement paper/live ?** Non trouvé. La recherche dans `alphaedge/tests/**` ne montre que des fixtures `IBConfig(is_paper=True)` comme [alphaedge/tests/test_fill_verification.py:67](c:/Users/averr/AlphaEdge/alphaedge/tests/test_fill_verification.py#L67) ou [alphaedge/tests/test_reconnect.py:29](c:/Users/averr/AlphaEdge/alphaedge/tests/test_reconnect.py#L29), sans scénario dédié live/paper.
+`loader.py:296` — `os.getenv("ALPHAEDGE_PAPER")` appelé une seule fois dans
+`load_config()`. Résultat figé dans `AppConfig.ib.is_paper`. Pas relu au runtime.
+**✅ Conforme.**
+
+### 2.3 Aucun ordre réel en mode paper
+
+En mode paper, la connexion IB est sur port 4002 (TWS/Gateway paper). Tout ordre
+soumis via `placeOrder()` est routé automatiquement vers le compte paper par IB.
+**✅ Conforme** (ségrégation côté broker).
+
+### 2.4 Log startup indique PAPER ou LIVE
+
+`strategy.py:318–337` — `print()` console explicite au démarrage :
+- `"📝 ALPHAEDGE — PAPER TRADING MODE"`
+- `"⚠️ ALPHAEDGE — LIVE TRADING MODE"`
+
+`broker.py:200` — `logger.info(f"ALPHAEDGE connected ... (paper={self._config.is_paper})")`.
+
+**🟡 MINEUR** : `session_lifecycle.py:run_session()` (ligne ~946) log de démarrage
+`"ALPHAEDGE session starting at {format_dual_time(now_utc())}"` n'indique **pas** le
+mode paper/live. En cas de redémarrage, l'opérateur ne voit pas immédiatement depuis les
+logs seuls si la session est paper ou live. → **ID T-04**.
+
+### 2.5 Tests paper/live
+
+`test_paper_live_separation.py` — 4 tests couvrant :
+- Port live correct inféré depuis env
+- Rejection ValueError sur mismatch port/mode
+- `_apply_cli_mode()` paper et live
+**✅ Couverture présente.**
 
 ---
 
-## BLOC 3 — ROBUSTESSE IB GATEWAY
+## BLOC 3 — ROBUSTESSE IB GATEWAY ET ASYNCIO
 
-### Constat positif
+### 3.1 Reconnexion automatique
 
-- Circuit breaker présent dans [alphaedge/engine/broker.py:95](c:/Users/averr/AlphaEdge/alphaedge/engine/broker.py#L95) et ouvert à [alphaedge/engine/broker.py:128](c:/Users/averr/AlphaEdge/alphaedge/engine/broker.py#L128).
-- Reconnexion avec backoff exponentiel dans `BrokerConnection.reconnect()`.
-- Les erreurs IB sont loggées par code dans [alphaedge/engine/broker.py:220](c:/Users/averr/AlphaEdge/alphaedge/engine/broker.py#L220) à [alphaedge/engine/broker.py:236](c:/Users/averr/AlphaEdge/alphaedge/engine/broker.py#L236).
-- `reqHistoricalDataAsync` a un timeout explicite dans [alphaedge/engine/data_feed.py:244](c:/Users/averr/AlphaEdge/alphaedge/engine/data_feed.py#L244), avec retry chunké (`max_retries = 3`, `retry_delay = 60.0`) dans [alphaedge/engine/data_feed.py:379](c:/Users/averr/AlphaEdge/alphaedge/engine/data_feed.py#L379) et [alphaedge/engine/data_feed.py:382](c:/Users/averr/AlphaEdge/alphaedge/engine/data_feed.py#L382).
-- La vérification de fill est implémentée avant mise à jour d'état local dans `SessionLifecycle._submit_and_await_fill()` et couverte par [alphaedge/tests/test_fill_verification.py:161](c:/Users/averr/AlphaEdge/alphaedge/tests/test_fill_verification.py#L161) et [alphaedge/tests/test_fill_verification.py:199](c:/Users/averr/AlphaEdge/alphaedge/tests/test_fill_verification.py#L199).
+`broker.py:_on_disconnect()` — déclenché par `ib_insync.disconnectedEvent`.
+Remet `_connected = False` et reset le client IB.
 
-### Problèmes
+`session_lifecycle.py:_on_ib_disconnect()` — fire-and-forget de `_handle_reconnection()` :
+- `reconnect(max_retries=3)` avec exponential backoff + jitter (2s → 4s → 8s ±10%)
+- Post-reconnect : `_reconcile_positions()` + `_check_orphan_orders()` + re-subscribe feeds
+- Échec total → `shutdown_requested = True` + alerte CRITICAL
+**✅ Conforme.**
 
-| ID | Description | Fichier:Ligne | Sévérité | Impact | Effort |
-|----|-------------|---------------|----------|--------|--------|
-| T-04 | Après une déconnexion, `BrokerConnection._on_disconnect()` remplace `self._ib` par une nouvelle instance `IB()`. Le hook `SessionLifecycle._on_ib_disconnect` est branché une seule fois au démarrage sur l'ancienne instance. Après reconnexion, les futures déconnexions ne sont plus garanties de déclencher l'alerte/reconnexion au niveau stratégie. | `alphaedge/engine/strategy.py:176`, `alphaedge/engine/broker.py:147`, `alphaedge/engine/broker.py:203` | 🟠 | Première reconnexion gérée, mais déconnexions suivantes potentiellement silencieuses côté session | M |
-| T-05 | Le contrôle de marge est en fail-open: si `accountSummary()` échoue, `_check_margin()` journalise l'erreur puis retourne `True`, laissant `place_bracket_order()` continuer la soumission d'ordre. | `alphaedge/engine/broker.py:318`, `alphaedge/engine/broker.py:342`, `alphaedge/engine/broker.py:346`, `alphaedge/engine/broker.py:305` | 🟠 | Un incident IB sur le résumé de compte peut laisser passer une soumission non validée | S |
+### 3.2 reqHistoricalData : timeout et retry
 
-### Évaluation
+`data_feed.py:_request_bars()` — `reqHistoricalDataAsync(..., timeout=IB_HIST_TIMEOUT_SECONDS)`.
+`data_feed.py:_fetch_chunk_with_retries()` — retry borné avec `asyncio.sleep(retry_delay)` entre tentatives.
+**✅ Conforme.**
 
-- **Reconnexion automatique si IB Gateway déconnecte ?** Oui pour le premier événement, via [alphaedge/engine/strategy.py:176](c:/Users/averr/AlphaEdge/alphaedge/engine/strategy.py#L176) et [alphaedge/engine/session_lifecycle.py:267](c:/Users/averr/AlphaEdge/alphaedge/engine/session_lifecycle.py#L267), mais la durabilité de ce câblage après remplacement de `self._ib` est fragile.
-- **`reqHistoricalData` timeout + retry ?** Oui.
-- **`placeOrder` fill vérifié avant MAJ état local ?** Oui, puis tests présents.
-- **Erreur IB loggée et non swallowée ?** Oui, à plusieurs niveaux. Les `except Exception` observés utilisent `logger.exception(...)`; pas de swallow silencieux prouvé.
-- **Circuit breaker sur erreurs répétées IB ?** Oui.
-- **Bare except ?** Non vu sur les chemins critiques audités; uniquement `except Exception` avec logging explicite.
+### 3.3 placeOrder : fill vérifié avant MAJ état local
+
+`session_lifecycle.py:_submit_and_await_fill()` lignes 155–175 :
+```python
+await asyncio.wait_for(fill_event.wait(), timeout=10.0)
+```
+Fill attendu 10s avant de retourner `trades_placed`. Si timeout : annulation bracket + alerte + retour `None`.
+`_record_fill()` (MAJ état) appelé **seulement** si `_submit_and_await_fill()` retourne non-None.
+**✅ Conforme.**
+
+### 3.4 Erreurs IB loggées et non swallowées
+
+`broker.py:_on_ib_error()` lignes 265–291 — dispatch par code :
+- 2100–2176 : DEBUG (informationnel)
+- 162 : DEBUG + `throttler.penalise()`
+- 200, 321 : ERROR
+- 504, 1100–1102 : CRITICAL
+- Autres : WARNING
+
+Aucun swallowing silencieux. **✅ Conforme.**
+
+### 3.5 Circuit breaker
+
+`broker.py:connect()` lignes 170–177 :
+```python
+if self._consecutive_failures >= IB_CIRCUIT_BREAKER_MAX_FAILURES:
+    logger.critical("ALPHAEDGE circuit breaker OPEN ...")
+    return False
+```
+**✅ Conforme.**
+
+### 3.6 Bare except / swallowing silencieux
+
+`broker.py` — tous les blocs `except Exception:` appellent `logger.exception()` avant retour. Pas de swallowing.
+
+**🟡 MINEUR** : `data_feed.py:BarDiskCache.load()` lignes 62–66 — pas de `try/except`.
+Si le fichier `.pkl` de cache est corrompu (truncation disque, écriture interrompue),
+`pickle.load()` lèvera une exception non gérée qui propagera jusqu'au caller. Le caller (`fetch_bars`) n'a pas de guard spécifique pour ce cas.
+Conséquence : cold restart difficile si cache corrompu. → **ID T-03**.
 
 ---
 
 ## BLOC 4 — PERSISTANCE ET RÉCUPÉRATION
 
-### Constat positif
+### 4.1 Écriture atomique (.tmp → rename)
 
-- Écriture atomique `.tmp → os.replace()` dans [alphaedge/utils/state_persistence.py:48](c:/Users/averr/AlphaEdge/alphaedge/utils/state_persistence.py#L48).
-- Le redémarrage refuse de reprendre si `shutdown_triggered` est vrai pour la journée courante dans [alphaedge/engine/session_lifecycle.py:732](c:/Users/averr/AlphaEdge/alphaedge/engine/session_lifecycle.py#L732) à [alphaedge/engine/session_lifecycle.py:736](c:/Users/averr/AlphaEdge/alphaedge/engine/session_lifecycle.py#L736).
-- Réconciliation des positions ouvertes au démarrage et après reconnexion dans [alphaedge/engine/session_lifecycle.py:294](c:/Users/averr/AlphaEdge/alphaedge/engine/session_lifecycle.py#L294) et [alphaedge/engine/session_lifecycle.py:768](c:/Users/averr/AlphaEdge/alphaedge/engine/session_lifecycle.py#L768).
-- Vérification des ordres orphelins après reconnexion dans [alphaedge/engine/session_lifecycle.py:326](c:/Users/averr/AlphaEdge/alphaedge/engine/session_lifecycle.py#L326).
-- La persistance est couverte par [alphaedge/tests/test_daily_state_persistence.py:129](c:/Users/averr/AlphaEdge/alphaedge/tests/test_daily_state_persistence.py#L129).
+`state_persistence.py:save_daily_state()` lignes 38–55 :
+```python
+tmp = STATE_FILE + ".tmp"
+with open(tmp, "w", ...) as f: json.dump(...)
+os.replace(tmp, STATE_FILE)  # Atomic on both POSIX and Windows
+```
+Cleanup du `.tmp` en cas d'exception. **✅ Conforme.**
 
-### Problèmes
+### 4.2 Intégrité vérifiée au rechargement
 
-| ID | Description | Fichier:Ligne | Sévérité | Impact | Effort |
-|----|-------------|---------------|----------|--------|--------|
-| T-06 | Le rechargement du state valide le JSON et la date, mais ne valide pas le schéma métier ni les types effectifs avant `DailyState(**data)`. Un fichier JSON bien formé mais sémantiquement incohérent peut être accepté silencieusement. | `alphaedge/utils/state_persistence.py:68`, `alphaedge/utils/state_persistence.py:69`, `alphaedge/utils/state_persistence.py:74` | 🟡 | Restauration d'un état local incohérent sans garde-fou fort | S |
+`state_persistence.py:_validate_daily_state_payload()` lignes 80–130 :
+Validation stricte de chaque champ (`isinstance`, `math.isfinite`, `date.fromisoformat`,
+`datetime.fromisoformat`). Tous les cas d'erreur catchés :
+```python
+except (json.JSONDecodeError, TypeError, KeyError, ValueError):
+    logger.warning("ALPHAEDGE STATE: Corrupt state file — ignoring")
+    return None
+```
+**✅ Conforme.**
 
-### Évaluation
+### 4.3 Réconciliation positions ouvertes au redémarrage
 
-- **Écriture daily state atomique ?** Oui.
-- **Intégrité vérifiée au rechargement ?** Partiellement seulement: parse JSON + date du jour + quelques exceptions, pas de validation de schéma complète.
-- **Réconciliation positions ouvertes au redémarrage ?** Oui.
-- **Position ouverte sur IB absente du state local alertée/corrigée ?** Oui, via logs de réconciliation dans [alphaedge/engine/session_lifecycle.py:309](c:/Users/averr/AlphaEdge/alphaedge/engine/session_lifecycle.py#L309) et suivants.
-- **`halt_trading` persisté entre redémarrages ?** Oui, sous la forme `shutdown_triggered` persisté à [alphaedge/engine/session_lifecycle.py:634](c:/Users/averr/AlphaEdge/alphaedge/engine/session_lifecycle.py#L634) puis rechargé à [alphaedge/engine/session_lifecycle.py:733](c:/Users/averr/AlphaEdge/alphaedge/engine/session_lifecycle.py#L733).
+`session_lifecycle.py:_reconcile_positions()` — appelé après reconnect.
+Compare `ib_open_pairs` (IB réel) avec `state.is_position_open` (local).
+Correction avec WARNING log si divergence.
+
+`session_lifecycle.py:_check_orphan_orders()` — détecte ordres ouverts sur pairs gérées.
+**✅ Conforme.**
+
+### 4.4 Position IB ouverte absente du state local
+
+`_reconcile_positions()` — corrige le state et log WARNING.
+
+**🟠 MAJEUR** : Quand une position passe de `False → True` (IB a une position que le state local ignore), la correction est loggée uniquement en WARNING. **Aucune alerte Telegram/Discord n'est envoyée** à l'opérateur pour cette discordance critique.
+L'opérateur peut être informé via logs mais **pas via le canal d'alerte** (qui couvre pourtant `ib_disconnected`, `kill_switch`, `trade_executed`). → **ID T-01**.
+
+### 4.5 halt_trading persisté entre redémarrages
+
+`state_persistence.py:DailyState.shutdown_triggered` — persiste la flag kill switch.
+`session_lifecycle.py:run_session()` lignes 947–952 :
+```python
+persisted = load_daily_state()
+if persisted and persisted.shutdown_triggered:
+    logger.critical("ALPHAEDGE: Daily loss shutdown was triggered earlier ...")
+    return
+```
+**✅ Conforme.**
 
 ---
 
-## BLOC 5 — COUVERTURE DES TESTS
+## BLOC 5 — COUVERTURE DES TESTS (SÉCURITÉ)
 
-### Couverture existante
+| Test | Fichier | Statut |
+|------|---------|--------|
+| Paper/live séparation | `test_paper_live_separation.py` | ✅ |
+| Fill verification | `test_fill_verification.py` | ✅ |
+| Daily state persistence | `test_daily_state_persistence.py` | ✅ |
+| Alerting système | `test_alerting.py` | ✅ |
+| Dependency injection | `test_dependency_injection.py` | ✅ |
+| Reconnexion IB | `test_reconnect.py` | ✅ |
+| IB error codes | `test_ib_error_codes.py` | ✅ |
+| Graceful shutdown | `test_graceful_shutdown.py` | ✅ |
 
-- Fill verification: [alphaedge/tests/test_fill_verification.py:161](c:/Users/averr/AlphaEdge/alphaedge/tests/test_fill_verification.py#L161), [alphaedge/tests/test_fill_verification.py:199](c:/Users/averr/AlphaEdge/alphaedge/tests/test_fill_verification.py#L199)
-- Daily state persistence: [alphaedge/tests/test_daily_state_persistence.py:129](c:/Users/averr/AlphaEdge/alphaedge/tests/test_daily_state_persistence.py#L129)
-- Alerting: [alphaedge/tests/test_alerting.py:45](c:/Users/averr/AlphaEdge/alphaedge/tests/test_alerting.py#L45)
-- Dependency injection: [alphaedge/tests/test_dependency_injection.py:50](c:/Users/averr/AlphaEdge/alphaedge/tests/test_dependency_injection.py#L50)
-- Reconnect: [alphaedge/tests/test_reconnect.py:70](c:/Users/averr/AlphaEdge/alphaedge/tests/test_reconnect.py#L70), [alphaedge/tests/test_reconnect.py:103](c:/Users/averr/AlphaEdge/alphaedge/tests/test_reconnect.py#L103), [alphaedge/tests/test_reconnect.py:166](c:/Users/averr/AlphaEdge/alphaedge/tests/test_reconnect.py#L166)
+### Scénarios manquants à risque
 
-### Problèmes
+**🟠 MAJEUR** : Aucun test ne vérifie que `shutdown_triggered=True` dans le state persisté
+**bloque effectivement** le démarrage d'une nouvelle session (`run_session()` early-return ligne 949–953).
+Ce chemin code est critique pour le kill switch — une régression serait silencieuse.
+→ **ID T-02**.
 
-| ID | Description | Fichier:Ligne | Sévérité | Impact | Effort |
-|----|-------------|---------------|----------|--------|--------|
-| T-07 | Aucun test dédié ne couvre la séparation paper/live réelle: pas de scénario `ALPHAEDGE_PAPER=true` + port live, pas de test du chemin CLI `--mode live`, et la recherche dans les tests ne montre que des fixtures `IBConfig(is_paper=True)`. | `alphaedge/engine/strategy.py:313`, `alphaedge/engine/strategy.py:330`, `alphaedge/tests/test_fill_verification.py:67`, `alphaedge/tests/test_reconnect.py:29` | 🟠 | Le défaut critique T-02 peut rester non détecté par la suite | S |
+**🟡 MINEUR** : Aucun test pour `BarDiskCache.load()` avec pickle corrompu (graceful degradation non testée). → lié à T-03.
 
-### Évaluation
-
-- **Test paper/live séparation présent ?** Non.
-- **Test fill_verification présent ?** Oui.
-- **Test daily_state_persistence présent ?** Oui.
-- **Test alerting présent ?** Oui.
-- **Test dependency injection présent ?** Oui.
-- **Scénarios manquants à risque critique ?** Oui: cohérence `is_paper`/`port`, chemin `--mode live`, second disconnect après reconnexion.
+**🟡 MINEUR** : Aucun test pour `_reconcile_positions()` couvrant le cas
+`IB open=True` / `local=False` → vérifier que le WARNING est bien loggé et que l'état est corrigé.
 
 ---
 
 ## SYNTHÈSE
 
-### Verdict global
-
-Le socle technique est sérieux sur la journalisation, les retries historiques, la persistance atomique et la vérification de fill. En revanche, la **séparation paper/live n'est pas blindée au niveau code**: elle repose trop sur la cohérence externe entre variable d'environnement et port IB. Le deuxième risque structurel est la **perte potentielle du hook de reconnexion** après remplacement de l'instance `IB()` lors d'une déconnexion.
-
-### Tableau synthèse
-
 | ID | Bloc | Description | Fichier:Ligne | Sévérité | Impact | Effort |
 |----|------|-------------|---------------|----------|--------|--------|
-| T-02 | BLOC 2 | `is_paper` et `port` peuvent diverger; aucun garde avant `placeOrder()` | `alphaedge/config/loader.py:248,249,253` ; `alphaedge/engine/broker.py:305,346` | 🔴 | Ordres réels possibles alors que le drapeau paper reste vrai | M |
-| T-03 | BLOC 2 | Chemin CLI `--mode live` non auto-cohérent, dépend encore de l'env | `alphaedge/engine/strategy.py:313,330,331,332` ; `alphaedge/config/loader.py:248,253` | 🟠 | Ambiguïté opérationnelle paper/live | S |
-| T-04 | BLOC 3 | Hook de session sur `disconnectedEvent` potentiellement perdu après `self._ib = IB()` | `alphaedge/engine/strategy.py:176` ; `alphaedge/engine/broker.py:147,203` | 🟠 | Déconnexions ultérieures possiblement non traitées | M |
-| T-05 | BLOC 3 | Contrôle de marge fail-open en cas d'erreur IB | `alphaedge/engine/broker.py:318,342,346` | 🟠 | Soumission d'ordre malgré échec de vérification de marge | S |
-| T-01 | BLOC 1 | `IBConfig` n'a pas de `__repr__` masqué pour `account_id` | `alphaedge/config/loader.py:134,140,257` | 🟡 | Fuite d'identifiant si log/debug direct du config | XS |
-| T-06 | BLOC 4 | Validation de state persisté limitée au parse JSON + date | `alphaedge/utils/state_persistence.py:68,69,74` | 🟡 | Restauration d'état local incohérent possible | S |
-| T-07 | BLOC 5 | Absence de tests dédiés paper/live et second disconnect | `alphaedge/engine/strategy.py:313,330` ; `alphaedge/tests/test_fill_verification.py:67` ; `alphaedge/tests/test_reconnect.py:29` | 🟠 | Régression critique non détectée | S |
+| T-01 | 4 | Position IB\≠état local : correction silencieuse — aucune alerte opérateur | `session_lifecycle.py:_reconcile_positions()` | 🟠 Majeur | Opérateur aveugle sur discordance position critique post-reconnect | ~1h |
+| T-02 | 5 | Aucun test pour `shutdown_triggered=True` bloquant restart session | `session_lifecycle.py:949–953` | 🟠 Majeur | Régression kill switch persistence non détectable par make qa | ~1h |
+| T-03 | 3 | `BarDiskCache.load()` sans try/except — pickle corruption non gérée | `data_feed.py:62–66` | 🟡 Mineur | Cold restart impossible si cache corrompu (exception non gérée) | ~30min |
+| T-04 | 2 | Session start log omet mode paper/live | `session_lifecycle.py:run_session()` | 🟡 Mineur | Traçabilité réduite dans les logs loguru (console OK, loguru non) | ~15min |
+| T-05 | 1 | Fichiers `alphaedge/logs/*.txt` potentiellement trackés malgré .gitignore | `.gitignore:29` · `alphaedge/logs/` | 🟡 Mineur | À VÉRIFIER via `git ls-files alphaedge/logs/` — données runtime dans dépôt | ~15min |
+
+**Total : 🔴 0 · 🟠 2 · 🟡 3**
+
+### Points forts détectés
+
+- Architecture credentials exemplaire : env vars exclusivement, `repr=False` sur `account_id`, aucun credential dans les logs
+- Guard mismatch port/mode en ValueError au load_config — impossible d'entrer en live avec mauvais port
+- Écriture state atomique `.tmp → rename` + validation stricte au rechargement
+- Fill verification 10s avec timeout + annulation bracket en cas d'échec
+- Circuit breaker, exponential backoff, orphan order detection — résilience complète
+- Couverture tests sécurité large (8 fichiers test dédiés)

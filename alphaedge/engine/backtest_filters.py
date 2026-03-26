@@ -1,12 +1,12 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Swing Trading Bot
 # FILE         : alphaedge/engine/backtest_filters.py
 # DESCRIPTION  : Backtest session grouping and trade filter functions
 # PYTHON       : 3.11.9
 # ============================================================
 """ALPHAEDGE — Backtest trade filters: session grouping and correlation/limit filters.
 
-Contains helper functions for grouping M1/M5 bars into trading sessions and
+Contains helper functions for grouping Daily bars into trading sessions and
 applying post-simulation filters (USD correlation, global session limits).
 Extracted from backtest.py to keep module size manageable.  All public
 symbols are re-exported via backtest.py for backward compatibility.

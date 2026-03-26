@@ -53,6 +53,13 @@ make qa
 | `Any` annotation | mypy error | Find correct type — never use `Any` |
 | `# type: ignore` | forbidden | Fix root cause, create stub if needed |
 
+## Gotchas (from tasks/lessons.md)
+
+- `ruff check` seul ne détecte pas les paramètres de fonctions orphelins → toujours lancer `ruff check --select ARG` en complément (2026-03-22)
+- Un paramètre `_param`-préfixé doit être utilisé dans le corps de la fonction — le préfixe `_` est occulté par `ruff --select ARG` mais visible dans Pylance WARNING (2026-03-23)
+- `# type: ignore` et `# pyright: ignore` sont interdits → trouver et corriger la cause racine (règle absolue du projet)
+- `Any` comme annotation est interdit → utiliser le bon union ou protocol
+
 ## Test Naming Convention
 
 ```
@@ -62,4 +69,4 @@ Examples: `test_fcr_detector_detect.py`, `test_risk_manager_daily.py`
 
 ## Baseline
 
-> 504 tests · 100% pass · Coverage ≥80% sur config/, utils/, core/
+> 574 tests · 100% pass · Coverage ≥80% sur config/, utils/, core/

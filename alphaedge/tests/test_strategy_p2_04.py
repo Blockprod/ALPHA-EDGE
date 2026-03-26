@@ -15,7 +15,7 @@ import pytest
 from alphaedge.engine.position_manager import PositionManager
 from alphaedge.engine.session_lifecycle import SessionLifecycle
 from alphaedge.engine.signal_pipeline import SignalPipeline
-from alphaedge.engine.strategy import FCRStrategy, StrategyState
+from alphaedge.engine.strategy import StrategyState, SwingStrategy
 from alphaedge.utils.pair_correlation import CorrelationCheckResult
 from alphaedge.utils.volatility_regime import VolatilityRegimeResult
 
@@ -23,18 +23,6 @@ from alphaedge.utils.volatility_regime import VolatilityRegimeResult
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
-def _make_m5_candles(n: int = 5, base: float = 1.0850) -> list[dict[str, Any]]:
-    return [
-        {
-            "open": base,
-            "high": base + 0.0010,
-            "low": base - 0.0010,
-            "close": base + 0.0001,
-        }
-        for _ in range(n)
-    ]
-
-
 def _make_daily_bars(n: int = 25) -> list[dict[str, Any]]:
     price = 1.0800
     bars = []
@@ -46,8 +34,8 @@ def _make_daily_bars(n: int = 25) -> list[dict[str, Any]]:
     return bars
 
 
-def _make_strategy(pairs: list[str] | None = None) -> FCRStrategy:
-    """Build an FCRStrategy with fully mocked dependencies."""
+def _make_strategy(pairs: list[str] | None = None) -> SwingStrategy:
+    """Build an SwingStrategy with fully mocked dependencies."""
     if pairs is None:
         pairs = ["EURUSD"]
     config = MagicMock()
@@ -63,8 +51,6 @@ def _make_strategy(pairs: list[str] | None = None) -> FCRStrategy:
     config.trading.volume_period = 20
     config.trading.min_volume_ratio = 1.0
     config.trading.min_volume_ratio_by_pair = {}
-    config.trading.fcr_lookback_candles = 6
-    config.trading.entry_timeframe = "1 min"
     config.trading.min_body_ratio = 0.5
     config.trading.max_wick_ratio = 0.5
     config.trading.risk_pct = 1.0
@@ -78,7 +64,7 @@ def _make_strategy(pairs: list[str] | None = None) -> FCRStrategy:
     broker.ib.disconnectedEvent = MagicMock()
     broker.ib.disconnectedEvent.__iadd__ = MagicMock(return_value=None)
 
-    strat = FCRStrategy.__new__(FCRStrategy)
+    strat = SwingStrategy.__new__(SwingStrategy)
     strat._config = config
     strat._broker = broker
     strat._executor = MagicMock()
@@ -110,11 +96,9 @@ class TestVolatilityRegimeGate:
         """When regime.allowed=False, the pair is not added to active_pairs."""
         strat = _make_strategy(["EURUSD"])
 
-        m5 = _make_m5_candles()
         daily = _make_daily_bars()
 
         strat._hist_feed.fetch_bars = AsyncMock(return_value=daily)
-        strat._hist_feed.fetch_m5_pre_session = AsyncMock(return_value=m5)
 
         blocked_result = VolatilityRegimeResult(
             allowed=False,
@@ -132,6 +116,7 @@ class TestVolatilityRegimeGate:
         strat._rt_feed.unsubscribe_all = AsyncMock()
         strat._rt_feed.get_live_spread = AsyncMock(return_value=None)
         strat._broker.disconnect = AsyncMock()
+        strat._broker.refresh_account_funds = AsyncMock()
         strat._executor.get_open_positions = AsyncMock(return_value=[])
 
         with (
@@ -162,11 +147,9 @@ class TestVolatilityRegimeGate:
         """When regime.allowed=True, the pair is subscribed normally."""
         strat = _make_strategy(["EURUSD"])
 
-        m5 = _make_m5_candles()
         daily = _make_daily_bars()
 
         strat._hist_feed.fetch_bars = AsyncMock(return_value=daily)
-        strat._hist_feed.fetch_m5_pre_session = AsyncMock(return_value=m5)
 
         allowed_result = VolatilityRegimeResult(allowed=True, reason="")
 
@@ -176,8 +159,9 @@ class TestVolatilityRegimeGate:
         strat._rt_feed.subscribe = AsyncMock()
         strat._rt_feed.unsubscribe_all = AsyncMock()
         strat._broker.disconnect = AsyncMock()
+        strat._broker.refresh_account_funds = AsyncMock()
         strat._executor.get_open_positions = AsyncMock(return_value=[])
-        strat._modules.fcr_detector.detect_fcr.return_value = None
+        strat._modules.momentum_detector.detect_momentum.return_value = None
 
         with (
             patch(
@@ -207,10 +191,7 @@ class TestVolatilityRegimeGate:
         """No daily bars → regime not called → pair allowed by default."""
         strat = _make_strategy(["EURUSD"])
 
-        m5 = _make_m5_candles()
-
         strat._hist_feed.fetch_bars = AsyncMock(return_value=[])  # empty daily bars
-        strat._hist_feed.fetch_m5_pre_session = AsyncMock(return_value=m5)
 
         strat._executor.get_account_equity = AsyncMock(return_value=10_000.0)
         strat._broker.connect = AsyncMock(return_value=True)
@@ -218,8 +199,9 @@ class TestVolatilityRegimeGate:
         strat._rt_feed.subscribe = AsyncMock()
         strat._rt_feed.unsubscribe_all = AsyncMock()
         strat._broker.disconnect = AsyncMock()
+        strat._broker.refresh_account_funds = AsyncMock()
         strat._executor.get_open_positions = AsyncMock(return_value=[])
-        strat._modules.fcr_detector.detect_fcr.return_value = None
+        strat._modules.momentum_detector.detect_momentum.return_value = None
 
         check_called: list[int] = []
 
@@ -258,17 +240,13 @@ class TestVolatilityRegimeGate:
 class TestCorrelationCheckInBar:
     """Test that _on_new_m1_bar blocks correlated signals."""
 
-    def _make_strat_with_state(self, pair: str = "EURUSD") -> FCRStrategy:
+    def _make_strat_with_state(self, pair: str = "EURUSD") -> SwingStrategy:
         strat = _make_strategy([pair])
         state = StrategyState(pair=pair)
         state.trades_today = 0
         state.is_position_open = False
-        state.m5_candles = _make_m5_candles()
-        state.m1_candles = []
-        state.gap_result = {"detected": True}
-        state.fcr_result = {"range_high": 1.0860, "range_low": 1.0840}
+        state.signal_result = None  # no active momentum signal
         strat._states[pair] = state
-        strat._modules.engulfing_detector.detect_engulfing.return_value = None
         return strat
 
     def test_correlation_not_checked_when_matrix_empty(self) -> None:
@@ -309,17 +287,17 @@ class TestCorrelationCheckInBar:
             "alphaedge.engine.session_lifecycle.check_signal_allowed",
             return_value=block_result,
         ):
-            # engulfing should never be called if correlation blocks early
-            strat._modules.engulfing_detector.detect_engulfing.reset_mock()
             strat._lifecycle._on_new_m1_bar(
                 "GBPUSD",
                 {"open": 1.265, "high": 1.266, "low": 1.264, "close": 1.2655},
             )
 
-        strat._modules.engulfing_detector.detect_engulfing.assert_not_called()
+        # Correlation blocked — risk check was never reached
+        strat._modules.risk_manager.check_pair_limit.assert_not_called()
 
     def test_uncorrelated_signal_allowed(self) -> None:
-        """When check_signal_allowed returns True, execution proceeds normally."""
+        """When check_signal_allowed returns True, execution proceeds past
+        correlation."""
         strat = self._make_strat_with_state("USDJPY")
         strat._correlation_matrix = {
             ("EURUSD", "USDJPY"): 0.1,
@@ -337,13 +315,13 @@ class TestCorrelationCheckInBar:
             "alphaedge.engine.session_lifecycle.check_signal_allowed",
             return_value=allow_result,
         ):
-            # engulfing IS called (returns None → no exec_task)
             strat._lifecycle._on_new_m1_bar(
                 "USDJPY",
                 {"open": 151.50, "high": 151.60, "low": 151.40, "close": 151.55},
             )
 
-        strat._modules.engulfing_detector.detect_engulfing.assert_called_once()
+        # Correlation allowed — per-pair risk check was reached
+        strat._modules.risk_manager.check_pair_limit.assert_called_once()
 
     def test_correlation_check_passes_open_pairs(self) -> None:
         """check_signal_allowed receives open_pairs with all open positions."""

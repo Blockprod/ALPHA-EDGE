@@ -37,12 +37,11 @@ _config = load_config()
 _cache = BarDiskCache()
 _PAIRS = _config.trading.pairs
 
-_bars: dict[str, tuple[list, list]] = {}
+_bars: dict[str, list] = {}
 for _pair in _PAIRS:
-    _m1 = _cache.load(_pair, "1 min") or []
-    _m5 = _cache.load(_pair, "5 mins") or []
-    _bars[_pair] = (_m1, _m5)
-    print(f"  {_pair} M1={len(_m1):,} M5={len(_m5):,}")
+    _daily = _cache.load(_pair, "1 day") or []
+    _bars[_pair] = _daily
+    print(f"  {_pair} daily={len(_daily):,}")
 
 print(f"Data loaded in {time.perf_counter() - _t0:.1f}s\n", flush=True)
 
@@ -64,19 +63,12 @@ def _run(
     cfg.trading.min_body_ratio = min_body_ratio
     cfg.trading.max_wick_ratio = max_wick_ratio
 
+    cfg.trading.min_atr_ratio = min_atr_ratio
+    cfg.trading.min_range_pips = min_range_pips
+    cfg.trading.min_volume_ratio = min_volume_ratio
     all_trades = []
     for pair in _PAIRS:
-        m1, m5 = _bars[pair]
-        trades = _backtest_pair(
-            pair,
-            m1,
-            m5,
-            cfg,
-            min_atr_ratio=min_atr_ratio,
-            min_range_pips=min_range_pips,
-            min_volume_ratio=min_volume_ratio,
-            min_sl_pips=min_sl_pips,
-        )
+        trades = _backtest_pair(pair, _bars[pair], cfg, min_sl_pips=min_sl_pips)
         all_trades.extend(trades)
 
     if len(all_trades) < 20:

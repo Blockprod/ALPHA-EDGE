@@ -22,11 +22,10 @@ from alphaedge.config.loader import AppConfig
 from alphaedge.engine.sensitivity import SENSITIVITY_PARAMS, _run_with_params
 
 _DEFAULT_PARAM_NAMES = [
-    "min_atr_ratio",
-    "min_volume_ratio",
-    "min_range_pips",
+    "adx_threshold",
+    "momentum_fast_period",  # EMA fast (8–20) — replaces FCR-specific min_body_ratio
+    "momentum_slow_period",  # EMA slow (20–50)
     "rr_ratio",
-    "min_body_ratio",
 ]
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -49,8 +48,7 @@ def _suggest_float(
 
 
 def optuna_search_best(
-    m1_bars: list[dict[str, Any]],
-    m5_bars: list[dict[str, Any]],
+    daily_bars: list[dict[str, Any]],
     pair: str,
     config: AppConfig,
     n_trials: int = 150,
@@ -61,10 +59,8 @@ def optuna_search_best(
 
     Parameters
     ----------
-    m1_bars : list[dict[str, Any]]
-        In-sample M1 bars.
-    m5_bars : list[dict[str, Any]]
-        In-sample M5 bars.
+    daily_bars : list[dict[str, Any]]
+        In-sample daily bars.
     pair : str
         Currency pair.
     config : AppConfig
@@ -74,7 +70,7 @@ def optuna_search_best(
     metric : str
         ``"sharpe"`` or ``"pf"``.
     param_names : list[str] | None
-        Parameters to optimize. Defaults to the five main FCR parameters.
+        Parameters to optimize. Defaults to the three main parameters.
 
     Returns
     -------
@@ -88,7 +84,7 @@ def optuna_search_best(
 
     def objective(trial: optuna.trial.Trial) -> float:
         overrides = {name: _suggest_float(trial, name) for name in search_names}
-        stats = _run_with_params(m1_bars, m5_bars, pair, config, overrides)
+        stats = _run_with_params(daily_bars, pair, config, overrides)
         score = stats.sharpe_ratio if metric == "sharpe" else stats.profit_factor
         trial.set_user_attr("overrides", overrides)
         return float(score)

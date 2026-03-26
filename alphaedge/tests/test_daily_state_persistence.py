@@ -19,7 +19,7 @@ import pytest
 
 import alphaedge.utils.state_persistence as _state_mod
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
-from alphaedge.engine.strategy import CoreModules, FCRStrategy
+from alphaedge.engine.strategy import CoreModules, SwingStrategy
 from alphaedge.utils.state_persistence import (
     DailyState,
     clear_daily_state,
@@ -38,7 +38,7 @@ def _make_config() -> AppConfig:
     )
 
 
-def _build_strategy() -> FCRStrategy:
+def _build_strategy() -> SwingStrategy:
     cfg = _make_config()
     with (
         patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,
@@ -51,13 +51,11 @@ def _build_strategy() -> FCRStrategy:
         mock_ib.disconnectedEvent = MagicMock()
         mock_broker_cls.return_value.ib = mock_ib
         mock_modules.return_value = CoreModules(
-            fcr_detector=MagicMock(),
-            gap_detector=MagicMock(),
-            engulfing_detector=MagicMock(),
+            momentum_detector=MagicMock(),
             order_manager=MagicMock(),
             risk_manager=MagicMock(),
         )
-        strategy = FCRStrategy(cfg)
+        strategy = SwingStrategy(cfg)
     # Make async cleanup methods awaitable for robustness under test ordering
     strategy._rt_feed.unsubscribe_all = AsyncMock()
     strategy._broker.disconnect = AsyncMock()
@@ -233,11 +231,9 @@ class TestRestoredEquityOnRestart:
 
         strategy = _build_strategy()
         strategy._broker.connect = AsyncMock(return_value=True)
+        strategy._broker.refresh_account_funds = AsyncMock()
         strategy._executor.get_account_equity = AsyncMock(
             return_value=9400.0,
-        )
-        strategy._hist_feed.fetch_m5_pre_session = AsyncMock(
-            return_value=[],
         )
         strategy._hist_feed.fetch_bars = AsyncMock(
             return_value=[],

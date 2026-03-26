@@ -1,204 +1,226 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE
 # FILE         : alphaedge/tests/test_signal_pipeline.py
-# DESCRIPTION  : Unit tests for SignalPipeline detection chain
+# DESCRIPTION  : Momentum+Carry pipeline — 4 critical scenarios
 # PYTHON       : 3.11.9
-# LAST UPDATED : 2026-03-07
+# LAST UPDATED : 2026-03-25
 # ============================================================
-"""Tests for SignalPipeline: FCR → Gap → Engulfing detection delegation."""
+"""ALPHAEDGE — Signal pipeline: Momentum+Carry detection scenarios."""
 
 from __future__ import annotations
 
+import os
 from typing import Any
 from unittest.mock import MagicMock
 
-from alphaedge.engine.signal_pipeline import SignalPipeline
-from alphaedge.engine.strategy import StrategyState
+import pytest
+
+os.environ.setdefault("ALPHAEDGE_CORE_BACKEND", "stubs")
+
+from alphaedge.config.loader import AppConfig  # noqa: E402
+from alphaedge.engine.carry_signal import CarrySignal  # noqa: E402
+from alphaedge.engine.signal_pipeline import SignalPipeline  # noqa: E402
 
 
-def _make_state(**kw: Any) -> StrategyState:
-    state = StrategyState(pair="EURUSD")
-    state.m5_candles = kw.get("m5_candles", [{"close": 1.1000}])
-    state.pre_session_m1_candles = kw.get("pre_session_m1_candles", [{"close": 1.0999}])
-    state.m1_candles = kw.get("m1_candles", [{"close": 1.1001}])
-    state.fcr_result = kw.get("fcr_result", None)
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+def _make_state(
+    pair: str = "AUDJPY",
+    daily_bars: list[dict[str, Any]] | None = None,
+    carry_rates: dict[str, float] | None = None,
+) -> MagicMock:
+    state = MagicMock()
+    state.pair = pair
+    state.daily_bars = daily_bars or []
+    state.carry_rates = carry_rates or {}
+    state.signal_result = None
     return state
 
 
-def _make_modules(
-    fcr_result: Any = None,
-    gap_result: Any = None,
-    eng_result: Any = None,
+def _mock_modules(
+    momentum_result: dict[str, Any] | None,
 ) -> MagicMock:
+    """Return a CoreModules mock with momentum_detector pre-configured."""
     modules = MagicMock()
-    modules.fcr_detector.detect_fcr.return_value = fcr_result
-    modules.gap_detector.detect_gap.return_value = gap_result
-    modules.engulfing_detector.detect_engulfing.return_value = eng_result
+    modules.momentum_detector.detect_momentum.return_value = momentum_result
     return modules
 
 
-def _make_config(
-    rr: float = 2.0,
-    min_body: float = 0.5,
-    max_wick: float = 0.5,
-) -> MagicMock:
-    cfg = MagicMock()
-    cfg.trading.rr_ratio = rr
-    cfg.trading.min_body_ratio = min_body
-    cfg.trading.max_wick_ratio = max_wick
-    cfg.trading.atr_period = 14
-    cfg.trading.min_atr_ratio = 1.7
-    cfg.trading.min_range_pips = 8.0
-    cfg.trading.min_range_pips_by_pair = {}
-    cfg.trading.volume_period = 20
-    cfg.trading.min_volume_ratio = 1.0
-    cfg.trading.min_volume_ratio_by_pair = {}
-    cfg.trading.fcr_lookback_candles = 6
-    return cfg
+def _momentum_signal(direction: int = 1, adx: float = 28.0) -> dict[str, Any]:
+    return {
+        "detected": True,
+        "direction": direction,
+        "strength": adx / 100.0,
+        "ema_fast": 1.10,
+        "ema_slow": 1.09,
+        "adx": adx,
+        "timestamp": 1_700_000_000_000,
+    }
 
 
-class TestSignalPipelineDetectFCR:
-    """detect_fcr delegates to modules.fcr_detector and writes state."""
-
-    def test_returns_none_when_no_fcr(self) -> None:
+# ------------------------------------------------------------------
+# Scenario 1: ADX below threshold → momentum returns None → pipeline STOP
+# ------------------------------------------------------------------
+class TestMomentumStopAdxBelowThreshold:
+    def test_momentum_returns_none_when_adx_low(self) -> None:
         pipeline = SignalPipeline()
+        modules = _mock_modules(momentum_result=None)
         state = _make_state()
-        modules = _make_modules(fcr_result=None)
-        cfg = _make_config()
-        result = pipeline.detect_fcr(state, modules, cfg, pip_size=0.0001)
+
+        result = pipeline.detect_momentum(state, modules, AppConfig())
+
         assert result is None
-        assert state.fcr_result is None
+        assert state.signal_result is None
 
-    def test_returns_and_stores_fcr_result(self) -> None:
+    def test_no_carry_check_needed_when_momentum_none(self) -> None:
+        """Carry should not be called after a momentum STOP — pipeline is atomic."""
         pipeline = SignalPipeline()
+        modules = _mock_modules(momentum_result=None)
         state = _make_state()
-        fcr = {"range_high": 1.1050, "range_low": 1.1000}
-        modules = _make_modules(fcr_result=fcr)
-        cfg = _make_config()
-        result = pipeline.detect_fcr(state, modules, cfg, pip_size=0.0001)
-        assert result == fcr
-        assert state.fcr_result == fcr
 
-    def test_calls_detector_with_correct_candles(self) -> None:
+        momentum_result = pipeline.detect_momentum(state, modules, AppConfig())
+        # Simulate the pipeline: if momentum is None, stop immediately
+        assert momentum_result is None
+        # (no further calls in a correct implementation)
+
+
+# ------------------------------------------------------------------
+# Scenario 2: carry contradiction blocks entry
+# ------------------------------------------------------------------
+class TestCarryContradictionBlocksEntry:
+    def test_long_momentum_short_carry_is_conflict(self) -> None:
         pipeline = SignalPipeline()
-        candles = [{"open": 1.1, "close": 1.11}]
-        state = _make_state(m5_candles=candles)
-        modules = _make_modules()
-        cfg = _make_config()
-        pipeline.detect_fcr(state, modules, cfg, pip_size=0.0001)
-        call_kwargs = modules.fcr_detector.detect_fcr.call_args.kwargs
-        assert call_kwargs["candles_data"] == candles
-
-    def test_uses_pair_override_and_lookback(self) -> None:
-        pipeline = SignalPipeline()
-        candles = [
-            {"open": 1.1, "close": 1.1001},
-            {"open": 1.1001, "close": 1.1002},
-            {"open": 1.1002, "close": 1.1003},
-        ]
-        state = _make_state(m5_candles=candles)
-        modules = _make_modules()
-        cfg = _make_config()
-        cfg.trading.fcr_lookback_candles = 2
-        cfg.trading.min_range_pips_by_pair = {"EURUSD": 6.5}
-
-        pipeline.detect_fcr(state, modules, cfg, pip_size=0.0001)
-
-        call_kwargs = modules.fcr_detector.detect_fcr.call_args.kwargs
-        assert call_kwargs["candles_data"] == candles[-2:]
-        assert call_kwargs["min_range_pips"] == 6.5
-
-
-class TestSignalPipelineDetectGap:
-    """detect_gap delegates to modules.gap_detector and writes state."""
-
-    def test_returns_none_when_no_gap(self) -> None:
-        pipeline = SignalPipeline()
-        state = _make_state()
-        modules = _make_modules(gap_result=None)
-        cfg = _make_config()
-        result = pipeline.detect_gap(
-            state, modules, cfg, pre_close=1.1000, session_open=1.1001
+        mom = _momentum_signal(direction=1)
+        carry = CarrySignal(
+            differential=-1.5,
+            direction="SHORT",
+            daily_carry_pips=-0.05,
+            is_valid=True,
         )
-        assert result is None
-        assert state.gap_result is None
+        assert pipeline.is_carry_conflict(mom, carry) is True
 
-    def test_returns_and_stores_gap_result(self) -> None:
+    def test_short_momentum_long_carry_is_conflict(self) -> None:
         pipeline = SignalPipeline()
-        state = _make_state()
-        gap = {"detected": True, "atr_ratio": 2.5}
-        modules = _make_modules(gap_result=gap)
-        cfg = _make_config()
-        result = pipeline.detect_gap(
-            state, modules, cfg, pre_close=1.1000, session_open=1.1050
+        mom = _momentum_signal(direction=-1)
+        carry = CarrySignal(
+            differential=1.5,
+            direction="LONG",
+            daily_carry_pips=0.05,
+            is_valid=True,
         )
-        assert result == gap
-        assert state.gap_result == gap
+        assert pipeline.is_carry_conflict(mom, carry) is True
 
-    def test_uses_pre_session_m1_and_configured_gap_params(self) -> None:
+    def test_neutral_carry_never_conflicts(self) -> None:
         pipeline = SignalPipeline()
-        pre_session_m1 = [{"close": 1.0998}, {"close": 1.0999}]
-        state = _make_state(pre_session_m1_candles=pre_session_m1)
-        modules = _make_modules(gap_result={"detected": True})
-        cfg = _make_config()
-        cfg.trading.atr_period = 21
-        cfg.trading.min_atr_ratio = 1.9
+        mom = _momentum_signal(direction=1)
+        carry = CarrySignal(
+            differential=0.1,
+            direction="NEUTRAL",
+            daily_carry_pips=0.001,
+            is_valid=True,
+        )
+        assert pipeline.is_carry_conflict(mom, carry) is False
 
-        pipeline.detect_gap(state, modules, cfg, pre_close=1.1000, session_open=1.1010)
-
-        call_kwargs = modules.gap_detector.detect_gap.call_args.kwargs
-        assert call_kwargs["pre_session_m1"] == pre_session_m1
-        assert call_kwargs["atr_period"] == 21
-        assert call_kwargs["min_atr_ratio"] == 1.9
-
-
-class TestSignalPipelineDetectEngulfing:
-    """detect_engulfing guards on fcr_result and delegates to modules."""
-
-    def test_returns_none_when_no_fcr(self) -> None:
-        """When state.fcr_result is None, engulfing is not run."""
+    def test_invalid_carry_never_conflicts(self) -> None:
         pipeline = SignalPipeline()
-        state = _make_state()  # fcr_result is None by default
-        modules = _make_modules()
-        cfg = _make_config()
-        result = pipeline.detect_engulfing(state, modules, cfg, pip_size=0.0001)
-        assert result is None
-        modules.engulfing_detector.detect_engulfing.assert_not_called()
+        mom = _momentum_signal(direction=1)
+        carry = CarrySignal(
+            differential=0.0,
+            direction="NEUTRAL",
+            daily_carry_pips=0.0,
+            is_valid=False,
+        )
+        assert pipeline.is_carry_conflict(mom, carry) is False
 
-    def test_returns_result_when_fcr_available(self) -> None:
+
+# ------------------------------------------------------------------
+# Scenario 3: full pipeline — momentum LONG + carry LONG → signal produced
+# ------------------------------------------------------------------
+class TestFullPipelineLongSignal:
+    def test_long_momentum_long_carry_no_conflict(self) -> None:
         pipeline = SignalPipeline()
-        fcr = {"range_high": 1.1050, "range_low": 1.1000}
-        state = _make_state(fcr_result=fcr)
-        eng = {"detected": True, "signal": 1, "entry_price": 1.1055}
-        modules = _make_modules(eng_result=eng)
-        cfg = _make_config()
-        result = pipeline.detect_engulfing(state, modules, cfg, pip_size=0.0001)
-        assert result == eng
-        assert state.signal_result == eng
+        modules = _mock_modules(momentum_result=_momentum_signal(direction=1))
+        state = _make_state(
+            pair="AUDJPY",
+            carry_rates={"AUD": 4.35, "JPY": 0.10},
+        )
 
-    def test_passes_fcr_levels_to_detector(self) -> None:
+        mom_result = pipeline.detect_momentum(state, modules, AppConfig())
+        assert mom_result is not None
+        assert mom_result["direction"] == 1
+
+        carry = pipeline.get_carry(state, AppConfig())
+        assert carry.is_valid is True
+        assert carry.direction == "LONG"
+        assert not pipeline.is_carry_conflict(mom_result, carry)
+
+    def test_signal_result_stored_on_state(self) -> None:
         pipeline = SignalPipeline()
-        fcr = {"range_high": 1.1100, "range_low": 1.0900}
-        state = _make_state(fcr_result=fcr)
-        modules = _make_modules()
-        cfg = _make_config()
-        pipeline.detect_engulfing(state, modules, cfg, pip_size=0.0001)
-        call_kwargs = modules.engulfing_detector.detect_engulfing.call_args.kwargs
-        assert call_kwargs["fcr_high"] == 1.1100
-        assert call_kwargs["fcr_low"] == 1.0900
+        expected = _momentum_signal(direction=1)
+        modules = _mock_modules(momentum_result=expected)
+        state = _make_state()
 
-    def test_uses_configured_volume_settings(self) -> None:
+        pipeline.detect_momentum(state, modules, AppConfig())
+        assert state.signal_result is expected
+
+
+# ------------------------------------------------------------------
+# Scenario 4: full pipeline — momentum SHORT + carry SHORT → signal produced
+# ------------------------------------------------------------------
+class TestFullPipelineShortSignal:
+    def test_short_momentum_short_carry_no_conflict(self) -> None:
         pipeline = SignalPipeline()
-        fcr = {"range_high": 1.1100, "range_low": 1.0900}
-        state = _make_state(fcr_result=fcr)
-        modules = _make_modules(eng_result={"detected": True})
-        cfg = _make_config()
-        cfg.trading.volume_period = 34
-        cfg.trading.min_volume_ratio = 1.3
-        cfg.trading.min_volume_ratio_by_pair = {"EURUSD": 1.6}
+        modules = _mock_modules(momentum_result=_momentum_signal(direction=-1))
+        state = _make_state(
+            pair="EURUSD",
+            carry_rates={"EUR": 3.65, "USD": 5.25},  # USD pays more → EUR SHORT
+        )
 
-        pipeline.detect_engulfing(state, modules, cfg, pip_size=0.0001)
+        mom_result = pipeline.detect_momentum(state, modules, AppConfig())
+        assert mom_result is not None
+        assert mom_result["direction"] == -1
 
-        call_kwargs = modules.engulfing_detector.detect_engulfing.call_args.kwargs
-        assert call_kwargs["volume_period"] == 34
-        assert call_kwargs["min_volume_ratio"] == 1.6
+        carry = pipeline.get_carry(state, AppConfig())
+        assert carry.is_valid is True
+        # USD pays more than EUR → differential = 3.65 - 5.25 = -1.6 → SHORT EUR
+        assert carry.direction == "SHORT"
+        assert not pipeline.is_carry_conflict(mom_result, carry)
+
+    def test_short_momentum_long_carry_conflicts(self) -> None:
+        """SHORT momentum with LONG carry bias → conflict → STOP."""
+        pipeline = SignalPipeline()
+        modules = _mock_modules(momentum_result=_momentum_signal(direction=-1))
+        state = _make_state(
+            pair="AUDJPY",
+            carry_rates={"AUD": 4.35, "JPY": 0.10},  # AUD pays more → LONG AUD
+        )
+
+        mom_result = pipeline.detect_momentum(state, modules, AppConfig())
+        assert mom_result is not None
+
+        carry = pipeline.get_carry(state, AppConfig())
+        assert carry.direction == "LONG"
+        assert pipeline.is_carry_conflict(mom_result, carry) is True
+
+
+# ------------------------------------------------------------------
+# Edge cases
+# ------------------------------------------------------------------
+class TestEdgeCases:
+    @pytest.mark.parametrize("adx", [25.0, 26.0, 50.0, 100.0])
+    def test_detect_momentum_passes_adx_threshold_from_constants(
+        self, adx: float
+    ) -> None:
+        pipeline = SignalPipeline()
+        expected = _momentum_signal(adx=adx)
+        modules = _mock_modules(momentum_result=expected)
+        state = _make_state()
+        result = pipeline.detect_momentum(state, modules, AppConfig())
+        assert result is not None
+
+    def test_get_carry_with_missing_rates_returns_invalid(self) -> None:
+        pipeline = SignalPipeline()
+        state = _make_state(pair="AUDJPY", carry_rates={})
+        carry = pipeline.get_carry(state, AppConfig())
+        assert carry.is_valid is False

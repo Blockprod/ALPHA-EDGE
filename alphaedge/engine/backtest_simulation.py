@@ -34,10 +34,37 @@ from alphaedge.config.constants import (
 )
 from alphaedge.engine.backtest_types import TradeRecord
 
+# ------------------------------------------------------------------
+# Pair → (base currency, quote currency) mapping
+# Used by compute_overnight_carry to look up rate differentials.
+# ------------------------------------------------------------------
+_PAIR_CURRENCIES: dict[str, tuple[str, str]] = {
+    "EURUSD": ("EUR", "USD"),
+    "GBPUSD": ("GBP", "USD"),
+    "USDJPY": ("USD", "JPY"),
+    "USDCHF": ("USD", "CHF"),
+    "USDCAD": ("USD", "CAD"),
+    "AUDUSD": ("AUD", "USD"),
+    "NZDUSD": ("NZD", "USD"),
+    "EURGBP": ("EUR", "GBP"),
+    "EURJPY": ("EUR", "JPY"),
+    "GBPJPY": ("GBP", "JPY"),
+    "AUDJPY": ("AUD", "JPY"),
+    "CHFJPY": ("CHF", "JPY"),
+}
+
 
 # ------------------------------------------------------------------
 # Variable slippage model
 # ------------------------------------------------------------------
+# HYPOTHÈSE DE MODÉLISATION — Approuvée 2026-03-24
+# Backtest : spread calibré par paire (BASE_SPREAD_BY_PAIR) + slippage
+# variable selon contexte (ouverture NYSE, news). Live : spread réel IB
+# via get_live_spread() + buffer fixe (DEFAULT_MARKET_SLIPPAGE_PIPS).
+# Ces deux méthodes sont des approximations non équivalentes.
+# Toute comparaison PnL backtest ↔ live nécessite une correction du
+# coût de transaction estimée à ~0.5 pip additionnels côté backtest.
+# Référence : tasks/audits/resultats/audit_pipeline_alphaedge.md — BLOC 4 — P-03
 def compute_variable_slippage(
     bar_time: datetime | None,
     is_news: bool = False,
@@ -82,6 +109,61 @@ def compute_variable_slippage(
             spread = NYSE_OPEN_SPREAD_PIPS
 
     return slippage + spread
+
+
+# ------------------------------------------------------------------
+# Overnight carry model (swing trades held multiple days)
+# ------------------------------------------------------------------
+def compute_overnight_carry(
+    pair: str,
+    direction: int,
+    days_held: int,
+    rates: dict[str, float],
+    lot_size: float,
+    pip_size: float,
+) -> float:
+    """Return total overnight carry in pips for a swing trade.
+
+    Positive value means the carry adds to P&L (favourable rate
+    differential); negative means it subtracts (unfavourable).
+
+    Parameters
+    ----------
+    pair : str
+        Currency pair symbol (e.g. ``"AUDJPY"``).
+    direction : int
+        Trade direction: ``1`` = LONG, ``-1`` = SHORT.
+    days_held : int
+        Number of calendar days the position was open.
+    rates : dict[str, float]
+        Annualised interest rates in percent per currency, e.g.
+        ``{"AUD": 4.35, "JPY": 0.10}``.
+    lot_size : float
+        Position size in lots (reserved for future USD-denominated carry;
+        pips calculation below is size-independent).
+    pip_size : float
+        Pip size for the pair (e.g. 0.0001 for EURUSD, 0.01 for USDJPY).
+
+    Returns
+    -------
+    float
+        Total carry in pips.  Returns ``0.0`` if the pair is unknown or
+        either currency rate is missing from *rates*.
+    """
+    if days_held <= 0 or pip_size <= 0:
+        return 0.0
+    currencies = _PAIR_CURRENCIES.get(pair.upper())
+    if not currencies:
+        return 0.0
+    base, quote = currencies
+    if base not in rates or quote not in rates:
+        return 0.0
+    # Positive differential → LONG earns carry, SHORT pays carry.
+    differential = rates[base] - rates[quote]  # annualised %
+    daily_carry_pips = differential * direction / 100.0 / 365.0 / pip_size
+    # lot_size: unused for pip calculation, available for future USD P&L variant
+    _ = lot_size
+    return daily_carry_pips * days_held
 
 
 # ------------------------------------------------------------------

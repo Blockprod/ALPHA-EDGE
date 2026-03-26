@@ -1,22 +1,23 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Swing Trading Bot
 # FILE         : alphaedge/engine/strategy.py
-# DESCRIPTION  : FCR multi-timeframe strategy orchestrator
+# DESCRIPTION  : Daily/H4 Momentum+Carry strategy orchestrator
 # AUTHOR       : ALPHAEDGE Dev Team
 # WORKFLOW     : VSCode + Claude + Copilot Pro + File Engineering
 # PYTHON       : 3.11.9
-# LAST UPDATED : 2026-03-07
+# LAST UPDATED : 2026-03-25
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: main strategy engine."""
+"""ALPHAEDGE — Swing Trading Bot: main strategy engine."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import signal
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date as _date
 from types import ModuleType
 from typing import Any
 
@@ -25,6 +26,9 @@ from alphaedge.config.loader import AppConfig, load_config
 from alphaedge.engine.broker import BrokerConnection, OrderExecutor
 from alphaedge.engine.data_feed import HistoricalDataFeed, RealtimeDataFeed
 from alphaedge.engine.live_types import LiveTradeRecord
+
+# NOTE: import cycle mitigated by TYPE_CHECKING in position_manager,
+# signal_pipeline, session_lifecycle
 from alphaedge.engine.position_manager import PositionManager
 from alphaedge.engine.regime_filter import DailyRegimeFilter
 from alphaedge.engine.session_lifecycle import SessionLifecycle
@@ -41,21 +45,26 @@ logger = get_logger()
 # ------------------------------------------------------------------
 @dataclass
 class StrategyState:
-    """Tracks the current state of the FCR strategy."""
+    """Tracks the current state of the swing strategy."""
 
     pair: str = ""
-    fcr_result: dict[str, Any] | None = None
-    gap_result: dict[str, Any] | None = None
     signal_result: dict[str, Any] | None = None
     trades_today: int = 0
+    wins_today: int = 0
+    losses_today: int = 0
+    pnl_usd_today: float = 0.0
     starting_equity: float = 0.0
     current_equity: float = 0.0
     is_position_open: bool = False
-    m5_candles: list[dict[str, Any]] = field(default_factory=list)
-    pre_session_m1_candles: list[dict[str, Any]] = field(default_factory=list)
-    m1_candles: list[dict[str, Any]] = field(default_factory=list)
     max_candles: int = 200
     live_record: LiveTradeRecord | None = None
+    # Bracket order IDs — used to identify SL/TP fills in _on_trade_closed
+    _tp_order_id: int = 0
+    _sl_order_id: int = 0
+    # Daily/H4 momentum strategy fields
+    daily_bars: list[dict[str, Any]] = field(default_factory=list)
+    carry_rates: dict[str, float] = field(default_factory=dict)
+    pip_size: float = 0.0
 
 
 # ------------------------------------------------------------------
@@ -65,9 +74,7 @@ class StrategyState:
 class CoreModules:
     """Named container for Cython/stub core modules."""
 
-    fcr_detector: ModuleType
-    gap_detector: ModuleType
-    engulfing_detector: ModuleType
+    momentum_detector: ModuleType
     order_manager: ModuleType
     risk_manager: ModuleType
 
@@ -86,11 +93,9 @@ def _import_core_modules() -> CoreModules:
     """
     try:
         from alphaedge.core import (
-            engulfing_detector,
-            fcr_detector,
-            gap_detector,
             get_backend_name,
             get_fallback_modules,
+            momentum_detector,
             order_manager,
             risk_manager,
         )
@@ -106,9 +111,7 @@ def _import_core_modules() -> CoreModules:
         else:
             logger.info("ALPHAEDGE: core backend=%s", backend_name)
         return CoreModules(
-            fcr_detector=fcr_detector,
-            gap_detector=gap_detector,
-            engulfing_detector=engulfing_detector,
+            momentum_detector=momentum_detector,
             order_manager=order_manager,
             risk_manager=risk_manager,
         )
@@ -121,13 +124,13 @@ def _import_core_modules() -> CoreModules:
 
 
 # ------------------------------------------------------------------
-# FCR Strategy Engine
+# Swing Strategy Engine
 # ------------------------------------------------------------------
-class FCRStrategy:
+class SwingStrategy:
     """
-    Main FCR multi-timeframe strategy orchestrator.
+    Main Daily/H4 Momentum+Carry strategy orchestrator.
 
-    Coordinates M5 FCR detection, M1 gap/engulfing signals,
+    Coordinates Daily momentum detection, carry bias filtering,
     risk management, and order execution.
     """
 
@@ -201,69 +204,53 @@ class FCRStrategy:
         self._states[pair] = state
         return state
 
-    async def _fetch_pre_session_data(
-        self,
-        pair: str,
-        session_start: datetime,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """Fetch M5 and M1 pre-session candles needed by the live pipeline."""
-        fcr_lookback_minutes = max(5, self._config.trading.fcr_lookback_candles * 5)
-        atr_baseline_minutes = max(30, self._config.trading.atr_period)
-        m5_candles = await self._hist_feed.fetch_m5_pre_session(
-            pair=pair,
-            session_start_utc=session_start,
-            lookback_minutes=fcr_lookback_minutes,
-        )
-        pre_session_m1 = await self._hist_feed.fetch_bars(
-            pair=pair,
-            timeframe=self._config.trading.entry_timeframe,
-            duration=f"{atr_baseline_minutes * 60} S",
-            end_dt=session_start,
-        )
-        return m5_candles, pre_session_m1
-
-    def _detect_fcr(
+    def _detect_momentum(
         self,
         state: StrategyState,
         pip_size: float,
     ) -> dict[str, Any] | None:
-        """Run FCR detection on buffered M5 candles."""
+        """Run the momentum+carry signal pipeline for the given pair state."""
         # Observation-only regime log — does NOT block the trade
-        from datetime import date as _date
-
+        state.pip_size = pip_size
         regime_filter = getattr(self, "_regime_filter", None)
         regime = "unknown"
         if regime_filter is not None:
-            regime = regime_filter.predict(_date.today(), state.m5_candles)
+            regime = regime_filter.predict(_date.today(), state.daily_bars[-20:])
+        if self._config.regime_gate_enabled and regime == self._config.regime_block_on:
+            logger.info(
+                "ALPHAEDGE: regime gate BLOCK pair=%s regime=%s",
+                state.pair,
+                regime,
+            )
+            return None
         logger.info(
-            "ALPHAEDGE: regime=%s pair=%s [observation only]",
+            "ALPHAEDGE: regime=%s pair=%s",
             regime,
             state.pair,
         )
-        return self._signal_pipeline.detect_fcr(
-            state, self._modules, self._config, pip_size
+        result = self._signal_pipeline.detect_momentum(
+            state, self._modules, self._config
         )
+        if result is None:
+            state.signal_result = None
+            return None
 
-    def _detect_gap(
-        self,
-        state: StrategyState,
-        pre_close: float,
-        session_open: float,
-    ) -> dict[str, Any] | None:
-        """Run gap/volatility-expansion detection."""
-        return self._signal_pipeline.detect_gap(
-            state, self._modules, self._config, pre_close, session_open
-        )
+        # Carry conflict check: block signal when carry direction contradicts momentum.
+        # Mirrors the carry filter applied in backtest._backtest_pair.
+        if self._config.trading.carry_enabled:
+            carry = self._signal_pipeline.get_carry(state, self._config)
+            if self._signal_pipeline.is_carry_conflict(result, carry):
+                logger.info(
+                    "ALPHAEDGE: carry conflict BLOCK pair=%s momentum=%s carry=%s",
+                    state.pair,
+                    result.get("direction"),
+                    carry.direction,
+                )
+                state.signal_result = None
+                return None
 
-    def _detect_engulfing(
-        self,
-        state: StrategyState,
-        pip_size: float,
-    ) -> dict[str, Any] | None:
-        """Run engulfing detection on buffered M1 candles."""
-        return self._signal_pipeline.detect_engulfing(
-            state, self._modules, self._config, pip_size
-        )
+        state.signal_result = result
+        return result
 
     async def _check_risk(
         self,
@@ -340,6 +327,18 @@ def _apply_cli_mode(config: AppConfig, mode: str) -> None:
         config.mode = "paper"
         return
 
+    # Guard: ALPHAEDGE_PAPER=true ENV takes precedence over CLI --mode live.
+    # This prevents switching to live mode when the ENV guard is active.
+    env_paper = os.getenv("ALPHAEDGE_PAPER", "true").strip().lower()
+    if env_paper == "true":
+        print(
+            "ERROR: ALPHAEDGE_PAPER=true is set in environment. "
+            "Cannot switch to live mode via --mode live. "
+            "Unset ALPHAEDGE_PAPER (or set it to 'false') to enable live trading.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
     config.ib.is_paper = False
     config.ib.port = IB_LIVE_PORT
     config.mode = "live"
@@ -379,7 +378,7 @@ async def _main() -> None:
         print(f"⚠️  IB Gateway live port {IB_LIVE_PORT} selected.")
         print("=" * 60)
 
-    strategy = FCRStrategy(config)
+    strategy = SwingStrategy(config)
 
     # Install signal handlers for graceful shutdown
     loop = asyncio.get_running_loop()

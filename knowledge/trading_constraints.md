@@ -93,7 +93,7 @@ Si `calculate_position_size()` retourne `is_valid=False` → **STOP, aucun ordre
 | EURUSD, GBPUSD, AUDUSD, USDCAD, USDCHF, NZDUSD, EURGBP | 0.0001 |
 | USDJPY, EURJPY, GBPJPY | 0.01 |
 
-Source unique : `PIP_SIZES` dans `constants.py`. Ne jamais hardcoder ailleurs.
+Source unique : `PIP_SIZES` et `DEFAULT_PIP_SIZE` dans `constants.py`. Ne jamais hardcoder ailleurs.
 
 ---
 

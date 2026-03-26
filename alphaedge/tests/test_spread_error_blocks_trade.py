@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
-from alphaedge.engine.strategy import CoreModules, FCRStrategy
+from alphaedge.engine.strategy import CoreModules, SwingStrategy
 
 
 # ------------------------------------------------------------------
@@ -30,8 +30,8 @@ def _make_config() -> AppConfig:
     )
 
 
-def _build_strategy() -> FCRStrategy:
-    """Create FCRStrategy with mocked externals."""
+def _build_strategy() -> SwingStrategy:
+    """Create SwingStrategy with mocked externals."""
     cfg = _make_config()
     with (
         patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,
@@ -64,13 +64,11 @@ def _build_strategy() -> FCRStrategy:
         order_mock.lots_to_units.return_value = 1000
 
         mock_modules.return_value = CoreModules(
-            fcr_detector=MagicMock(),
-            gap_detector=MagicMock(),
-            engulfing_detector=MagicMock(),
+            momentum_detector=MagicMock(),
             order_manager=order_mock,
             risk_manager=risk_mock,
         )
-        strategy = FCRStrategy(cfg)
+        strategy = SwingStrategy(cfg)
     return strategy
 
 
@@ -78,7 +76,7 @@ def _make_signal() -> dict[str, Any]:
     """Build a valid trade signal."""
     return {
         "detected": True,
-        "signal": 1,
+        "direction": 1,
         "entry_price": 1.2500,
         "stop_loss": 1.2450,
         "take_profit": 1.2600,

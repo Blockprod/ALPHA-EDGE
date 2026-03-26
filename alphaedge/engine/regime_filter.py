@@ -11,7 +11,7 @@ This module classifies each trading day as high_vol or low_vol
 based on pre-session M5 bar features. It operates in **observation
 mode only**: the regime label is logged but never blocks a trade.
 
-Integration point: strategy.py → _detect_fcr() → log regime only.
+Integration point: strategy.py → _detect_momentum() → log regime only.
 Activation guard (blocking trades) requires 30 NYSE sessions of
 observation + explicit confirmation before enabling.
 """
@@ -39,36 +39,42 @@ def _cache_path(pair: str) -> pathlib.Path:
     return _CACHE_DIR / f"regime_model_{pair}.pkl"
 
 
-def _extract_daily_features(m5_bars: list[dict[str, Any]]) -> list[float] | None:
-    """Extract [atr_daily, intraday_range, momentum] from a list of M5 bars.
+def _extract_daily_features(daily_bars: list[dict[str, Any]]) -> list[float] | None:
+    """Extract [atr_daily, intraday_range, momentum] from a list of Daily bars.
+
+    Accepts either a window of Daily bars (one bar per calendar day) or a
+    list of intra-day bars for a single session.  Requires at least one bar.
 
     Parameters
     ----------
-    m5_bars : list[dict]
-        M5 bars for a single session day (pre-session or full day).
-        Each bar has keys: open, high, low, close, volume.
+    daily_bars : list[dict]
+        Bars for the period to analyse.  Each bar must have keys:
+        ``open``, ``high``, ``low``, ``close``.  For Daily bars, one
+        element represents one full trading day.
 
     Returns
     -------
     list[float] | None
-        [atr_daily, intraday_range, momentum] or None if insufficient data.
+        ``[atr_daily, intraday_range, momentum]`` or ``None`` if the list
+        is empty.
     """
-    if len(m5_bars) < 2:
+    if len(daily_bars) < 1:
         return None
 
-    highs = [b["high"] for b in m5_bars]
-    lows = [b["low"] for b in m5_bars]
-    closes = [b["close"] for b in m5_bars]
+    highs = [b["high"] for b in daily_bars]
+    lows = [b["low"] for b in daily_bars]
+    closes = [b["close"] for b in daily_bars]
+    opens = [b["open"] for b in daily_bars]
 
-    # ATR daily = std of per-bar ranges (high - low)
+    # ATR daily = std of per-bar ranges; for a single bar use the bar range.
     ranges = [h - lo for h, lo in zip(highs, lows)]
     atr_daily = float(np.std(ranges)) if len(ranges) > 1 else ranges[0]
 
-    # Intraday range = max(highs) - min(lows)
+    # Intraday range = max(highs) - min(lows) over the window.
     intraday_range = max(highs) - min(lows)
 
-    # Momentum = last close - first close (directional pressure)
-    momentum = closes[-1] - closes[0]
+    # Momentum = last close - first open (works for both single and multi-bar).
+    momentum = closes[-1] - opens[0]
 
     return [atr_daily, intraday_range, momentum]
 
@@ -81,7 +87,7 @@ class DailyRegimeFilter:
     ::
 
         flt = DailyRegimeFilter()
-        flt.fit(m5_bars_history)           # train on ≥30 days of M5 bars
+        flt.fit(daily_bars_history)         # train on ≥30 days of Daily bars
         regime = flt.predict(today, pre_session_m5)
         # returns: "high_vol" | "low_vol" | "unknown"
 
@@ -98,33 +104,35 @@ class DailyRegimeFilter:
     # ------------------------------------------------------------------
     def fit(
         self,
-        m5_bars_history: list[dict[str, Any]],
+        daily_bars_history: list[dict[str, Any]],
         pair: str = "",
     ) -> None:
-        """Train the K-Means classifier on historical M5 bars.
+        """Train the K-Means classifier on historical Daily bars.
 
         Bars are grouped into daily buckets by the ``datetime`` key.
         Requires at least 10 days with valid features to fit.
 
         Parameters
         ----------
-        m5_bars_history : list[dict]
-            Full history of M5 bars (each bar must have a ``datetime`` key).
+        daily_bars_history : list[dict]
+            Full history of bars (each bar must have a ``datetime`` key).
+            Accepts both Daily bars (one bar per day) and intra-day bars
+            (e.g. M5 — grouped by calendar date internally).
         pair : str
             Currency pair — used for cache file naming only.
         """
         # Group bars by calendar date
-        daily_bars: dict[date, list[dict[str, Any]]] = {}
-        for bar in m5_bars_history:
+        _daily_buckets: dict[date, list[dict[str, Any]]] = {}
+        for bar in daily_bars_history:
             dt = bar.get("datetime")
             if dt is None:
                 continue
             d = dt.date() if hasattr(dt, "date") else dt
-            daily_bars.setdefault(d, []).append(bar)
+            _daily_buckets.setdefault(d, []).append(bar)
 
         # Extract features per day
         feature_rows: list[list[float]] = []
-        for bars in daily_bars.values():
+        for bars in _daily_buckets.values():
             feats = _extract_daily_features(bars)
             if feats is not None:
                 feature_rows.append(feats)

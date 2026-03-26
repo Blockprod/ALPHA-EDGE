@@ -13,7 +13,7 @@
 - **Never** use `Any` as a type annotation — it is a shortcut, not a solution
 - **Never** hardcode pip values, RR ratios, session times, or risk parameters outside `alphaedge/config/constants.py`
 - **Never** touch `alphaedge/utils/timezone.py` or `session_manager.py` without re-running DST edge case tests
-- **Never** mark a task complete without running `make qa` (504 tests, ≥80% coverage)
+- **Never** mark a task complete without running `make qa` (574 tests, ≥80% coverage)
 - **Never** push a `.pyx` edit without running `make build` followed by `make qa`
 
 ---
@@ -49,7 +49,7 @@ Avant de toucher un seul fichier :
 
 1. Lire `tasks/lessons.md` — pas d'exceptions
 2. Lire `docs/ALPHAEDGE_STRUCTURAL_ACTION_PLAN.md`
-3. Confirmer que `make qa` est vert (504 tests)
+3. Confirmer que `make qa` est vert (574 tests)
 4. Vérifier que `.env.example` contient `ALPHAEDGE_PAPER=true`
 5. Identifier l'ensemble minimal de fichiers impactés
 
@@ -58,6 +58,11 @@ Avant de toucher un seul fichier :
 ## WORKFLOW AGENT
 
 - Plan mode obligatoire pour toute tâche ≥ 3 étapes
+- **Avant toute modification — 4 questions :**
+  1. Ai-je lu tous les fichiers que je vais modifier ? (citer fichier:ligne avant d'agir)
+  2. Ai-je un plan en N étapes validé avant d'agir ?
+  3. Y a-t-il des informations manquantes ? (explorer d'abord, modifier ensuite)
+  4. Comment vais-je valider le changement ? (`make qa` suffit ? test dédié requis ?)
 - Stop immédiat + re-plan si quelque chose déraille
 - Never mark complete without proof: `make qa` doit passer
 - Après toute correction utilisateur : mettre à jour `tasks/lessons.md`

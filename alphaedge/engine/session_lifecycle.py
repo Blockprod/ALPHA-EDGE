@@ -1,18 +1,18 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Swing Trading Bot
 # FILE         : alphaedge/engine/session_lifecycle.py
 # DESCRIPTION  : Session loop, order execution, and IB reconnect logic
 # AUTHOR       : ALPHAEDGE Dev Team
 # WORKFLOW     : VSCode + Claude + Copilot Pro + File Engineering
 # PYTHON       : 3.11.9
-# LAST UPDATED : 2026-03-09
+# LAST UPDATED : 2026-03-25
 # ============================================================
 """
-Session lifecycle management for the FCR strategy.
+Session lifecycle management for the Swing strategy.
 
 Extracts the session loop, order execution, reconnection, and
-state-persistence responsibilities from FCRStrategy so that
-FCRStrategy becomes a thin orchestrator.
+state-persistence responsibilities from SwingStrategy so that
+SwingStrategy becomes a thin orchestrator.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from alphaedge.config.constants import (
-    DEFAULT_MARKET_SLIPPAGE_PIPS,
+    DEFAULT_PIP_SIZE,
     MAX_BAR_STALENESS_SECONDS,
     PIP_SIZES,
     RISK_CHECK_INTERVAL_IDLE,
@@ -35,8 +35,15 @@ from alphaedge.utils.alerting import (
     Alert,
     AlertEvent,
     AlertLevel,
+    alert_daily_summary,
     alert_ib_disconnected,
+    alert_ib_reconnected,
     alert_kill_switch,
+    alert_session_end_clean,
+    alert_session_end_open,
+    alert_signal_detected,
+    alert_trade_closed,
+    alert_trade_executed,
 )
 from alphaedge.utils.logger import get_logger
 from alphaedge.utils.pair_correlation import (
@@ -58,20 +65,21 @@ from alphaedge.utils.timezone import (
 from alphaedge.utils.volatility_regime import check_volatility_regime
 
 if TYPE_CHECKING:
-    from alphaedge.engine.strategy import FCRStrategy, StrategyState
+    # NOTE: import cycle with strategy.py mitigated by TYPE_CHECKING
+    from alphaedge.engine.strategy import StrategyState, SwingStrategy
 
 logger = get_logger()
 
 
 class SessionLifecycle:
     """
-    Manages the FCR strategy session loop, trade execution, and IB reconnection.
+    Manages the Swing strategy session loop, trade execution, and IB reconnection.
 
-    Receives a reference to the parent ``FCRStrategy`` and accesses its
+    Receives a reference to the parent ``SwingStrategy`` and accesses its
     dependencies (broker, executor, feeds, states, modules) via ``self._s``.
     """
 
-    def __init__(self, strategy: FCRStrategy) -> None:
+    def __init__(self, strategy: SwingStrategy) -> None:
         self._s = strategy
 
     # ------------------------------------------------------------------
@@ -107,7 +115,7 @@ class SessionLifecycle:
         bracket["stop_loss"] = risk_mod.apply_slippage_buffer(
             stop_loss=bracket["stop_loss"],
             direction=bracket["direction"],
-            slippage_pips=DEFAULT_MARKET_SLIPPAGE_PIPS,
+            slippage_pips=self._s._config.trading.slippage_buffer_pips,
             pip_size=pip_size,
         )
 
@@ -152,8 +160,11 @@ class SessionLifecycle:
                         Alert(
                             event=AlertEvent.TRADE_EXECUTED,
                             level=AlertLevel.WARNING,
-                            title=f"⏱️ Fill timeout — {state.pair}",
-                            message="Order not filled within 10s. Bracket cancelled.",
+                            title=f"⏱️ Fill timeout — {state.pair} — NO POSITION OPENED",
+                            message=(
+                                "Order not filled within 10s."
+                                " Bracket cancelled. No open position."
+                            ),
                         )
                     )
                 ).add_done_callback(self._on_task_done)
@@ -192,6 +203,8 @@ class SessionLifecycle:
             exchange_rate=exchange_rate,
             entry_time=entry_time,
             slippage_pips=slippage,
+            adx_at_entry=float(signal.get("adx", 0.0)),
+            strength_at_entry=float(signal.get("strength", 0.0)),
         )
         logger.info(
             "TRADE_ENTRY | pair={} | dir={} | entry={} | fill={} | sl={} | tp={}"
@@ -213,10 +226,18 @@ class SessionLifecycle:
                 _pair, _t
             )
 
+        # Store bracket child order IDs to identify SL vs TP at close
+        if len(trades_placed) >= 3:
+            tp_order = getattr(trades_placed[1], "order", None)
+            sl_order = getattr(trades_placed[2], "order", None)
+            state._tp_order_id = int(getattr(tp_order, "orderId", 0))
+            state._sl_order_id = int(getattr(sl_order, "orderId", 0))
+
         state.trades_today += 1
         self._s._global_trades_today += 1
         state.is_position_open = True
-        self._persist_daily_state()
+        task = asyncio.ensure_future(asyncio.to_thread(self._persist_daily_state))
+        task.add_done_callback(self._on_task_done)
 
     # ------------------------------------------------------------------
     # Trade execution — orchestrator
@@ -226,6 +247,8 @@ class SessionLifecycle:
         state: StrategyState,
         signal: dict[str, Any],
         pip_size: float,
+        *,
+        spread_pips: float | None = None,
     ) -> bool:
         """Execute a trade signal through IB Gateway."""
         try:
@@ -246,14 +269,18 @@ class SessionLifecycle:
             if pos_result is None:
                 return False
 
-            spread = await self._s._rt_feed.get_live_spread(state.pair)
-            _t_spread_end = time.perf_counter_ns()
-            if spread is None:
-                logger.error(
-                    f"ALPHAEDGE: Cannot verify spread for {state.pair} — signal SKIPPED"
-                )
-                return False
-            spread_pips = spread / pip_size
+            if spread_pips is None:
+                spread = await self._s._rt_feed.get_live_spread(state.pair)
+                _t_spread_end = time.perf_counter_ns()
+                if spread is None:
+                    logger.error(
+                        "ALPHAEDGE: Cannot verify spread for "
+                        f"{state.pair} — signal SKIPPED"
+                    )
+                    return False
+                spread_pips = spread / pip_size
+            else:
+                _t_spread_end = time.perf_counter_ns()
 
             bracket = self._prepare_bracket(
                 signal,
@@ -265,6 +292,14 @@ class SessionLifecycle:
                 return False
 
             _t_order = time.perf_counter_ns()
+            asyncio.ensure_future(
+                self._s._alert_manager.send_async(
+                    alert_signal_detected(
+                        pair=state.pair,
+                        direction="LONG" if signal.get("direction") == 1 else "SHORT",
+                    )
+                )
+            ).add_done_callback(self._on_task_done)
             trades_placed = await self._submit_and_await_fill(state, bracket)
             if trades_placed is None:
                 return False
@@ -278,6 +313,18 @@ class SessionLifecycle:
                 pip_size,
                 exchange_rate,
             )
+            asyncio.ensure_future(
+                self._s._alert_manager.send_async(
+                    alert_trade_executed(
+                        pair=state.pair,
+                        direction="LONG" if bracket["direction"] == 1 else "SHORT",
+                        entry_price=bracket["entry_price"],
+                        stop_loss=bracket["stop_loss"],
+                        take_profit=bracket["take_profit"],
+                        lot_size=float(bracket["units"]),
+                    )
+                )
+            ).add_done_callback(self._on_task_done)
             logger.debug(
                 "LATENCE spread={:.1f}ms order_submit={:.1f}ms total={:.1f}ms — {}",
                 (_t_spread_end - _t0) / 1e6,
@@ -303,7 +350,7 @@ class SessionLifecycle:
                     record = state.live_record
                     if record is not None:
                         exit_time = now_utc()
-                        pip_size = PIP_SIZES.get(pair, 0.0001)
+                        pip_size = PIP_SIZES.get(pair, DEFAULT_PIP_SIZE)
 
                         raw_exit = None
                         if ib_trade is not None:
@@ -321,7 +368,12 @@ class SessionLifecycle:
                             if exit_price
                             else 0.0
                         )
-                        pnl_usd = pnl_pips * pip_size * record.lot_size * 100_000
+                        raw_pnl = pnl_pips * pip_size * record.lot_size * 100_000
+                        pnl_usd = (
+                            raw_pnl / record.exchange_rate
+                            if record.exchange_rate > 0.0
+                            else raw_pnl
+                        )
 
                         record.exit_price = exit_price
                         record.exit_time = exit_time
@@ -331,28 +383,68 @@ class SessionLifecycle:
                             record.outcome = "unknown"
                         elif pnl_pips > 0:
                             record.outcome = "win"
+                            state.wins_today += 1
                         elif pnl_pips == 0.0:
                             record.outcome = "breakeven"
                         else:
                             record.outcome = "loss"
+                            state.losses_today += 1
+                        state.pnl_usd_today += record.pnl_usd
+
+                        # Determine exit reason from bracket child order ID
+                        filled_id = getattr(
+                            getattr(ib_trade, "order", None), "orderId", None
+                        )
+                        if filled_id is not None and (
+                            state._tp_order_id or state._sl_order_id
+                        ):
+                            if filled_id == state._tp_order_id:
+                                record.exit_reason = "tp_hit"
+                            elif filled_id == state._sl_order_id:
+                                record.exit_reason = "sl_hit"
+                            else:
+                                record.exit_reason = "unknown"
+                        else:
+                            record.exit_reason = "unknown"
+
+                        # duration_s and pnl_eur before persisting
+                        record.duration_s = (
+                            (exit_time - record.entry_time).total_seconds()
+                            if record.entry_time
+                            else 0.0
+                        )
+                        _eur_usd = self._s._config.trading.eur_usd_rate
+                        record.pnl_eur = (
+                            round(record.pnl_usd / _eur_usd, 2)
+                            if _eur_usd > 0.0
+                            else record.pnl_usd
+                        )
 
                         append_live_trade_csv(record)
 
-                        duration_s = (
-                            int((exit_time - record.entry_time).total_seconds())
-                            if record.entry_time
-                            else "?"
-                        )
                         logger.info(
                             "TRADE_CLOSE | pair={} | exit={} | pnl_pips={:+.1f}"
-                            " | pnl_usd={:+.2f} | outcome={} | duration={}s",
+                            " | pnl_usd={:+.2f} | outcome={} | duration={:.0f}s",
                             pair,
                             exit_price,
                             record.pnl_pips,
                             record.pnl_usd,
                             record.outcome,
-                            duration_s,
+                            record.duration_s,
                         )
+                        asyncio.ensure_future(
+                            self._s._alert_manager.send_async(
+                                alert_trade_closed(
+                                    pair=pair,
+                                    direction="LONG"
+                                    if record.direction == 1
+                                    else "SHORT",
+                                    pnl_pips=record.pnl_pips,
+                                    pnl_usd=record.pnl_usd,
+                                    outcome=record.outcome,
+                                )
+                            )
+                        ).add_done_callback(self._on_task_done)
                         state.live_record = None
 
                     # Persist state so open_pairs reflects the closed position
@@ -393,6 +485,9 @@ class SessionLifecycle:
                 for pair in self._s._config.trading.pairs:
                     await self._s._rt_feed.subscribe(pair)
                 logger.info("ALPHAEDGE: Real-time feeds re-subscribed after reconnect")
+                asyncio.ensure_future(
+                    self._s._alert_manager.send_async(alert_ib_reconnected())
+                ).add_done_callback(self._on_task_done)
             else:
                 # Last-resort orphan check if a partial reconnect occurred
                 try:
@@ -449,6 +544,20 @@ class SessionLifecycle:
                         f"ALPHAEDGE RECONCILE: {pair} position state "
                         f"corrected: {was_open} -> {state.is_position_open}"
                     )
+                    asyncio.ensure_future(
+                        self._s._alert_manager.send_async(
+                            Alert(
+                                event=AlertEvent.TRADE_EXECUTED,
+                                level=AlertLevel.WARNING,
+                                title=f"⚠️ Position discordance — {pair}",
+                                message=(
+                                    f"State corrected after reconnect: "
+                                    f"local={was_open} → IB={state.is_position_open}. "
+                                    "Review open positions manually."
+                                ),
+                            )
+                        )
+                    ).add_done_callback(self._on_task_done)
         except Exception:
             logger.exception("ALPHAEDGE _reconcile_positions failed")
 
@@ -509,10 +618,6 @@ class SessionLifecycle:
         if state is None:
             return
 
-        state.m1_candles.append(candle)
-        if len(state.m1_candles) > state.max_candles:
-            state.m1_candles = state.m1_candles[-state.max_candles :]
-
         _bar_dt = candle.get("datetime")
         if _bar_dt is not None:
             bar_age_s = (now_utc() - _bar_dt).total_seconds()
@@ -524,13 +629,18 @@ class SessionLifecycle:
                 )
                 return
 
-        pip_size = PIP_SIZES.get(pair, 0.0001)
+        pip_size = PIP_SIZES.get(pair, DEFAULT_PIP_SIZE)
 
         # Skip if global trade limit reached across all pairs
         if (
             self._s._global_trades_today
             >= self._s._config.trading.max_trades_per_session
         ):
+            logger.debug(
+                "ALPHAEDGE: Max trades/session reached ({}) — skipping {}",
+                self._s._global_trades_today,
+                pair,
+            )
             return
 
         # Monitor spread spike while position is open
@@ -543,7 +653,11 @@ class SessionLifecycle:
         if self._s._news_filter.is_news_blackout(now_utc(), pair):
             return
 
-        # Correlation check: block signal if a highly-correlated pair is open
+        # Correlation check: block signal if a highly-correlated pair is open.
+        # NOTE: This live algorithm uses a pairwise correlation matrix which differs
+        # from the backtest algorithm in backtest.py that uses USD directional exposure
+        # (long vs short USD). Align both algorithms before enabling multi-pair trading.
+        # See audit_pipeline_alphaedge.md — P-05.
         if self._s._correlation_matrix:
             open_for_corr = [
                 p for p, s in self._s._states.items() if s.is_position_open
@@ -569,46 +683,34 @@ class SessionLifecycle:
         if not pair_check["allowed"]:
             return
 
-        # The live pipeline is all-or-nothing: no FCR means no gap stage.
-        if state.fcr_result is None:
+        # Gate: momentum signal must be active (confirmed at session start).
+        if not state.signal_result or not state.signal_result.get("detected"):
             return
 
-        # Detect gap/ATR spike on first M1 bars (once per session)
-        if state.gap_result is None and len(state.m1_candles) >= 3:
-            pre_close = state.m5_candles[-1]["close"] if state.m5_candles else 0.0
-            session_open = state.m1_candles[0]["open"]
-            gap = self._s._detect_gap(state, pre_close, session_open)
-            if gap:
-                logger.info(
-                    f"ALPHAEDGE GAP: {pair} "
-                    f"ratio={gap.get('atr_ratio', 0):.2f} "
-                    f"detected={gap.get('detected', False)}"
-                )
-
-        # Skip engulfing detection if gap/ATR spike not confirmed
-        if not state.gap_result or not state.gap_result.get("detected"):
+        direction: int = int(state.signal_result.get("direction") or 0)
+        if direction == 0:
             return
 
-        # Detect engulfing signal on each new M1 bar
-        _t_bar = time.perf_counter_ns()
-        signal = self._s._detect_engulfing(state, pip_size)
-        if signal and signal.get("detected"):
-            _t_signal = time.perf_counter_ns()
-            logger.debug(
-                "LATENCE bar→signal: {:.1f}ms — {}",
-                (_t_signal - _t_bar) / 1e6,
-                pair,
-            )
-            logger.info(
-                f"ALPHAEDGE SIGNAL: {pair} "
-                f"{'SELL' if signal['signal'] == -1 else 'BUY'} "
-                f"@ {signal['entry_price']}"
-            )
-            # Schedule atomic check + execution (re-checks under lock)
-            exec_task: asyncio.Task[Any] = asyncio.ensure_future(
-                self._atomic_check_and_execute(state, signal, pip_size)
-            )
-            exec_task.add_done_callback(self._on_task_done)
+        signal: dict[str, Any] = {
+            "detected": True,
+            "direction": direction,
+            "entry_price": 0.0,
+            "stop_loss": 0.0,
+            "take_profit": 0.0,
+            "risk_pips": 0.0,
+            "strength": state.signal_result.get("strength", 0.0),
+            "adx": state.signal_result.get("adx", 0.0),
+        }
+        logger.info(
+            f"ALPHAEDGE SIGNAL: {pair} "
+            f"{'SELL' if direction == -1 else 'BUY'} "
+            f"(adx={signal['adx']:.1f})"
+        )
+        # Schedule atomic check + execution (re-checks under lock)
+        exec_task: asyncio.Task[Any] = asyncio.ensure_future(
+            self._atomic_check_and_execute(state, signal, pip_size)
+        )
+        exec_task.add_done_callback(self._on_task_done)
 
     async def _atomic_check_and_execute(
         self,
@@ -673,7 +775,9 @@ class SessionLifecycle:
                     f"signal skipped"
                 )
                 return False
-            return await self._execute_signal(state, signal, pip_size)
+            return await self._execute_signal(
+                state, signal, pip_size, spread_pips=spread_pips
+            )
         except Exception:
             logger.exception(
                 f"ALPHAEDGE _check_spread_and_execute failed: {state.pair}"
@@ -683,7 +787,7 @@ class SessionLifecycle:
     async def _monitor_spread_spike(self, pair: str) -> None:
         """Log WARNING if spread spikes beyond the configured multiplier."""
         try:
-            pip_size = PIP_SIZES.get(pair, 0.0001)
+            pip_size = PIP_SIZES.get(pair, DEFAULT_PIP_SIZE)
             spread = await self._s._rt_feed.get_live_spread(pair)
             if spread is None:
                 return  # Cannot monitor — skip silently
@@ -753,8 +857,43 @@ class SessionLifecycle:
                         f"ALPHAEDGE SESSION END: Open position on "
                         f"{pair_sym} — qty={pos.position}"
                     )
+                    asyncio.ensure_future(
+                        self._s._alert_manager.send_async(
+                            alert_session_end_open(
+                                pair=pair_sym,
+                                quantity=float(pos.position),
+                            )
+                        )
+                    ).add_done_callback(self._on_task_done)
 
             if open_count > 0:
+                # Journal any live_record for positions still open at session end
+                for s_state in self._s._states.values():
+                    if s_state.live_record is not None and s_state.is_position_open:
+                        rec = s_state.live_record
+                        now = now_utc()
+                        rec.exit_time = now
+                        rec.exit_reason = "session_end"
+                        rec.outcome = "open_at_end"
+                        rec.duration_s = (
+                            (now - rec.entry_time).total_seconds()
+                            if rec.entry_time
+                            else 0.0
+                        )
+                        _eur_usd = self._s._config.trading.eur_usd_rate
+                        rec.pnl_eur = (
+                            round(rec.pnl_usd / _eur_usd, 2)
+                            if _eur_usd > 0.0
+                            else rec.pnl_usd
+                        )
+                        append_live_trade_csv(rec)
+                        s_state.live_record = None
+                        logger.info(
+                            "TRADE_JOURNAL: session_end — {} journalised"
+                            " (exit_price unknown — bracket remains on IB)",
+                            rec.pair,
+                        )
+
                 action = self._s._config.trading.session_end_action
                 if action == "close":
                     logger.warning(
@@ -768,10 +907,24 @@ class SessionLifecycle:
                     )
             else:
                 logger.info("ALPHAEDGE SESSION END: No open positions")
+                asyncio.ensure_future(
+                    self._s._alert_manager.send_async(alert_session_end_clean())
+                ).add_done_callback(self._on_task_done)
 
             # Session summary
             for pair, state in self._s._states.items():
                 logger.info(f"ALPHAEDGE SUMMARY: {pair} — trades={state.trades_today}")
+
+            asyncio.ensure_future(
+                self._s._alert_manager.send_async(
+                    alert_daily_summary(
+                        trades=self._s._global_trades_today,
+                        wins=sum(s.wins_today for s in self._s._states.values()),
+                        losses=sum(s.losses_today for s in self._s._states.values()),
+                        pnl_usd=sum(s.pnl_usd_today for s in self._s._states.values()),
+                    )
+                )
+            ).add_done_callback(self._on_task_done)
         except Exception:
             logger.exception("ALPHAEDGE _handle_session_end failed")
 
@@ -818,31 +971,26 @@ class SessionLifecycle:
         active_pairs: list[str] = []
         pair_closes: dict[str, list[float]] = {}
         for pair in self._s._config.trading.pairs:
-            # Fetch pre-session M5 data for FCR and regime check
-            m5_candles, pre_session_m1 = await self._s._fetch_pre_session_data(
-                pair, session_start
-            )
-            pip_size = PIP_SIZES.get(pair, 0.0001)
+            pip_size = PIP_SIZES.get(pair, DEFAULT_PIP_SIZE)
 
-            # Fetch daily bars for volatility regime (30 trading days)
+            # Fetch daily bars for momentum signal and volatility regime.
+            # Use lookback_days × 1.5 calendar days to account for weekends/holidays.
+            # Example: 252 trading days × 1.5 ≈ 378 calendar days (~15 months).
+            _lookback = self._s._config.trading.momentum_lookback_days
+            _cal_days = int(_lookback * 1.5)
             daily_bars = await self._s._hist_feed.fetch_bars(
                 pair=pair,
                 timeframe="1 day",
-                duration="30 D",
+                duration=f"{_cal_days} D",
                 end_dt=session_start,
             )
 
-            # Build today's partial bar from pre-session M5 data
-            current_day_bar: dict[str, Any] = {}
-            if m5_candles:
-                current_day_bar = {
-                    "high": max(c.get("high", 0.0) for c in m5_candles),
-                    "low": min(c.get("low", 0.0) for c in m5_candles),
-                }
+            # Use the most recent complete daily bar as current day context
+            current_day_bar: dict[str, Any] = daily_bars[-1] if daily_bars else {}
 
             # Volatility regime gate: skip pair if session is too quiet/violent
             if daily_bars and current_day_bar:
-                regime = check_volatility_regime(daily_bars, current_day_bar)
+                regime = check_volatility_regime(daily_bars[:-1], current_day_bar)
                 if not regime.allowed:
                     logger.warning(
                         f"ALPHAEDGE REGIME: {pair} session SKIPPED "
@@ -850,25 +998,25 @@ class SessionLifecycle:
                     )
                     continue
 
-            # Init pair state and store candles
+            # Init pair state
             state = self._s._init_pair_state(pair)
             state.starting_equity = starting_equity
             state.current_equity = live_equity
-            state.m5_candles = m5_candles
-            state.pre_session_m1_candles = pre_session_m1
+            state.daily_bars = daily_bars
             if persisted:
                 state.trades_today = persisted.trades_today
                 self._s._global_trades_today = persisted.trades_today
 
-            # Collect closes for correlation matrix
-            pair_closes[pair] = [c["close"] for c in m5_candles if "close" in c]
+            # Collect closes from daily bars for correlation matrix
+            pair_closes[pair] = [c["close"] for c in daily_bars if "close" in c]
 
-            # Detect FCR
-            fcr = self._s._detect_fcr(state, pip_size)
-            if fcr:
+            # Detect momentum signal
+            momentum = self._s._detect_momentum(state, pip_size)
+            if momentum:
                 logger.info(
-                    f"ALPHAEDGE FCR: {pair} high={fcr['range_high']} "
-                    f"low={fcr['range_low']}"
+                    f"ALPHAEDGE MOMENTUM: {pair} "
+                    f"direction={momentum.get('direction', 0)} "
+                    f"adx={momentum.get('adx', 0.0):.1f}"
                 )
             active_pairs.append(pair)
 
@@ -884,7 +1032,11 @@ class SessionLifecycle:
 
         This is the main entry point for the strategy.
         """
-        logger.info(f"ALPHAEDGE session starting at {format_dual_time(now_utc())}")
+        logger.info(
+            "ALPHAEDGE session starting at %s | mode=%s",
+            format_dual_time(now_utc()),
+            "PAPER" if self._s._config.ib.is_paper else "LIVE",
+        )
 
         # Warn when EU and US DST offsets diverge (2nd–last Sunday of March)
         if is_dst_transition_week():
@@ -909,6 +1061,9 @@ class SessionLifecycle:
             return
 
         try:
+            # Prime margin cache — must run before any order check
+            await self._s._broker.refresh_account_funds()
+
             # Get starting equity (use persisted value if restarting same day)
             live_equity = await self._s._executor.get_account_equity()
             if persisted and persisted.starting_equity > 0:
@@ -953,6 +1108,7 @@ class SessionLifecycle:
                 )
                 if risk_check_counter >= interval:
                     risk_check_counter = 0
+                    await self._s._broker.refresh_account_funds()
                     await self._check_daily_loss_shutdown()
         except Exception:
             logger.exception("ALPHAEDGE run_session error")

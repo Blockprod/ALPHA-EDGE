@@ -48,6 +48,8 @@ IB Gateway
 
 ## Hard Stops — Never Do These
 
+<important if="modifying any file">
+
 - Never set `ALPHAEDGE_PAPER=false` in any file, ever *(silences the paper/live guard — no recovery path exists)*
 - Never modify `core/*.pyx` without explicit instruction from the user *(proprietary FCR logic — changes invalidate all backtest results)*
 - Never commit `.env`, `*.log`, or any proprietary action plan files
@@ -56,8 +58,10 @@ IB Gateway
 - Never use `Any` as a type annotation shortcut — it is a rustine, not a solution *(Any poisons downstream type inference — use proper union or protocol)*
 - Never hardcode pip values, RR ratios, session times, or risk parameters outside `alphaedge/config/constants.py` *(breaks single source of truth — silent divergence between backtest and live)*
 - Never touch `alphaedge/utils/timezone.py` or `session_manager.py` without re-running DST edge case tests
-- Never mark a task complete without running `make qa` and confirm all tests pass *(partial passes hide regressions — 504 tests is the contract)*
+- Never mark a task complete without running `make qa` and confirm all tests pass *(partial passes hide regressions — 602 tests is the contract)*
 - Never push a `.pyx` edit without running `make build` followed by `make qa` *(runtime module is the .pyd/.so — the .pyx source alone does nothing)*
+
+</important>
 
 ---
 
@@ -144,6 +148,49 @@ Examples:
 - `test_order_manager_validation.py` — bracket order rejection
 
 One scenario per file. Use `pytest.mark.parametrize` for data variants.
+
+---
+
+## `tasks/` File Template — Absolute Rule
+
+Every file created inside `tasks/` (audits, plans, prompts) **must** start with this exact YAML frontmatter:
+
+```yaml
+---
+modele: sonnet-4.6
+mode: agent
+contexte: codebase
+produit: <nom_du_fichier_résultat>
+derniere_revision: YYYY-MM-DD
+creation: YYYY-MM-DD à HH:MM
+---
+```
+
+Audit prompt files (`tasks/audits/code/`) must also end with this exact block:
+
+```
+─────────────────────────────────────────────
+SORTIE OBLIGATOIRE
+─────────────────────────────────────────────
+Crée le fichier :
+  tasks/audits/resultats/audit_<type>_alphaedge.md
+Crée le dossier s'il n'existe pas.
+
+Structure du fichier :
+## BLOC 1 — ...
+## SYNTHÈSE
+
+Tableau synthèse :
+| ID | Bloc | Description | Fichier:Ligne | Sévérité | Impact | Effort |
+
+Sévérité : 🔴 Critique · 🟠 Majeur · 🟡 Mineur.
+
+Confirme dans le chat uniquement :
+"✅ tasks/audits/resultats/audit_<type>_alphaedge.md créé
+ 🔴 X · 🟠 X · 🟡 X"
+```
+
+**Never create a `tasks/` file without this template.** Model: `audit_trade_journal_prompt.md`.
 
 ---
 

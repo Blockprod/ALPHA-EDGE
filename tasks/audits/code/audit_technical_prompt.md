@@ -3,7 +3,7 @@ modele: sonnet-4.6
 mode: agent
 contexte: codebase
 produit: audit_technical_alphaedge.md
-derniere_revision: 2026-03-20
+derniere_revision: 2026-03-25
 creation: 2026-03-20 à 15:32
 ---
 
@@ -44,7 +44,7 @@ Tu analyses UNIQUEMENT :
 - Intégrité persistance (daily state, JSON)
 - Couverture tests dans alphaedge/tests/
 
-Tu n'analyses PAS la stratégie FCR, le Cython
+Tu n'analyses PAS la stratégie Momentum+Carry, le Cython
 en détail, ou l'organisation des modules.
 
 ─────────────────────────────────────────────

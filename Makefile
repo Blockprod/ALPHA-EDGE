@@ -8,7 +8,7 @@
 # LAST UPDATED : 2026-03-07
 # ============================================================
 
-.PHONY: lint format typecheck pylint bandit test qa qa-strict build all clean web-dashboard
+.PHONY: lint format typecheck pylint bandit test bench qa qa-strict build all clean web-dashboard
 
 # --- Linting + Formatting (Ruff) ---
 lint:
@@ -36,6 +36,10 @@ test:
 		--cov-report=html:reports/ALPHAEDGE_coverage_report \
 		--cov-fail-under=80
 
+# --- Latency Benchmark ---
+bench:
+	python -m pytest alphaedge/tests/ -k "latency" -q --tb=short
+
 # --- Full QA Pipeline ---
 qa: lint typecheck test
 
@@ -56,6 +60,8 @@ web-dashboard:
 # --- Clean artifacts (cross-platform) ---
 clean:
 	python -c "import shutil, pathlib; [p.unlink() for p in pathlib.Path('.').rglob('*.pyd')]; [p.unlink() for p in pathlib.Path('.').rglob('*.so')]"
+	# WARNING: removes Cython-generated .c files. After clean, 'make build' requires
+	# Cython to be installed (pip install Cython==3.0.10) to regenerate them.
 	python -c "import pathlib; [p.unlink() for p in pathlib.Path('alphaedge/core').glob('*.c')]"
 	python -c "import shutil, pathlib; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]"
 	python -c "import shutil, pathlib; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('*.egg-info')]"

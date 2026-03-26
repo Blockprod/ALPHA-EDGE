@@ -6,7 +6,7 @@ Checklist anti-biais et protocole de validation statistique.
 
 ## Rôle
 
-Valider que toute modification de la stratégie FCR ou de ses paramètres ne crée pas de biais statistiques ou de sur-optimisation.
+Valider que toute modification de la stratégie (modules `core/*.pyx`) ou de ses paramètres ne crée pas de biais statistiques ou de sur-optimisation.
 
 ---
 

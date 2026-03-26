@@ -2,7 +2,7 @@
 modele: sonnet-4.6
 mode: agent
 contexte: codebase
-derniere_revision: 2026-03-20
+derniere_revision: 2026-03-25
 creation: 2026-03-20 à 17:55
 ---
 
@@ -16,7 +16,7 @@ toute modification avant d'en supposer l'état actuel.
 
 Tu es un Software Architect spécialisé en
 AI-Driven Repository Engineering.
-Analyse EDGECORE et génère le plan de
+Analyse ALPHAEDGE et génère le plan de
 restructuration File Engineering complet.
 
 <constraints>
@@ -99,7 +99,7 @@ Propose l'arborescence complète restructurée
 en distinguant ce qui existe déjà de ce qui
 sera créé :
 
-EDGECORE/
+ALPHAEDGE/
 ├── .claude/
 │   ├── context.md          ✅/⚠️/❌
 │   └── rules.md            ✅/⚠️/❌
@@ -175,12 +175,12 @@ Contenu à générer basé sur le code réel :
    idempotence client order IDs
 
 6. agents/quant_researcher.md
-   Checklist anti-biais spécifique EDGECORE
+   Checklist anti-biais spécifique ALPHAEDGE
    (expanding window, Kalman causal, Bonferroni,
    OOS gates, IS/OOS contamination)
 
 7. agents/risk_manager.md
-   Séquence protection capital EDGECORE ·
+   Séquence protection capital ALPHAEDGE ·
    risk tiers T1/T2/T3 · scénarios de risque
 
 8. agents/code_auditor.md

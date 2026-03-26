@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : pyproject.toml
 # DESCRIPTION  : Ruff, Pylance, Pytest configuration
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -15,7 +15,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "alphaedge"
 version = "1.0.0"
-description = "ALPHAEDGE — FCR Forex Trading Bot"
+description = "ALPHAEDGE — Momentum+Carry Forex Trading Bot"
 requires-python = ">=3.11,<3.12"
 readme = "README.md"
 

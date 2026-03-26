@@ -59,6 +59,22 @@ Enregistrement des décisions architecturales (ADR) du projet.
 
 ---
 
+## ADR-005 — Suppression modules FCR legacy (fcr_detector, gap_detector, engulfing_detector)
+
+**Date** : 2026-03-27
+**Statut** : ✅ Accepté
+
+**Contexte** : La stratégie a été migrée de FCR (Failed Candle Range, M1/M5) vers Momentum+Carry (Daily/H4) lors de l'audit #13. Les trois modules `fcr_detector.pyx`, `gap_detector.pyx`, `engulfing_detector.pyx` étaient devenus du code mort : non listés dans `setup.py`, sans stubs dans `_stubs/`, non importés dans `core/__init__.py`.
+
+**Décision** : Suppression des 6 fichiers (`.pyx` + `.c` générés) le 2026-03-27 (audit #12 — finding M-03). Les 3 modules actifs restants sont `momentum_detector`, `risk_manager`, `order_manager`.
+
+**Conséquences** :
+- `alphaedge/core/` ne contient plus que les 3 modules Momentum+Carry
+- ADR-001 reste valide pour les 3 modules actifs
+- Aucune régression fonctionnelle (modules jamais appelés depuis la migration)
+
+---
+
 ## ADR-005 — `zoneinfo` exclusivement pour les timezones
 
 **Date** : 2026-01
@@ -108,3 +124,26 @@ Enregistrement des décisions architecturales (ADR) du projet.
 **Contexte** : Bandit produit des faux positifs sur des patterns légitimes (pickle local, urlopen sur URL de config). Les placer dans `make qa` bloquerait les développeurs.
 
 **Décision** : Bandit intégré dans `make qa-strict` uniquement. Les faux positifs connus annotés `# nosec BXX`.
+
+---
+
+## ADR-009 — DailyRegimeFilter — rôle, contrat et états
+
+**Date** : 2026-03-26
+**Statut** : ✅ Accepté
+
+**Contexte** : `engine/regime_filter.py` implémente un classifieur K-Means non supervisé qui segmente les sessions en régimes de volatilité. Il est actuellement en mode OBSERVATION ONLY (non connecté au pipeline live). Son rôle et les états de sortie n'étaient pas documentés.
+
+**Décision** :
+- `DailyRegimeFilter` est un module de filtrage de la session, positionné entre le signal momentum et la décision d'entrée dans le pipeline.
+- États de retour : `"high_vol"` | `"low_vol"` | `"unknown"`
+  - `"high_vol"` : régime favorable — momentum amplifié par la volatilité
+  - `"low_vol"` : régime défavorable — momentum faible, risque de faux signal
+  - `"unknown"` : modèle non entraîné ou features non extractibles — bloque le trade par défaut
+- Le trade en régime `"unknown"` est bloqué (pipeline all-or-nothing — ADR-003).
+- Statut d'intégration : OBSERVATION ONLY jusqu'à validation OOS (identique à ADR-007 pour ml_filter).
+
+**Conséquences** :
+- Toute modification de `regime_filter.py` doit maintenir les 3 états de retour (ne pas ajouter de quatrième état sans mise à jour de cet ADR)
+- Un changement d'algo (KMeans → autre) nécessite une révision de cet ADR
+- Tests de contrat : `alphaedge/tests/test_regime_filter_contract.py`

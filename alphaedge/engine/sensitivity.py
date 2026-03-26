@@ -61,32 +61,14 @@ class SensitivityParam:
 # Pre-defined parameter grid per spec
 # ------------------------------------------------------------------
 SENSITIVITY_PARAMS: dict[str, SensitivityParam] = {
-    "min_atr_ratio": SensitivityParam(
-        name="min_atr_ratio",
-        display_name="ATR Ratio Threshold",
-        min_val=1.0,
-        max_val=2.5,
-        step=0.1,
-        source="constant",
-        attr_name="DEFAULT_MIN_ATR_RATIO",
-    ),
-    "min_volume_ratio": SensitivityParam(
-        name="min_volume_ratio",
-        display_name="Volume Ratio",
-        min_val=1.0,
-        max_val=2.0,
-        step=0.1,
-        source="constant",
-        attr_name="DEFAULT_MIN_VOLUME_RATIO",
-    ),
-    "min_range_pips": SensitivityParam(
-        name="min_range_pips",
-        display_name="Min FCR Range (pips)",
-        min_val=3.0,
-        max_val=15.0,
+    "adx_threshold": SensitivityParam(
+        name="adx_threshold",
+        display_name="ADX Trend Threshold",
+        min_val=20.0,
+        max_val=30.0,
         step=1.0,
         source="constant",
-        attr_name="DEFAULT_MIN_RANGE_PIPS",
+        attr_name="DEFAULT_ADX_THRESHOLD",
     ),
     "rr_ratio": SensitivityParam(
         name="rr_ratio",
@@ -105,6 +87,24 @@ SENSITIVITY_PARAMS: dict[str, SensitivityParam] = {
         step=0.1,
         source="config",
         attr_name="min_body_ratio",
+    ),
+    "momentum_fast_period": SensitivityParam(
+        name="momentum_fast_period",
+        display_name="EMA Fast Period",
+        min_val=8.0,
+        max_val=20.0,
+        step=1.0,
+        source="config",
+        attr_name="momentum_fast_period",
+    ),
+    "momentum_slow_period": SensitivityParam(
+        name="momentum_slow_period",
+        display_name="EMA Slow Period",
+        min_val=20.0,
+        max_val=50.0,
+        step=1.0,
+        source="config",
+        attr_name="momentum_slow_period",
     ),
 }
 
@@ -177,8 +177,7 @@ def _get_original_constant(param: SensitivityParam) -> float:
 # Run backtest with specific parameter values
 # ------------------------------------------------------------------
 def _run_with_params(
-    m1_bars: list[dict[str, Any]],
-    m5_bars: list[dict[str, Any]],
+    daily_bars: list[dict[str, Any]],
     pair: str,
     config: AppConfig,
     overrides: dict[str, float],
@@ -188,10 +187,8 @@ def _run_with_params(
 
     Parameters
     ----------
-    m1_bars : list[dict]
-        M1 bar data.
-    m5_bars : list[dict]
-        M5 bar data.
+    daily_bars : list[dict]
+        Daily bar data.
     pair : str
         Currency pair.
     config : AppConfig
@@ -214,7 +211,7 @@ def _run_with_params(
                 originals[name] = _get_original_constant(param)
             cfg = _apply_param(cfg, param, value)
 
-        trades = _backtest_pair(pair, m1_bars, m5_bars, cfg)
+        trades = _backtest_pair(pair, daily_bars, cfg)[0]
         return compute_stats(trades)
     finally:
         # Always restore patched constants
@@ -223,8 +220,7 @@ def _run_with_params(
 
 
 def _run_with_params_trades(
-    m1_bars: list[dict[str, Any]],
-    m5_bars: list[dict[str, Any]],
+    daily_bars: list[dict[str, Any]],
     pair: str,
     config: AppConfig,
     overrides: dict[str, float],
@@ -240,15 +236,14 @@ def _run_with_params_trades(
                 originals[name] = _get_original_constant(param)
             cfg = _apply_param(cfg, param, value)
 
-        return _backtest_pair(pair, m1_bars, m5_bars, cfg)
+        return _backtest_pair(pair, daily_bars, cfg)[0]
     finally:
         for name, orig_val in originals.items():
             _restore_constant(SENSITIVITY_PARAMS[name], orig_val)
 
 
 def grid_search_best(
-    m1_bars: list[dict[str, Any]],
-    m5_bars: list[dict[str, Any]],
+    daily_bars: list[dict[str, Any]],
     pair: str,
     config: AppConfig,
     param_names: list[str] | None = None,
@@ -263,17 +258,15 @@ def grid_search_best(
 
     Parameters
     ----------
-    m1_bars : list[dict]
-        In-sample M1 bars.
-    m5_bars : list[dict]
-        In-sample M5 bars.
+    daily_bars : list[dict]
+        In-sample Daily bars.
     pair : str
         Currency pair.
     config : AppConfig
         Base configuration.
     param_names : list[str] | None
         Keys from SENSITIVITY_PARAMS to sweep.  Defaults to
-        ``["min_atr_ratio", "min_volume_ratio", "rr_ratio"]``.
+        ``["adx_threshold", "min_body_ratio", "rr_ratio"]``.
     metric : str
         ``"sharpe"`` (Sharpe ratio) or ``"pf"`` (profit factor).
 
@@ -285,7 +278,7 @@ def grid_search_best(
     import itertools
 
     if param_names is None:
-        param_names = ["min_atr_ratio", "min_volume_ratio", "rr_ratio"]
+        param_names = ["adx_threshold", "min_body_ratio", "rr_ratio"]
 
     param_objs = [SENSITIVITY_PARAMS[n] for n in param_names]
     value_lists = [p.values() for p in param_objs]
@@ -297,7 +290,7 @@ def grid_search_best(
 
     for combo in itertools.product(*value_lists):
         overrides = dict(zip(param_names, combo))
-        stats = _run_with_params(m1_bars, m5_bars, pair, config, overrides)
+        stats = _run_with_params(daily_bars, pair, config, overrides)
         score = stats.sharpe_ratio if metric == "sharpe" else stats.profit_factor
 
         if score > best_score:
@@ -311,8 +304,7 @@ def grid_search_best(
 # 2D parameter sweep
 # ------------------------------------------------------------------
 def run_sensitivity_2d(
-    m1_bars: list[dict[str, Any]],
-    m5_bars: list[dict[str, Any]],
+    daily_bars: list[dict[str, Any]],
     pair: str,
     config: AppConfig,
     param_x_name: str,
@@ -323,10 +315,8 @@ def run_sensitivity_2d(
 
     Parameters
     ----------
-    m1_bars : list[dict]
-        M1 bar data.
-    m5_bars : list[dict]
-        M5 bar data.
+    daily_bars : list[dict]
+        Daily bar data.
     pair : str
         Currency pair.
     config : AppConfig
@@ -360,8 +350,7 @@ def run_sensitivity_2d(
 
         for x_val in x_vals:
             stats = _run_with_params(
-                m1_bars,
-                m5_bars,
+                daily_bars,
                 pair,
                 config,
                 {param_x_name: x_val, param_y_name: y_val},
@@ -515,8 +504,7 @@ def find_robustness_plateau(
 # Full sensitivity analysis
 # ------------------------------------------------------------------
 def run_full_sensitivity(
-    m1_bars: list[dict[str, Any]],
-    m5_bars: list[dict[str, Any]],
+    daily_bars: list[dict[str, Any]],
     pair: str,
     config: AppConfig,
     output_dir: str = ".",
@@ -526,10 +514,8 @@ def run_full_sensitivity(
 
     Parameters
     ----------
-    m1_bars : list[dict]
-        M1 bar data.
-    m5_bars : list[dict]
-        M5 bar data.
+    daily_bars : list[dict]
+        Daily bar data.
     pair : str
         Currency pair.
     config : AppConfig
@@ -555,7 +541,7 @@ def run_full_sensitivity(
                 f"{SENSITIVITY_PARAMS[py].display_name}"
             )
 
-            result = run_sensitivity_2d(m1_bars, m5_bars, pair, config, px, py)
+            result = run_sensitivity_2d(daily_bars, pair, config, px, py)
 
             # Generate heatmaps
             for metric in ("sharpe", "pf"):

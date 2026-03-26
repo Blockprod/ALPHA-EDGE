@@ -22,6 +22,7 @@
 
     // --- Type Checking (Pylance) ---
     "python.analysis.autoImportCompletions": true,
+    "python.analysis.diagnosticMode": "workspace",
 
     // --- Testing (Pytest) ---
     "python.testing.pytestEnabled": true,

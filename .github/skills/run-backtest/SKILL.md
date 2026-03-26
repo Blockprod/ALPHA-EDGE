@@ -67,3 +67,10 @@ All parameters live in `config.yaml` and `alphaedge/config/constants.py`.
 - **EU DST switch:** last Sunday March / last Sunday October
 - **US DST switch:** 2nd Sunday March / 1st Sunday November
 - **Gap weeks:** ~1 week/year where EU and US offsets diverge
+
+## Gotchas (from tasks/lessons.md)
+
+- EURUSD utilise London Open (08:00–09:00 UTC), PAS NYSE — tout diagnostic basé sur NYSE pour EURUSD produit de faux positifs (2026-03-24)
+- `PROJECT_TITLE` contient ⚡ (U+26A1) — ne jamais passer directement à Rich `Text()`/`Panel()` sur Windows cp1252 (crash LegacyWindowsTerm) (2026-03-24)
+- Un taux signal ~1-2% sur EURUSD London Open est statistiquement normal (88% sessions rejetées par filtre FCR) — ne pas modifier les paramètres sans N ≥ 30 trades (2026-03-24)
+- `_backtest_pair` directement sans `session_spec` utilise NYSE par défaut — toujours passer `session_spec=config.trading.pair_sessions.get(pair)` (2026-03-24)

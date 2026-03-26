@@ -48,7 +48,7 @@ Identifier les régressions, les violations de conventions, les problèmes de s�
 
 - [ ] Toute valeur numérique de trading → `constants.py` (jamais inline)
 - [ ] Timezones → `zoneinfo` uniquement (`pytz` interdit)
-- [ ] Pip sizes → `PIP_SIZES.get(pair, 0.0001)` (pas de fonction helper)
+- [ ] Pip sizes → `PIP_SIZES.get(pair, DEFAULT_PIP_SIZE)` (`DEFAULT_PIP_SIZE` défini dans `constants.py`)
 - [ ] Logs → `get_logger()` de `utils/logger.py` uniquement (pas `logging.getLogger`)
 
 ### Cython
@@ -85,7 +85,7 @@ state matches a previous version.
 
 1. `ruff check alphaedge/` → 0 erreur
 2. `pyright alphaedge/` → 0 erreur, 0 warning
-3. `pytest alphaedge/tests/ --tb=short` → 504 passed
+3. `pytest alphaedge/tests/ --tb=short` → 574 passed
 4. `pytest --cov-fail-under=80` → ≥ 80% coverage
 5. `bandit -r alphaedge/ -ll` → 0 Medium, 0 High (via `make qa-strict`)
 6. `git diff .env.example` → `ALPHAEDGE_PAPER=true` intact

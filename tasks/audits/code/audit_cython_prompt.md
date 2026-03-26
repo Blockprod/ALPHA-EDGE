@@ -3,7 +3,7 @@ modele: sonnet-4.6
 mode: agent
 contexte: codebase
 produit: audit_cython_alphaedge.md
-derniere_revision: 2026-03-20
+derniere_revision: 2026-03-25
 creation: 2026-03-20 à 15:33
 ---
 
@@ -42,7 +42,7 @@ Tu analyses UNIQUEMENT :
 - La validité des stubs utilisés dans les tests
 - Les signatures des interfaces publiques
 
-Tu n'analyses PAS la logique stratégique FCR,
+Tu n'analyses PAS la logique stratégique Momentum+Carry,
 la sécurité des credentials, ou engine/.
 
 ─────────────────────────────────────────────
@@ -60,9 +60,7 @@ CONTRAINTES ABSOLUES
 BLOC 1 — INVENTAIRE DES MODULES CYTHON
 ─────────────────────────────────────────────
 Modules attendus dans alphaedge/core/ :
-  fcr_detector.pyx / .pyd
-  gap_detector.pyx / .pyd
-  engulfing_detector.pyx / .pyd
+  momentum_detector.pyx / .pyd
   risk_manager.pyx / .pyd
   order_manager.pyx / .pyd
 
@@ -73,7 +71,7 @@ Pour chaque module, vérifie :
 - Stub dans _stubs/ présent ? ✅ / ❌
 - Stub dans _stubs/ : nom de fichier correspond ? ✅ / ❌
 
-Affiche le tableau complet des 5 modules.
+Affiche le tableau complet des 3 modules.
 
 ─────────────────────────────────────────────
 BLOC 2 — COHÉRENCE DES INTERFACES
@@ -83,21 +81,9 @@ avec les stubs dans alphaedge/core/_stubs/ :
 
 Interfaces à vérifier (depuis CLAUDE.md) :
 
-fcr_detector :
-  detect_fcr(candles_data, min_range_pips, pip_size)
-    → dict | None
-  detect_fcr_scan(candles_data, min_range_pips,
-    pip_size, lookback) → dict | None
-
-gap_detector :
-  detect_gap(pre_session_m1, session_m1, pre_close,
-    session_open, atr_period, min_atr_ratio) → dict
-  is_in_gap_zone(price, gap_high, gap_low) → bool
-
-engulfing_detector :
-  detect_engulfing(candles_data, fcr_high, fcr_low,
-    rr_ratio, pip_size, volume_period,
-    min_volume_ratio) → dict | None
+momentum_detector :
+  detect_momentum(bars, fast_period, slow_period,
+    adx_period, adx_threshold) → dict | None
 
 risk_manager :
   calculate_position_size(account_equity, risk_pct,
@@ -124,7 +110,7 @@ Analyse alphaedge/core/__init__.py,
 alphaedge/core/__init__.pyi :
 
 - __init__.py exporte toutes les fonctions
-  publiques des 5 modules ?
+  publiques des 3 modules ?
 - __init__.pyi cohérent avec __init__.py ?
 - Re-exports typés correctement ?
 - Imports depuis _stubs/ en mode fallback
@@ -136,7 +122,7 @@ BLOC 4 — BUILD ET REPRODUCIBILITÉ
 ─────────────────────────────────────────────
 Analyse setup.py, Makefile :
 
-- setup.py liste les 5 extensions Cython ?
+- setup.py liste les 3 extensions Cython ?
 - `make build` produit bien tous les .pyd ?
 - `make clean` supprime .pyd/.c/build/ ?
 - Cython version fixée dans requirements.txt ?
@@ -161,7 +147,7 @@ alphaedge/tests/conftest.py :
   (convention : test_<module>_<scenario>.py) ?
 - Tests manquants pour un module Cython ?
 - Stubs couvrent-ils les cas de retour None
-  (fcr=None, engulfing=None) ?
+  (momentum=None, risk_invalid=False) ?
 
 ─────────────────────────────────────────────
 SORTIE OBLIGATOIRE

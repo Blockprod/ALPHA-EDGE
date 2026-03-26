@@ -50,7 +50,7 @@ Tu analyses UNIQUEMENT :
 - Spread réel au moment de l'entrée
 - Timestamp exact d'entrée et de sortie (UTC)
 - Raison de sortie (SL hit / TP hit / session end)
-- Contexte signal : FCR range size, gap detected, engulfing quality score
+- Contexte signal : momentum score, ADX value, carry bias direction, pip_size
 
 **Infrastructure de persistance :**
 - Fichiers existants dans `alphaedge/logs/`, `reports/`
@@ -64,7 +64,7 @@ Tu analyses UNIQUEMENT :
 ─────────────────────────────────────────────
 CE QUE TU N'ANALYSES PAS
 ─────────────────────────────────────────────
-- La logique FCR/gap/engulfing (propriétaire — hors périmètre)
+- La logique Momentum+Carry (propriétaire — hors périmètre)
 - La sécurité credentials IB
 - Les performances du backtest
 - L'infrastructure de déploiement
