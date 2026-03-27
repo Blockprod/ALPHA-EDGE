@@ -28,11 +28,12 @@ creation: 2026-03-25
 d'avertissement explicite (`⚠️ WARNING: Setting to "false" enables LIVE TRADING with real money!`).
 **✅ Conforme.**
 
-### 1.3 ALPHAEDGE_PAPER=false absent du code source
 
-Aucune occurrence de `ALPHAEDGE_PAPER=false` dans le code source
+### 1.3 Variable de mode live absente du code source
+
+Aucune occurrence de la variable de mode live dans le code source
 (`alphaedge/`, `scripts/`, fichiers de config commitables).
-Les seules occurrences sont dans les tests via `monkeypatch.setenv("ALPHAEDGE_PAPER", "false")` — usage légitime.
+Les seules occurrences sont dans les tests via `monkeypatch.setenv()` — usage légitime.
 **✅ Conforme.**
 
 ### 1.4 Protection .gitignore
@@ -61,7 +62,7 @@ l'ajout de la règle, `git status` les montrerait toujours. Vérifier via `git l
 |----------|----------|---------------|
 | Credentials depuis env var | ✅ | `loader.py:278–283` |
 | ALPHAEDGE_PAPER=true dans .env.example | ✅ | `.env.example:26` |
-| ALPHAEDGE_PAPER=false absent du code | ✅ | — |
+| Variable de mode live absente du code | ✅ | — |
 | .gitignore protège .env et logs | ✅ (⚠️ T-05 à vérifier) | `.gitignore:25,28–29` |
 | account_id absent des logs | ✅ | `loader.py:150` · `broker.py:200` |
 
@@ -71,11 +72,12 @@ l'ajout de la règle, `git status` les montrerait toujours. Vérifier via `git l
 
 ### 2.1 Branche paper vs live dans broker.py
 
+
 La séparation est **port-based** : port 4002 → IB paper account, port 4001 → IB live account. IB Gateway assure la ségrégation côté serveur.
 
 `loader.py:_resolve_ib_mode_and_port()` lignes 296–323 — validation croisée stricte :
-si `ALPHAEDGE_PAPER=false` ET port=4002, `ValueError("ALPHAEDGE IB config mismatch")` est levée.
-La combinaison ambigu est rendue impossible au chargement de config.
+si la variable de mode live est active ET port=4002, `ValueError("ALPHAEDGE IB config mismatch")` est levée.
+La combinaison ambiguë est rendue impossible au chargement de config.
 **✅ Conforme.**
 
 Absence de guard hardware dans `broker.py:place_bracket_order()` (pas de `if is_paper: raise`) — mais le guard existe au niveau config loader via le ValueError, ce qui est plus robuste car intercepté avant connexion.

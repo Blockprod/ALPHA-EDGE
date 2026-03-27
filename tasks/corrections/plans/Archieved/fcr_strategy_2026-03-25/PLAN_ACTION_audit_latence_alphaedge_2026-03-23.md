@@ -131,7 +131,7 @@ En mode `auto` (défaut), si le `.pyd` Cython n'est pas présent (build manquant
 
 **Correction :**
 1. Documenter dans `.env.example` que `ALPHAEDGE_CORE_BACKEND=compiled` est obligatoire en production.
-2. Dans `core/__init__.py`, élever le log WARNING en CRITICAL si un fallback se produit en mode `auto` et que l'environnement est production (`ALPHAEDGE_PAPER=false` ou nouvelle variable `ALPHAEDGE_ENV=production`).
+2. Dans `core/__init__.py`, élever le log WARNING en CRITICAL si un fallback se produit en mode `auto` et que l'environnement est production (variable de mode live ou nouvelle variable `ALPHAEDGE_ENV=production`).
 
 ```python
 # core/__init__.py — après le fallback

@@ -50,7 +50,7 @@ IB Gateway
 
 <important if="modifying any file">
 
-- Never set `ALPHAEDGE_PAPER=false` in any file, ever *(silences the paper/live guard — no recovery path exists)*
+
 - Never modify `core/*.pyx` without explicit instruction from the user *(proprietary FCR logic — changes invalidate all backtest results)*
 - Never commit `.env`, `*.log`, or any proprietary action plan files
 - Never run `make build` unless a `.pyx` file was intentionally modified *(slow and irreversible mid-session — triggers full recompilation)*

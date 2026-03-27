@@ -99,5 +99,5 @@ await broker.submit_bracket_order(order)
 ```python
 # Toujours présent dans broker.py
 PAPER_MODE = os.getenv("ALPHAEDGE_PAPER", "true").lower() == "true"
-# Ne jamais set ALPHAEDGE_PAPER=false dans un fichier commité
+# Ne jamais positionner la variable de mode live dans un fichier commité
 ```

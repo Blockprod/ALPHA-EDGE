@@ -32,7 +32,7 @@ ni ne lance `ruff check` automatiquement après chaque écriture.
    - `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` : 60
 
 2. Créer `scripts/pre_commit_guard.py` qui vérifie :
-   - Pas de `ALPHAEDGE_PAPER=false` dans les fichiers stagés
+   - Pas de variable de mode live dans les fichiers stagés
    - Pas de `# type: ignore` dans les fichiers stagés
    - Pas de `.env` dans les fichiers stagés
 

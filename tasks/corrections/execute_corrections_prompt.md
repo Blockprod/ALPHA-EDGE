@@ -96,7 +96,7 @@ RÈGLES DE SÉCURITÉ ALPHAEDGE
 ─────────────────────────────────────────────
 - Ne jamais modifier .env ou alphaedge/logs/
 - Ne jamais exécuter git push sans confirmation
-- Ne jamais mettre ALPHAEDGE_PAPER=false
+
   dans n'importe quel fichier
 - Si correction touche core/*.pyx :
   afficher "⚠️ CYTHON — make build requis"

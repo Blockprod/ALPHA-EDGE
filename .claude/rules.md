@@ -5,7 +5,7 @@
 
 ## ⛔ INTERDICTIONS ABSOLUES
 
-- **Never** set `ALPHAEDGE_PAPER=false` in any file, ever
+
 - **Never** modify `alphaedge/core/*.pyx` without explicit instruction from the user
 - **Never** commit `.env`, `*.log`, or `ALPHAEDGE_ACTION_PLAN.md`
 - **Never** run `make build` unless a `.pyx` file was intentionally modified

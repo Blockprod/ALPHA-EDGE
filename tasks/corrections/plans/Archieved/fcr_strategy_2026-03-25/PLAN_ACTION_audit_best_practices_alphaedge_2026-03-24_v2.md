@@ -62,7 +62,7 @@ make qa
 
 | Règle actuelle | Justification à ajouter |
 |---|---|
-| `Never set ALPHAEDGE_PAPER=false` | silences the paper/live guard — no recovery path exists |
+
 | `Never modify core/*.pyx without explicit instruction` | proprietary FCR logic — changes invalidate all backtest results |
 | `Never use # type: ignore` | silences real type errors — fix the root cause instead |
 | `Never use Any as a type annotation` | Any poisons downstream type inference — use proper union or protocol |

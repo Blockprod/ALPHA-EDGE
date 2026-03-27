@@ -25,7 +25,7 @@ Total : 🔴 0 · 🟠 3 · 🟡 7 · Effort estimé : ~2h
 ### [C-01] Créer `.claude/rules.md`
 
 Fichier : `.claude/rules.md`
-Problème : Fichier absent. Sans lui, l'agent devait re-dériver les règles de modification à chaque session depuis CLAUDE.md et copilot-instructions.md — risque d'oubli de règles critiques (no `Any`, no `# type: ignore`, no `ALPHAEDGE_PAPER=false`).
+Problème : Fichier absent. Sans lui, l'agent devait re-dériver les règles de modification à chaque session depuis CLAUDE.md et copilot-instructions.md — risque d'oubli de règles critiques (no `Any`, no `# type: ignore`).
 Correction : Créer `.claude/rules.md` avec :
   - Interdictions absolues (8 règles hard-stop)
   - Ordre de priorité des modifications (capital → risque → exécution → signal → backtest)

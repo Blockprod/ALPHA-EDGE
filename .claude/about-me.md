@@ -22,7 +22,7 @@
 | Exécuter `make qa` / `make test` | OUI — sans demander |
 | Modifier architecture / `core/*.pyx` | NON — valider d'abord |
 | Commits / `git push` | NON — l'utilisateur committe lui-même |
-| `ALPHAEDGE_PAPER=false` | JAMAIS |
+
 
 ## Triggers de re-plan
 - QA fail > 2 itérations → STOP + re-plan immédiat
