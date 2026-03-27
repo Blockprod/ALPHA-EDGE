@@ -32,8 +32,8 @@ def check_file(path: Path) -> list[str]:
     except OSError:
         return violations
 
-    # Interdit : ALPHAEDGE_PAPER=false (minuscule exact)
-    if "ALPHAEDGE_PAPER=" + "false" in content:
+    # Interdit : ALPHAEDGE_PAPER=false (minuscule exact, jamais la chaîne brute)
+    if "ALPHAEDGE_PAPER=" in content and "=false" in content:
         violations.append(f"  🔴 {path}: contient ALPHAEDGE_PAPER=FALSE (INTERDIT)")
 
     if "# type: ignore" in content:
