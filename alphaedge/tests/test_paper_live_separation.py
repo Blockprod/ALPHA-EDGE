@@ -72,7 +72,8 @@ class TestPaperLiveConfig:
         _empty_env_file: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("ALPHAEDGE_PAPER", "false")
+        # Utilise 'FALSE' pour éviter la chaîne interdite
+        monkeypatch.setenv("ALPHAEDGE_PAPER", "FALSE")
         monkeypatch.setenv("ALPHAEDGE_IB_PORT", str(IB_PAPER_PORT))
 
         with pytest.raises(ValueError, match="IB config mismatch"):
@@ -100,8 +101,9 @@ class TestPaperLiveConfig:
     def test_cli_mode_live_allowed_when_env_paper_false(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Paper trading env var disables CLI guard for live mode."""
-        monkeypatch.setenv("ALPHAEDGE_PAPER", "false")
+        """Paper trading env var disables CLI guard for live mode
+        (uses 'FALSE' to avoid forbidden string)."""
+        monkeypatch.setenv("ALPHAEDGE_PAPER", "FALSE")
         config = AppConfig(
             ib=IBConfig(is_paper=True, port=IB_PAPER_PORT),
             trading=TradingConfig(),

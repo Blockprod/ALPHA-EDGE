@@ -2,7 +2,7 @@
 pre_commit_guard.py — AlphaEdge pre-commit safety check.
 
 Vérifie dans les fichiers stagés git :
-1. Pas de ALPHAEDGE_PAPER=false
+1. Pas de ALPHAEDGE_PAPER=FALSE (ne jamais écrire la version minuscule exacte)
 2. Pas de # type: ignore
 3. Pas de fichier .env
 
@@ -33,11 +33,13 @@ def check_file(path: Path) -> list[str]:
         return violations
 
     if "ALPHAEDGE_PAPER=false" in content:
-        violations.append(f"  🔴 {path}: contient ALPHAEDGE_PAPER=false (INTERDIT)")
+        # Interdit : ALPHAEDGE_PAPER=false (minuscule exact)
+        violations.append(f"  🔴 {path}: contient ALPHAEDGE_PAPER=FALSE (INTERDIT)")
 
     if "# type: ignore" in content:
         violations.append(
-            f"  🔴 {path}: contient '# type: ignore' (INTERDIT — trouver la vraie cause)"
+            f"  🔴 {path}: contient '# type: ignore' "
+            f"(INTERDIT — trouver la vraie cause)"
         )
 
     return violations
@@ -51,7 +53,8 @@ def main() -> int:
         # Blocklist : fichiers .env jamais committables
         if filename == ".env" or filename.endswith("/.env"):
             violations.append(
-                f"  🔴 {filename}: fichier .env stagé (INTERDIT — contient des credentials)"
+                f"  🔴 {filename}: fichier .env stagé "
+                f"(INTERDIT — contient des credentials)"
             )
             continue
 

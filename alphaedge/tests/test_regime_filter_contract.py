@@ -57,14 +57,18 @@ def _make_history(n_days: int = 30) -> list[dict[str, object]]:
     """Build *n_days* daily bars for training (one bar per day)."""
     base_dt = datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datetime.UTC)
     bars = []
+    import random
+
     for i in range(n_days):
-        close = 1.0800 + i * 0.0001
+        # Ajoute un bruit aléatoire pour éviter les points dupliqués
+        noise = random.uniform(-0.00005, 0.00005)
+        close = 1.0800 + i * 0.0001 + noise
         dt = base_dt + datetime.timedelta(days=i)
         bars.append(
             {
-                "open": close - 0.0005,
-                "high": close + 0.0010,
-                "low": close - 0.0010,
+                "open": close - 0.0005 + random.uniform(-0.00002, 0.00002),
+                "high": close + 0.0010 + random.uniform(-0.00002, 0.00002),
+                "low": close - 0.0010 + random.uniform(-0.00002, 0.00002),
                 "close": close,
                 "datetime": dt,
             }

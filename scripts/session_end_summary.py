@@ -56,7 +56,8 @@ def main() -> int:
         print(f"  ... et {len(modified) - 20} autres")
 
     print(
-        "\n💡 CANDIDAT LEÇON (à valider manuellement avant d'écrire dans tasks/lessons.md) :"
+        "\n💡 CANDIDAT LEÇON (à valider manuellement avant d'écrire dans "
+        "tasks/lessons.md) :"
     )
     print("─" * 60)
     print(f"### [{today}] — <titre bref de la session>")

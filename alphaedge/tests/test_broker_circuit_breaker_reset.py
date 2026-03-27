@@ -100,8 +100,15 @@ class TestCircuitBreakerAutoReset:
         )
 
         # IB connection succeeds on the attempt after reset
-        broker._ib.connectAsync = AsyncMock()
-        with patch("asyncio.wait_for", new=AsyncMock(return_value=None)):
+        async def dummy_connect_async(*args, **kwargs):
+            return None
+
+        broker._ib.connectAsync = dummy_connect_async
+
+        async def passthrough(coro, *args, **kwargs):
+            return await coro
+
+        with patch("asyncio.wait_for", new=passthrough):
             result = await broker.connect()
 
         assert result is True
@@ -118,8 +125,11 @@ class TestCircuitBreakerAutoReset:
             time.monotonic() - IB_CIRCUIT_BREAKER_RESET_SECONDS - 1.0
         )
 
-        # IB connection times out → failure recorded
-        with patch("asyncio.wait_for", side_effect=TimeoutError):
+        # Patch asyncio.wait_for avec une coroutine async qui lève TimeoutError
+        async def raise_timeout(*args, **kwargs):
+            raise TimeoutError
+
+        with patch("asyncio.wait_for", new=raise_timeout):
             result = await broker.connect()
 
         # Reset happened (counter went to 0), then one failure was recorded
