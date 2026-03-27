@@ -99,11 +99,8 @@ class TestCircuitBreakerAutoReset:
             time.monotonic() - IB_CIRCUIT_BREAKER_RESET_SECONDS - 1.0
         )
 
-        # IB connection succeeds on the attempt after reset
-        async def dummy_connect_async(*args, **kwargs):
-            return None
-
-        broker._ib.connectAsync = dummy_connect_async
+        # IB connection succeeds on the attempt after reset (signature: returns IB)
+        broker._ib.connectAsync = AsyncMock(return_value=broker._ib)
 
         async def passthrough(coro, *args, **kwargs):
             return await coro
