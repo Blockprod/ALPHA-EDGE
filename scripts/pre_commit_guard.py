@@ -1,15 +1,3 @@
-"""
-pre_commit_guard.py — AlphaEdge pre-commit safety check.
-
-Vérifie dans les fichiers stagés git :
-1. Pas de ALPHAEDGE_PAPER=FALSE (ne jamais écrire la version minuscule exacte)
-2. Pas de # type: ignore
-3. Pas de fichier .env
-
-Usage : python scripts/pre_commit_guard.py
-Exit 0 = OK · Exit 1 = violation trouvée
-"""
-
 import subprocess
 import sys
 from pathlib import Path
@@ -32,9 +20,11 @@ def check_file(path: Path) -> list[str]:
     except OSError:
         return violations
 
-    # Interdit : ALPHAEDGE_PAPER=false (minuscule exact, jamais la chaîne brute)
+    # Interdit : détection de la variable de mode live (jamais la chaîne brute)
     if "ALPHAEDGE_PAPER=" in content and "=false" in content:
-        violations.append(f"  🔴 {path}: contient ALPHAEDGE_PAPER=FALSE (INTERDIT)")
+        violations.append(
+            f"  🔴 {path}: contient la variable de mode live interdite (INTERDIT)"
+        )
 
     if "# type: ignore" in content:
         violations.append(
