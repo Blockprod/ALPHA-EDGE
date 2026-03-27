@@ -100,7 +100,7 @@ class TestPaperLiveConfig:
     def test_cli_mode_live_allowed_when_env_paper_false(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """ALPHAEDGE_PAPER=false allows CLI --mode live to apply."""
+        """Paper trading env var disables CLI guard for live mode."""
         monkeypatch.setenv("ALPHAEDGE_PAPER", "false")
         config = AppConfig(
             ib=IBConfig(is_paper=True, port=IB_PAPER_PORT),
