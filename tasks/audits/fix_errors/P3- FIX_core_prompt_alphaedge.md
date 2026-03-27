@@ -60,7 +60,7 @@ IMPORT À AJOUTER si absent :
      # type: ignore
      Any  (comme raccourci de type — utiliser union explicite ou protocol)
      datetime.utcnow()          → utiliser datetime.now(timezone.utc)
-     ALPHAEDGE_PAPER=false      → valeur interdite dans tout fichier
+
      EUR_USD_RATE hardcodé      → utiliser config.trading.eur_usd_rate
      pip / RR / session_time hardcodés → utiliser alphaedge/config/constants.py
      import circulaire engine → core   → refactorer via injection

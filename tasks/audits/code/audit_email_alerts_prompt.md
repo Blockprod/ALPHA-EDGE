@@ -106,7 +106,7 @@ conclus par COUVERT / NON COUVERT / À VÉRIFIER
 - [ ] Max trades per session atteint
 - [ ] Spread trop élevé (> seuil config)
 - [ ] calculate_position_size → is_valid=False
-- [ ] ALPHAEDGE_PAPER=false détecté (alerte critique)
+
 
 ─────────────────────────────────────────────
 BLOC 3 — QUALITÉ DU CONTENU

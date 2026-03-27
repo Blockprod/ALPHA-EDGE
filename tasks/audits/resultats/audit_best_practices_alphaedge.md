@@ -63,12 +63,12 @@ creation: 2026-03-27 à 09:00
 **Source :** shanraisshan (context engineering — tips)
 **Description :** Baliser les règles irréversibles avec des tags XML sémantiques (`<important if="...">`) dans les fichiers de contexte pour que le modèle accorde une priorité accrue aux gardes high-stakes.
 **Pourquoi pertinent pour ALPHAEDGE + Copilot VSCode :**
-`CLAUDE.md` et `copilot-instructions.md` utilisent bold + emoji (⛔) qui sont traités comme du texte plat par le transformer. Les balises XML créent une structure sémantique explicite que le modèle interprète comme un signal de priorité — particulièrement utile en session longue où le contexte se dilue. Ce projet a 10 hard stops irréversibles (`ALPHAEDGE_PAPER=false`, `core/*.pyx` sans instruction, `.env` commit…) — s'assurer qu'aucun n'est ignoré est critique.
+`CLAUDE.md` et `copilot-instructions.md` utilisent bold + emoji (⛔) qui sont traités comme du texte plat par le transformer. Les balises XML créent une structure sémantique explicite que le modèle interprète comme un signal de priorité — particulièrement utile en session longue où le contexte se dilue. Ce projet a 10 hard stops irréversibles (variable de mode live, `core/*.pyx` sans instruction, `.env` commit…) — s'assurer qu'aucun n'est ignoré est critique.
 **Comment l'appliquer concrètement :**
   - Dans `CLAUDE.md` section ⛔ Hard Stops, encapsuler le bloc de règles :
     ```xml
     <important if="modifying any file">
-    Never set ALPHAEDGE_PAPER=false in any file, ever.
+    Never set the live mode variable in any file, ever.
     Never modify core/*.pyx without explicit user instruction.
     Never commit .env, *.log, or proprietary action plan files.
     </important>

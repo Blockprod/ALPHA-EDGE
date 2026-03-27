@@ -27,10 +27,10 @@ Enregistrement des décisions architecturales (ADR) du projet.
 
 **Contexte** : Un bot de trading mal configuré peut causer des pertes réelles sur IBKR dans les secondes suivant le lancement.
 
-**Décision** : `ALPHAEDGE_PAPER=true` est la valeur par défaut dans `.env.example` et dans la logique de connexion. Le port 4002 (paper) est utilisé sauf si `ALPHAEDGE_PAPER=false` est explicitement positionné.
+**Décision** : la variable de mode live n'est jamais positionnée dans un fichier versionné. Le port 4002 (paper) est utilisé par défaut, sauf confirmation explicite pour le mode live.
 
 **Conséquences** :
-- Jamais de `ALPHAEDGE_PAPER=false` dans un fichier versionné
+- Jamais de variable de mode live dans un fichier versionné
 - Le passage en live nécessite une confirmation explicite de l'utilisateur
 
 ---

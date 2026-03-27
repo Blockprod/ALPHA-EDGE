@@ -7,7 +7,7 @@
 - Les credentials IB sont chargés depuis l'environnement via `load_dotenv()` puis `os.getenv(...)` dans [alphaedge/config/loader.py:220](c:/Users/averr/AlphaEdge/alphaedge/config/loader.py#L220), [alphaedge/config/loader.py:248](c:/Users/averr/AlphaEdge/alphaedge/config/loader.py#L248), [alphaedge/config/loader.py:253](c:/Users/averr/AlphaEdge/alphaedge/config/loader.py#L253) et [alphaedge/config/loader.py:257](c:/Users/averr/AlphaEdge/alphaedge/config/loader.py#L257).
 - `.env.example` contient bien `ALPHAEDGE_PAPER=true` et avertit explicitement sur le mode live.
 - `.gitignore` protège `.env`, `alphaedge/logs/*.log`, `alphaedge/logs/*.txt`, `alphaedge/cache/` et l'état runtime `alphaedge_daily_state.json`.
-- Aucune occurrence de `ALPHAEDGE_PAPER=false` n'a été trouvée dans le code Python exécutable inspecté.
+
 
 ### Problèmes
 

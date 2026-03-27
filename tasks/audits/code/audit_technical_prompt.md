@@ -64,7 +64,7 @@ Analyse alphaedge/engine/broker.py, .env.example,
 - IB_ACCOUNT, IB_HOST, IB_PORT chargés
   UNIQUEMENT depuis variables d'environnement ?
 - ALPHAEDGE_PAPER=true présent dans .env.example ?
-- ALPHAEDGE_PAPER=false détecté NULLE PART dans
+
   le code source ? (🔴 si false trouvé)
 - .gitignore protège .env, *.log, alphaedge/logs/ ?
 - Fragment de credential dans les logs loguru ?

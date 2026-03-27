@@ -396,7 +396,7 @@ P3-01..P3-05  — à démarrer uniquement après P0+P1 complets
 - [ ] P&L paper documenté dans `docs/paper_trading_log.md`
 
 ## Étape 2 — Live micro-lot (1 semaine)
-- [ ] Port 4001, `ALPHAEDGE_PAPER=false` uniquement après GO explicite du chef de projet
+
 - [ ] `lot_type: micro` (1000 units, risque ~$0.10/pip)
 - [ ] `max_daily_loss_pct: 1.0` (réduit de 3% à 1% pour la première semaine)
 - [ ] Surveillance active 100% des heures de trading

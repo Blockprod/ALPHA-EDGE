@@ -100,7 +100,7 @@ state matches a previous version.
 
 ## Interdictions Absolues
 
-- ❌ `ALPHAEDGE_PAPER=false` dans n'importe quel fichier
+
 - ❌ Modifier `core/*.pyx` sans instruction explicite de l'utilisateur
 - ❌ Committer `.env`, `*.log`, `ALPHAEDGE_ACTION_PLAN.md`
 - ❌ `# type: ignore` ou `# pyright: ignore`

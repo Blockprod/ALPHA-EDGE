@@ -252,7 +252,7 @@ Surcharge configurée correctement. Commentaires de décision conservés dans le
 
 `loader.py::IBConfig.is_paper=True` par défaut.
 `.env.example` contient `ALPHAEDGE_PAPER=true`.
-Aucune occurrence de `ALPHAEDGE_PAPER=false` dans le codebase — règle absolue respectée.
+
 
 ### 5.5 Import lazy dans `run_backtest()` — 🔵 NOTE
 

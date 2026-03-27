@@ -22,7 +22,7 @@ Execute in this exact order before touching any file:
 
 <important if="modifying any file">
 
-- **Never** set `ALPHAEDGE_PAPER=false` in any file, ever
+
 - **Never** modify `core/*.pyx` without explicit user instruction
 - **Never** commit `.env`, `*.log`, or proprietary action plan files
 - **Never** run `make build` unless a `.pyx` file was intentionally modified

@@ -115,7 +115,7 @@ Aucune URL ni token hardcodé trouvé dans le code source.
 | Max trades per session atteint | ❌ Non défini | ❌ | NON COUVERT |
 | Spread trop élevé | ❌ Non défini | ❌ | NON COUVERT |
 | calculate_position_size → is_valid=False | ❌ Non défini | ❌ | NON COUVERT |
-| ALPHAEDGE_PAPER=false détecté | ❌ Non défini | ❌ | NON COUVERT |
+
 
 **Fichier concerné** :
 - `session_lifecycle.py:512` — `_check_daily_loss_shutdown()` → `logger.warning` + shutdown, aucune alerte

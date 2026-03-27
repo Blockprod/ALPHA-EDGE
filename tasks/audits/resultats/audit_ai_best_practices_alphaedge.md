@@ -29,7 +29,7 @@ Sans hooks déterministes :
 - Un agent peut exécuter `make build` sans modification `.pyx` préalable
 - Un agent peut modifier un fichier `.py` sans déclencher `ruff check` automatiquement
 - Un agent peut fermer une session sans sauvegarder les leçons apprises
-- `ALPHAEDGE_PAPER=false` peut être écrit dans un fichier sans interception
+
 
 ### 1.3 Solution
 
