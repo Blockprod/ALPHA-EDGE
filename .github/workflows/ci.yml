@@ -23,7 +23,7 @@ jobs:
       # Hard stop: ALPHAEDGE_PAPER must never be false in committed files
       - name: Paper trading guard
         run: |
-          if git ls-files '*.py' '*.yaml' '*.yml' '*.env' '*.cfg' | xargs grep -n "ALPHAEDGE_PAPER=false"; then
+          if git ls-files '*.py' '*.yaml' '*.yml' '*.env' '*.cfg' | grep -v ".github/workflows/ci.yml" | xargs grep -n "ALPHAEDGE_PAPER=false"; then
             echo "❌ ALPHAEDGE_PAPER=false found in committed files — BLOCKED"
             exit 1
           fi
