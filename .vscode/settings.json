@@ -50,5 +50,19 @@
         "**/build": true,
         "**/*.egg-info": true,
         "**/.venv": true
-    }
+    },
+
+    // --- Terminal: Activation auto venv ---
+    "terminal.integrated.profiles.windows": {
+        "PowerShell": {
+            "source": "PowerShell",
+            "icon": "terminal-powershell",
+            "args": [
+                "-NoExit",
+                "-Command",
+                ". .venv\\Scripts\\Activate.ps1"
+            ]
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "PowerShell"
 }
