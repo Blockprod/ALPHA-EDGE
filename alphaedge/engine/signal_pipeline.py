@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # PROJECT      : ALPHAEDGE
 # FILE         : alphaedge/engine/signal_pipeline.py
 # DESCRIPTION  : Stateless Momentum + Carry detection chain

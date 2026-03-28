@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # PROJECT      : ALPHAEDGE
 # FILE         : alphaedge/core/_stubs/momentum_detector.py
 # DESCRIPTION  : Pure-Python stub — mirrors momentum_detector.pyx interface
