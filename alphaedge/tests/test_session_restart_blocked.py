@@ -104,7 +104,10 @@ class TestSessionRestartBlocked:
         # connect() returns True but everything after is mocked — session will
         # proceed normally until it hits the first awaitable that isn't set up.
         # We intercept _init_session_pairs to stop early without error.
+        import types
+
         async def _stop_early(
+            self,
             _starting_equity: float,
             _live_equity: float,
             _persisted: object,
@@ -112,7 +115,9 @@ class TestSessionRestartBlocked:
         ) -> list[str]:
             return []
 
-        strategy._lifecycle._init_session_pairs = _stop_early  # type: ignore[method-assign]
+        strategy._lifecycle._init_session_pairs = types.MethodType(
+            _stop_early, strategy._lifecycle
+        )
         strategy._executor.get_account_equity = AsyncMock(return_value=10_000.0)
 
         # Patch get_session_window_utc to avoid timezone dependency

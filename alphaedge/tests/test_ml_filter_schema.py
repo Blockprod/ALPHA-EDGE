@@ -58,8 +58,8 @@ class TestExtractFeaturesSchema:
     """extract_features() must honour the SignalDict contract."""
 
     def test_full_signal_produces_correct_fields(self) -> None:
-        signal = _valid_signal()
-        result = extract_features(signal)  # type: ignore[arg-type]
+        signal: SignalDict = _valid_signal()
+        result = extract_features(dict(signal))
 
         assert isinstance(result, SignalFeatures)
         assert result.adx == pytest.approx(30.5)
@@ -71,7 +71,7 @@ class TestExtractFeaturesSchema:
     def test_missing_optional_keys_default_to_zero(self) -> None:
         """SignalDict is total=False — missing keys must not raise."""
         empty_signal: SignalDict = {}
-        result = extract_features(empty_signal)  # type: ignore[arg-type]
+        result = extract_features(dict(empty_signal))
 
         assert result.adx == pytest.approx(0.0)
         assert result.ema_delta_pct == pytest.approx(0.0)
@@ -81,7 +81,9 @@ class TestExtractFeaturesSchema:
 
     def test_required_keys_constant_matches_feature_fields(self) -> None:
         """SIGNAL_REQUIRED_KEYS must be a subset of SignalFeatures fields."""
-        feature_fields = {f.name for f in SignalFeatures.__dataclass_fields__.values()}  # type: ignore[attr-defined]
+        feature_fields = {
+            f.name for f in getattr(SignalFeatures, "__dataclass_fields__").values()
+        }
         # day_of_week is derived from entry_time — not a raw key
         expected = {"adx", "ema_delta_pct", "carry_diff", "atr_ratio"}
         assert SIGNAL_REQUIRED_KEYS == expected
@@ -91,7 +93,7 @@ class TestExtractFeaturesSchema:
         """to_array() must return exactly 5 floats (matches FEATURE_NAMES)."""
         from alphaedge.engine._experimental.ml_filter import FEATURE_NAMES
 
-        result = extract_features(_valid_signal())  # type: ignore[arg-type]
+        result = extract_features(dict(_valid_signal()))
         arr = result.to_array()
         assert len(arr) == len(FEATURE_NAMES)
 
