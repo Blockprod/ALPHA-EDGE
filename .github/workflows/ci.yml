@@ -106,7 +106,7 @@ jobs:
         env:
           ALPHAEDGE_CORE_BACKEND: compiled
         run: |
-          python -c "import sys; from alphaedge.core import momentum_detector, order_manager, risk_manager, get_backend_name, get_fallback_modules; backend = get_backend_name(); fallback = get_fallback_modules(); print(f'Backend: {backend}'); fallback and (print(f'Fallbacks: {fallback}') or sys.exit('Compiled modules expected — got stubs')); print('All Cython core modules loaded from compiled .so')"
+          python -c 'import sys; from alphaedge.core import momentum_detector, order_manager, risk_manager, get_backend_name, get_fallback_modules; backend = get_backend_name(); fallback = get_fallback_modules(); print(f"Backend: {backend}"); fallback and (print(f"Fallbacks: {fallback}") or sys.exit("Compiled modules expected — got stubs")); print("All Cython core modules loaded from compiled .so")'
           "
 
       # Tests run with stubs (no IB Gateway needed in CI)
