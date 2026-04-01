@@ -199,7 +199,9 @@ class TestRunWalkForward:
 
         daily_bars = _make_bars_range(date(2024, 1, 1), date(2024, 12, 31), hour=10)
 
-        # Return one winning trade per call
+        # Return one winning trade per call, with entry_time = last bar's datetime.
+        # IS call: last bar is in the train window  → ET date < test_start → filtered out.
+        # Combined call: last bar is in the test window → ET date >= test_start → OOS trade.
         call_count = 0
 
         def fake_backtest(
@@ -217,7 +219,7 @@ class TestRunWalkForward:
                         entry_price=1.08500,
                         stop_loss=1.08400,
                         take_profit=1.08600,
-                        entry_time=datetime(2024, 1, 1, 10, 0),
+                        entry_time=_bars[-1]["datetime"],
                         exit_price=1.08600,
                         pnl_pips=10.0,
                         pnl_usd=100.0,

@@ -164,16 +164,36 @@ def _run_window_backtests(
     pair: str,
     config: AppConfig,
 ) -> tuple[list[TradeRecord], list[TradeRecord]]:
-    """Run baseline IS/OOS backtests for one walk-forward window."""
+    """Run baseline IS/OOS backtests for one walk-forward window.
+
+    The OOS run uses the full [train_start, test_end] bar window so that the
+    EMA / ADX indicators have their full lookback warmup before the OOS period
+    starts.  Only trades whose entry falls inside [test_start, test_end] (in
+    ET timezone) are counted as OOS results.
+    """
     from alphaedge.engine.backtest import _backtest_pair  # noqa: PLC0415
 
-    train_bars = _filter_bars_by_date(daily_bars, wf_win.train_start, wf_win.train_end)
-    test_bars = _filter_bars_by_date(daily_bars, wf_win.test_start, wf_win.test_end)
+    et_tz = ZoneInfo("America/New_York")
 
-    return (
-        _backtest_pair(pair, train_bars, config)[0],
-        _backtest_pair(pair, test_bars, config)[0],
+    # IS run — train-only bars (IS stats, no future leakage)
+    train_bars = _filter_bars_by_date(daily_bars, wf_win.train_start, wf_win.train_end)
+    train_trades = _backtest_pair(pair, train_bars, config)[0]
+
+    # OOS run — combined [train_start, test_end] for EMA warmup; keep only
+    # trades that entered on or after test_start (ET date).
+    combined_bars = _filter_bars_by_date(
+        daily_bars, wf_win.train_start, wf_win.test_end
     )
+    combined_trades = _backtest_pair(pair, combined_bars, config)[0]
+
+    def _et_entry_date(t: TradeRecord) -> date:
+        dt = t.entry_time
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+        return dt.astimezone(et_tz).date()
+
+    test_trades = [t for t in combined_trades if _et_entry_date(t) >= wf_win.test_start]
+    return train_trades, test_trades
 
 
 def _run_optimized_oos_fold(

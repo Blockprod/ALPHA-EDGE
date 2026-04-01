@@ -145,7 +145,14 @@ async def _fetch_pair_trades(
 
     # Walk-forward validation (optional, post main backtest)
     if config.trading.walk_forward_enabled:
-        wf_report = run_walk_forward(daily_bars, pair, config)
+        wf_report = run_walk_forward(
+            daily_bars,
+            pair,
+            config,
+            train_months=config.trading.walk_forward_train_months,
+            test_months=config.trading.walk_forward_test_months,
+            step_months=config.trading.walk_forward_step_months,
+        )
         _log_walk_forward_report(wf_report)
 
     return _backtest_pair(

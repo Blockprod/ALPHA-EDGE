@@ -24,13 +24,12 @@ from alphaedge.utils.news_filter import EconomicNewsFilter
 # Helpers
 # ------------------------------------------------------------------
 def _make_config(momentum_lookback_days: int = 2) -> AppConfig:
-    return AppConfig(
-        ib=IBConfig(is_paper=True),
-        trading=TradingConfig(
-            pairs=["EURUSD"],
-            momentum_lookback_days=momentum_lookback_days,
-        ),
-    )
+    cfg = AppConfig()
+    cfg.ib = IBConfig(is_paper=True)
+    cfg.trading = TradingConfig()
+    cfg.trading.pairs = ["EURUSD"]
+    cfg.trading.momentum_lookback_days = momentum_lookback_days
+    return cfg
 
 
 def _make_bars(n: int = 20) -> list[dict[str, Any]]:

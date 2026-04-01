@@ -15,18 +15,17 @@ from alphaedge.engine.backtest import _validate_backtest_signal
 
 
 def _make_config() -> AppConfig:
-    return AppConfig(
-        ib=IBConfig(is_paper=True),
-        trading=TradingConfig(
-            pairs=["EURUSD"],
-            risk_pct=3.0,
-            rr_ratio=2.0,
-            max_spread_pips=2.0,
-            max_lot_size=1.0,
-            lot_type="micro",
-            starting_equity=10000.0,
-        ),
-    )
+    cfg = AppConfig()
+    cfg.ib = IBConfig(is_paper=True)
+    cfg.trading = TradingConfig()
+    cfg.trading.pairs = ["EURUSD"]
+    cfg.trading.risk_pct = 3.0
+    cfg.trading.rr_ratio = 2.0
+    cfg.trading.max_spread_pips = 2.0
+    cfg.trading.max_lot_size = 1.0
+    cfg.trading.lot_type = "micro"
+    cfg.trading.starting_equity = 10000.0
+    return cfg
 
 
 def _make_signal() -> dict[str, float | int]:

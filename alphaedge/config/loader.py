@@ -207,6 +207,9 @@ class TradingConfig:
     fcr_range_cv_max: float = 1.0  # Max CV of pre-session bar ranges (0.0 = disabled)
     direction_filter: str = "ALL"  # "ALL" | "LONG" | "SHORT"
     walk_forward_enabled: bool = False  # Call run_walk_forward after main backtest
+    walk_forward_train_months: int = 18  # IS window length in months
+    walk_forward_test_months: int = 3  # OOS window length in months
+    walk_forward_step_months: int = 3  # Slide step in months
     max_consecutive_losses: int = 5  # Circuit breaker: halt after N consecutive losses
     max_trades_per_day: int = 3  # Jackpot guard: max trades per calendar day per pair
     pair_sessions: dict[str, SessionSpec] = field(default_factory=dict)
@@ -403,6 +406,9 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         fcr_range_cv_max=float(struct_section.get("fcr_range_cv_max", 1.0)),
         direction_filter=str(section.get("direction_filter", "ALL")),
         walk_forward_enabled=bool(section.get("walk_forward_enabled", False)),
+        walk_forward_train_months=int(section.get("walk_forward_train_months", 18)),
+        walk_forward_test_months=int(section.get("walk_forward_test_months", 3)),
+        walk_forward_step_months=int(section.get("walk_forward_step_months", 3)),
         max_consecutive_losses=int(risk_section.get("max_consecutive_losses", 5)),
         max_trades_per_day=int(section.get("max_trades_per_day", 3)),
     )

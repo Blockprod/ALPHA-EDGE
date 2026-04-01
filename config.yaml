@@ -63,11 +63,12 @@ trading:
   # Monitor: if SHORT WR < 35% over ≥30 live trades, revert to LONG.
   direction_filter: "ALL"
 
-  # Enable IS/OOS multi-window walk-forward validation after main backtest
-  # LOCKED: false — activate only after N >= 100 live trades accumulated.
-  # Walk-forward requires sufficient OOS windows for meaningful statistics.
-  # Activate offline via scripts/run_bayesian_optimization.py only.
-  walk_forward_enabled: false
+  # Walk-forward rolling validation — 6-12 windows glissantes sur 3 ans
+  # train=18m + test=3m + step=3m → 7 fenêtres OOS non-chevauchantes
+  walk_forward_enabled: true
+  walk_forward_train_months: 18
+  walk_forward_test_months: 3
+  walk_forward_step_months: 3
 
   # Maximum acceptable spread in pips (skip trade if exceeded)
   max_spread_pips: 2.0
