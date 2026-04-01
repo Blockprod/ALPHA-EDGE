@@ -748,7 +748,7 @@ def _backtest_pair(
             # Accumulate daily P&L for circuit breaker tracking
             for t in bar_trades:
                 _daily_pnl_usd[day_key] = _daily_pnl_usd.get(day_key, 0.0) + t.pnl_usd
-        # Store ATR at entry for each trade (used by ATR-scaling in _apply_equity_sizing)
+        # Store ATR at entry for each trade (used by ATR-scaling in sizing)
         atr_at_bar = float(_all_atrs[bar_index])
         for t in bar_trades:
             t.atr_pips = atr_at_bar

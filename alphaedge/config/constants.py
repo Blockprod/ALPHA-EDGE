@@ -144,9 +144,9 @@ MIN_LOTS: float = 0.01
 MAX_LOTS: float = 10.0
 
 # Reference FX rates for backtest lot-size gate
-# Used only for is_valid gate correctness — P&L is always overridden by _apply_equity_sizing
-# EURUSD/GBPUSD: quote is USD, no conversion needed (1.0)
-# USDJPY: approximate mid-rate; gate result is ignored for P&L — update periodically if needed
+# Used only for is_valid gate correctness — P&L is always overridden by
+# _apply_equity_sizing. EURUSD/GBPUSD: quote is USD, no conversion needed (1.0)
+# USDJPY: approximate mid-rate; gate result ignored for P&L — update periodically
 REFERENCE_FX_RATE: dict[str, float] = {
     "EURUSD": 1.0,
     "GBPUSD": 1.0,
