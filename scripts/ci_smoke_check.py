@@ -5,6 +5,11 @@ Required env: ALPHAEDGE_CORE_BACKEND=compiled
 """
 
 import sys
+from pathlib import Path
+
+# Ensure repo root is on sys.path when script is invoked directly
+# (Python adds the script's directory, not cwd, to sys.path[0])
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from alphaedge.core import (
     get_backend_name,
