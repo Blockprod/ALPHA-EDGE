@@ -28,13 +28,14 @@ trading:
   pairs:
     - "EURUSD"
     - "GBPUSD"
-    - "USDJPY"   # WR=49.5%, PF=1.64 — best signal; re-testing with risk_pct=0.67%
-    # - "AUDUSD"  # WR=40.0%, PF=1.11 — marginal; excluded
+    - "USDJPY"   # WR=49.5%, PF=1.64 — best signal
+    # - "USDCHF"  # WR=47%, PF=1.70 — IS/OOS gap 33.3% — excluded 2026-04-01
+    # - "GBPJPY"  # 0 trades — carry filter blocks all signals 2026-04-01
+    # - "AUDUSD"  # WR=39.6%, PF=1.14 — no edge; IS/OOS gap 35.2% — excluded 2026-04-01
     # - "NZDUSD"  # 0 trades LONG-only — untested bidirectional
 
   # Risk per trade as % of account equity
-  # 0.67% = 2% global risk / 3 pairs — keeps total exposure constant vs 1%-on-2-pairs
-  # 1.0% on 3 pairs = 3% global exposure → OOS DD blowup demonstrated 2026-04-01
+  # 0.67% = 2% global risk / 3 pairs — keeps total exposure constant
   risk_pct: 0.67
 
   # Maximum daily loss before auto-shutdown (% of equity)
