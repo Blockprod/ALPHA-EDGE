@@ -1,0 +1,16 @@
+#!/bin/sh
+# ALPHAEDGE — pre-commit hook
+# 1. ruff --fix auto-corrects E501 and other fixable issues on staged .py files
+# 2. pre_commit_guard.py blocks .env / type:ignore violations
+
+set -e
+
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+
+if [ -n "$STAGED_PY" ]; then
+    .venv/Scripts/python.exe -m ruff check --fix $STAGED_PY
+    # Re-stage files that ruff may have auto-fixed
+    echo "$STAGED_PY" | xargs git add
+fi
+
+PYTHONUTF8=1 .venv/Scripts/python.exe scripts/pre_commit_guard.py

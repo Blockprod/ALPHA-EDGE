@@ -8,7 +8,7 @@
 # LAST UPDATED : 2026-03-07
 # ============================================================
 
-.PHONY: lint format typecheck pylint bandit test bench qa qa-strict build all clean web-dashboard
+.PHONY: lint format typecheck pylint bandit test bench qa qa-strict build all clean web-dashboard install-hooks
 
 # --- Linting + Formatting (Ruff) ---
 lint:
@@ -59,6 +59,12 @@ web-dashboard:
 
 # --- Clean artifacts (cross-platform) ---
 clean:
+
+# --- Install Git hooks ---
+install-hooks:
+	cp .github/hooks/pre-commit .git/hooks/pre-commit
+	python -c "import os, stat; p='.git/hooks/pre-commit'; os.chmod(p, os.stat(p).st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)"
+	@echo "✅ pre-commit hook installed"
 	python -c "import shutil, pathlib; [p.unlink() for p in pathlib.Path('.').rglob('*.pyd')]; [p.unlink() for p in pathlib.Path('.').rglob('*.so')]"
 	# WARNING: removes Cython-generated .c files. After clean, 'make build' requires
 	# Cython to be installed (pip install Cython==3.0.10) to regenerate them.
