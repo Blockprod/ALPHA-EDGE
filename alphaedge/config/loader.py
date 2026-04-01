@@ -221,6 +221,7 @@ class TradingConfig:
     carry_min_differential_pct: float = DEFAULT_CARRY_MIN_DIFFERENTIAL
     carry_rates: dict[str, float] = field(default_factory=dict)
     slippage_buffer_pips: float = DEFAULT_MARKET_SLIPPAGE_PIPS
+    sl_atr_multiplier: float = 0.0  # ATR-based SL: SL = sl_atr_multiplier × ATR(14) pips; 0 = use fixed min_range_pips
 
 
 # ------------------------------------------------------------------
@@ -459,6 +460,7 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
     cfg.slippage_buffer_pips = float(
         risk_section.get("slippage_buffer_pips", DEFAULT_MARKET_SLIPPAGE_PIPS)
     )
+    cfg.sl_atr_multiplier = float(risk_section.get("sl_atr_multiplier", 0.0))
     _validate_trading_config(cfg)
     return cfg
 

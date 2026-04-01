@@ -39,6 +39,9 @@ class TradeRecord:
     spread_cost_pips: float = 0.0
     sl_pips: float = 0.0  # SL distance in pips (set at entry, used for equity sizing)
     sample_type: str = ""  # 'IS', 'OOS', or ''
+    carry_pips: float = (
+        0.0  # overnight carry accrual (positive = earns, negative = pays)
+    )
 
 
 # ------------------------------------------------------------------

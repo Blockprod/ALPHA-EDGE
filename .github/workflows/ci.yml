@@ -87,21 +87,11 @@ jobs:
       - name: Build Cython extensions
         run: python setup.py build_ext --inplace
 
+      # Verify all 5 compiled modules import cleanly after build
       - name: Compiled core smoke check
         env:
           ALPHAEDGE_CORE_BACKEND: compiled
-        run: |
-          python << 'EOF'
-          import sys
-          from alphaedge.core import momentum_detector, order_manager, risk_manager, get_backend_name, get_fallback_modules
-          backend = get_backend_name()
-          fallback = get_fallback_modules()
-          print(f'Backend: {backend}')
-          if fallback:
-              print(f'Fallbacks: {fallback}')
-              sys.exit('Compiled modules expected — got stubs')
-          print('All Cython core modules loaded from compiled .so')
-          EOF
+        run: python scripts/ci_smoke_check.py
 
       - name: Tests + Coverage (Pytest)
         env:

@@ -173,6 +173,8 @@ def _simulate_trade_exit(
     trade: TradeRecord,
     bars: list[dict[str, Any]],
     entry_bar_idx: int,
+    carry_rates: dict[str, float] | None = None,
+    max_lookahead: int | None = None,
 ) -> TradeRecord:
     """
     Walk forward through bars to find the trade exit (NumPy-vectorized).
@@ -188,6 +190,11 @@ def _simulate_trade_exit(
         M1 bar data.
     entry_bar_idx : int
         Index of the entry bar.
+    carry_rates : dict | None
+        Central-bank rates for overnight carry accrual on multi-day holds.
+    max_lookahead : int | None
+        Maximum number of bars to search after entry. ``None`` = no limit
+        (default). Set to ``1`` to simulate ``session_end_action="close"``.
 
     Returns
     -------
@@ -195,8 +202,16 @@ def _simulate_trade_exit(
         The trade with exit fields populated.
     """
     future = bars[entry_bar_idx + 1 :]
+    if max_lookahead is not None:
+        future = future[:max_lookahead]
     if not future:
-        return _close_trade(trade, bars[-1]["close"], bars[-1], "timeout")
+        return _close_trade(
+            trade,
+            bars[entry_bar_idx]["close"],
+            bars[entry_bar_idx],
+            "timeout",
+            carry_rates,
+        )
 
     n = len(future)
     highs = np.fromiter((b["high"] for b in future), dtype=np.float64, count=n)
@@ -216,16 +231,22 @@ def _simulate_trade_exit(
     first_tp = int(tp_hits[0]) if len(tp_hits) else n
 
     if first_sl == n and first_tp == n:
-        return _close_trade(trade, future[-1]["close"], future[-1], "timeout")
+        return _close_trade(
+            trade, future[-1]["close"], future[-1], "timeout", carry_rates
+        )
     if first_sl < first_tp:
-        return _close_trade(trade, trade.stop_loss, future[first_sl], "loss")
+        return _close_trade(
+            trade, trade.stop_loss, future[first_sl], "loss", carry_rates
+        )
     if first_tp < first_sl:
-        return _close_trade(trade, trade.take_profit, future[first_tp], "win")
+        return _close_trade(
+            trade, trade.take_profit, future[first_tp], "win", carry_rates
+        )
     # Both hit on the same bar — use bar direction to decide which was first
     bar = future[first_sl]
     if _sl_hit_first(trade, bar):
-        return _close_trade(trade, trade.stop_loss, bar, "loss")
-    return _close_trade(trade, trade.take_profit, bar, "win")
+        return _close_trade(trade, trade.stop_loss, bar, "loss", carry_rates)
+    return _close_trade(trade, trade.take_profit, bar, "win", carry_rates)
 
 
 # ------------------------------------------------------------------
@@ -237,6 +258,8 @@ def _simulate_trade_exit_fast(
     entry_bar_idx: int,
     all_highs: np.ndarray,
     all_lows: np.ndarray,
+    carry_rates: dict[str, float] | None = None,
+    max_lookahead: int | None = None,
 ) -> TradeRecord:
     """
     Vectorized trade exit using pre-built bar arrays.
@@ -257,6 +280,11 @@ def _simulate_trade_exit_fast(
         float64 array of bar highs aligned with ``bars``.
     all_lows : np.ndarray
         float64 array of bar lows aligned with ``bars``.
+    carry_rates : dict | None
+        Central-bank rates for overnight carry accrual on multi-day holds.
+    max_lookahead : int | None
+        Maximum number of bars to search after entry. ``None`` = no limit
+        (default). Set to ``1`` to simulate ``session_end_action="close"``.
 
     Returns
     -------
@@ -264,11 +292,20 @@ def _simulate_trade_exit_fast(
         The trade with exit fields populated.
     """
     start = entry_bar_idx + 1
+    end = len(bars)
+    if max_lookahead is not None:
+        end = min(end, start + max_lookahead)
     if start >= len(bars):
-        return _close_trade(trade, bars[-1]["close"], bars[-1], "timeout")
+        return _close_trade(
+            trade,
+            bars[entry_bar_idx]["close"],
+            bars[entry_bar_idx],
+            "timeout",
+            carry_rates,
+        )
 
-    highs = all_highs[start:]  # O(1) NumPy view — no copy
-    lows = all_lows[start:]
+    highs = all_highs[start:end]  # O(1) NumPy view — no copy
+    lows = all_lows[start:end]
 
     if trade.direction == 1:  # Long
         sl_mask = lows <= trade.stop_loss
@@ -285,16 +322,24 @@ def _simulate_trade_exit_fast(
     first_tp = int(tp_hits[0]) if len(tp_hits) else n
 
     if first_sl == n and first_tp == n:
-        return _close_trade(trade, bars[-1]["close"], bars[-1], "timeout")
+        # No SL/TP hit within search window — close at last searched bar
+        timeout_bar = bars[end - 1]
+        return _close_trade(
+            trade, timeout_bar["close"], timeout_bar, "timeout", carry_rates
+        )
     if first_sl < first_tp:
-        return _close_trade(trade, trade.stop_loss, bars[start + first_sl], "loss")
+        return _close_trade(
+            trade, trade.stop_loss, bars[start + first_sl], "loss", carry_rates
+        )
     if first_tp < first_sl:
-        return _close_trade(trade, trade.take_profit, bars[start + first_tp], "win")
+        return _close_trade(
+            trade, trade.take_profit, bars[start + first_tp], "win", carry_rates
+        )
     # Both hit on the same bar
     bar = bars[start + first_sl]
     if _sl_hit_first(trade, bar):
-        return _close_trade(trade, trade.stop_loss, bar, "loss")
-    return _close_trade(trade, trade.take_profit, bar, "win")
+        return _close_trade(trade, trade.stop_loss, bar, "loss", carry_rates)
+    return _close_trade(trade, trade.take_profit, bar, "win", carry_rates)
 
 
 # ------------------------------------------------------------------
@@ -585,6 +630,7 @@ def _close_trade(
     exit_price: float,
     bar: dict[str, Any],
     outcome: str,
+    carry_rates: dict[str, float] | None = None,
 ) -> TradeRecord:
     """
     Populate exit fields on a trade record.
@@ -599,6 +645,9 @@ def _close_trade(
         The bar at exit.
     outcome : str
         'win', 'loss', or 'timeout'.
+    carry_rates : dict | None
+        Central-bank rates for overnight carry computation. If provided and
+        the trade was held multiple days, carry P&L is added to pnl_pips.
 
     Returns
     -------
@@ -610,9 +659,27 @@ def _close_trade(
     trade.exit_time = bar.get("datetime")
     trade.outcome = outcome
 
-    # P&L in pips (accounting for spread cost)
+    # Overnight carry accrual for multi-day positions
+    if carry_rates and trade.exit_time is not None:
+        entry_dt = trade.entry_time
+        exit_dt = trade.exit_time
+        if hasattr(entry_dt, "date") and hasattr(exit_dt, "date"):
+            days_held = (exit_dt.date() - entry_dt.date()).days
+        else:
+            days_held = 0
+        if days_held > 0:
+            trade.carry_pips = compute_overnight_carry(
+                pair=trade.pair,
+                direction=trade.direction,
+                days_held=days_held,
+                rates=carry_rates,
+                lot_size=1.0,
+                pip_size=pip_size,
+            )
+
+    # P&L in pips (accounting for spread cost and overnight carry)
     raw_pnl = (exit_price - trade.entry_price) * trade.direction
-    trade.pnl_pips = (raw_pnl / pip_size) - trade.spread_cost_pips
+    trade.pnl_pips = (raw_pnl / pip_size) - trade.spread_cost_pips + trade.carry_pips
     # pip_value for micro lot (1 000 units); for JPY pairs this is in JPY
     # — acceptable approximation for offline backtest without live FX rates
     pip_value = 1000.0 * pip_size

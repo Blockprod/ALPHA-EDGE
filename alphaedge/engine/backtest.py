@@ -307,6 +307,8 @@ def _build_trade_record(
     _all_lows: np.ndarray | None = None,
     partial_exit: bool = False,
     trailing_partial_exit: bool = False,
+    carry_rates: dict[str, float] | None = None,
+    session_end_action: str = "hold",
 ) -> TradeRecord:
     """Create a TradeRecord from a detected signal and simulate exit."""
     bar_time = bars[bar_index].get("datetime")
@@ -327,6 +329,7 @@ def _build_trade_record(
         spread_cost_pips=spread_cost,
         sl_pips=sl_pips,
     )
+    max_lookahead: int | None = 1 if session_end_action == "close" else None
     if _all_highs is not None and _all_lows is not None:
         if trailing_partial_exit:
             return _simulate_trailing_partial_exit_fast(
@@ -336,8 +339,10 @@ def _build_trade_record(
             return _simulate_partial_exit_fast(
                 trade, bars, bar_index, _all_highs, _all_lows
             )
-        return _simulate_trade_exit_fast(trade, bars, bar_index, _all_highs, _all_lows)
-    return _simulate_trade_exit(trade, bars, bar_index)
+        return _simulate_trade_exit_fast(
+            trade, bars, bar_index, _all_highs, _all_lows, carry_rates, max_lookahead
+        )
+    return _simulate_trade_exit(trade, bars, bar_index, carry_rates, max_lookahead)
 
 
 def _validate_backtest_signal(
@@ -394,6 +399,61 @@ def _validate_backtest_signal(
     }
 
 
+def _compute_regime_label(
+    daily_bars: list[dict[str, Any]],
+    bar_index: int,
+    pip_size: float,
+    period: int = 20,
+) -> str:
+    """Classify bar_index as 'high_vol' or 'low_vol' vs rolling True-Range median.
+
+    Returns 'unknown' when fewer than period//2 bars are available.
+    A session is labelled 'low_vol' when its TR is below 80% of the prior-N
+    bar median — indicating a ranging/choppy market where EMA signals are noisy.
+    """
+    if bar_index < 2:
+        return "unknown"
+    start = max(1, bar_index - period)
+    trs: list[float] = []
+    for i in range(start, bar_index + 1):
+        high = float(daily_bars[i]["high"])
+        low = float(daily_bars[i]["low"])
+        prev_close = float(daily_bars[i - 1]["close"])
+        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        trs.append(tr / pip_size)
+    if len(trs) < max(2, period // 2):
+        return "unknown"
+    current_tr = trs[-1]
+    median_tr = float(np.median(trs[:-1]))
+    if median_tr <= 0:
+        return "unknown"
+    return "low_vol" if current_tr < 0.80 * median_tr else "high_vol"
+
+
+def _compute_atr_pips(
+    daily_bars: list[dict[str, Any]],
+    bar_index: int,
+    pip_size: float,
+    period: int = 14,
+) -> float:
+    """Compute ATR(period) in pips using bars ending at bar_index - 1.
+
+    Uses True Range = max(H-L, |H-prev_C|, |L-prev_C|), plain SMA.
+    Returns 0.0 when insufficient bars are available.
+    """
+    start = max(1, bar_index - period)
+    trs: list[float] = []
+    for i in range(start, bar_index):
+        high = float(daily_bars[i]["high"])
+        low = float(daily_bars[i]["low"])
+        prev_close = float(daily_bars[i - 1]["close"])
+        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        trs.append(tr)
+    if not trs or pip_size <= 0:
+        return 0.0
+    return float(np.mean(trs)) / pip_size
+
+
 def _collect_daily_trades(
     pair: str,
     daily_bars: list[dict[str, Any]],
@@ -408,6 +468,8 @@ def _collect_daily_trades(
     *,
     news_filter: EconomicNewsFilter | None,
     min_sl_pips: float = 0.0,
+    carry_rates: dict[str, float] | None = None,
+    session_end_action: str = "hold",
 ) -> list[TradeRecord]:
     """Build validated trade records for one daily momentum signal."""
     trades: list[TradeRecord] = []
@@ -430,7 +492,21 @@ def _collect_daily_trades(
     # Build a synthetic entry from the daily signal
     direction: int = int(signal["direction"])
     entry_price: float = float(bar["close"])
-    pip_dist_sl = config.trading.rr_ratio * config.trading.min_range_pips
+
+    # SL distance: ATR-adaptive (institutional standard) or fixed fallback.
+    # ATR-based: SL = sl_atr_multiplier × ATR(14) pips. On EURUSD daily ATR ≈ 80 pips,
+    # the fixed 16-pip SL (rr_ratio × min_range_pips) is hit by noise ~65% of sessions.
+    atr_mult = config.trading.sl_atr_multiplier
+    if atr_mult > 0:
+        atr_pips = _compute_atr_pips(daily_bars, bar_index, pip_size)
+        pip_dist_sl = (
+            max(config.trading.min_range_pips, atr_pips * atr_mult)
+            if atr_pips > 0
+            else config.trading.rr_ratio * config.trading.min_range_pips
+        )
+    else:
+        pip_dist_sl = config.trading.rr_ratio * config.trading.min_range_pips
+
     if min_sl_pips > 0.0 and pip_dist_sl < min_sl_pips:
         return trades
     if direction == 1:
@@ -466,6 +542,8 @@ def _collect_daily_trades(
             _all_lows=_all_lows,
             partial_exit=config.trading.partial_exit,
             trailing_partial_exit=config.trading.trailing_partial_exit,
+            carry_rates=carry_rates,
+            session_end_action=session_end_action,
         )
     )
     return trades
@@ -510,11 +588,16 @@ def _backtest_pair(
 
     excluded_days = set(config.trading.excluded_days)
     max_trades_per_day = config.trading.max_trades_per_day
+    max_daily_loss_pct = config.trading.max_daily_loss_pct
+    starting_equity = config.trading.starting_equity
     _adx_rejections: int = 0
     _carry_rejections: int = 0
+    _regime_rejections: int = 0
     _day_limit_rejections: int = 0
+    _daily_loss_rejections: int = 0
     _bars_processed: int = 0
     _trades_by_day: dict[str, int] = {}
+    _daily_pnl_usd: dict[str, float] = {}  # daily loss circuit breaker
 
     for bar_index in range(lookback, len(daily_bars)):
         bar = daily_bars[bar_index]
@@ -548,6 +631,13 @@ def _backtest_pair(
                     _carry_rejections += 1
                     continue
 
+        # Regime gate: block ranging/choppy sessions (low_vol) for momentum signals
+        if config.regime_gate_enabled:
+            regime = _compute_regime_label(daily_bars, bar_index, pip_size)
+            if regime == config.regime_block_on:
+                _regime_rejections += 1
+                continue
+
         bar_trades = _collect_daily_trades(
             pair,
             daily_bars,
@@ -561,6 +651,8 @@ def _backtest_pair(
             _all_lows,
             news_filter=news_filter,
             min_sl_pips=min_sl_pips,
+            carry_rates=carry_rates,
+            session_end_action=config.trading.session_end_action,
         )
         if bar_trades:
             day_key = (
@@ -568,27 +660,42 @@ def _backtest_pair(
                 if bar_dt is not None and hasattr(bar_dt, "strftime")
                 else str(bar_index)
             )
+            # Daily loss circuit breaker — mirrors live check_daily_limit()
+            daily_loss = _daily_pnl_usd.get(day_key, 0.0)
+            max_loss_usd = starting_equity * max_daily_loss_pct / 100.0
+            if daily_loss <= -max_loss_usd:
+                _daily_loss_rejections += len(bar_trades)
+                continue
+
             _trades_by_day[day_key] = _trades_by_day.get(day_key, 0) + len(bar_trades)
             if _trades_by_day[day_key] - len(bar_trades) >= max_trades_per_day:
                 _day_limit_rejections += len(bar_trades)
                 continue
+
+            # Accumulate daily P&L for circuit breaker tracking
+            for t in bar_trades:
+                _daily_pnl_usd[day_key] = _daily_pnl_usd.get(day_key, 0.0) + t.pnl_usd
         trades.extend(bar_trades)
 
     logger.info(
-        "ALPHAEDGE BACKTEST: %s \u2014 %d bars, %d signals "
-        "(ADX rejected=%d, carry rejected=%d, day-limit rejected=%d, trades=%d)",
+        "ALPHAEDGE BACKTEST: {} \u2014 {} bars, {} signals "
+        "(ADX={}, carry={}, regime={}, day-limit={}, daily-loss={}, trades={})",
         pair,
         _bars_processed,
         _bars_processed - _adx_rejections,
         _adx_rejections,
         _carry_rejections,
+        _regime_rejections,
         _day_limit_rejections,
+        _daily_loss_rejections,
         len(trades),
     )
     rejection_counts = {
         "adx_gate": _adx_rejections,
         "carry_conflict": _carry_rejections,
+        "regime_gate": _regime_rejections,
         "day_limit": _day_limit_rejections,
+        "daily_loss_breaker": _daily_loss_rejections,
     }
     return trades, rejection_counts
 
