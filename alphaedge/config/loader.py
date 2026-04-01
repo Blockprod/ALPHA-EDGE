@@ -226,6 +226,9 @@ class TradingConfig:
     slippage_buffer_pips: float = DEFAULT_MARKET_SLIPPAGE_PIPS
     # 0 = use fixed min_range_pips; >0 = SL = multiplier × ATR(14)
     sl_atr_multiplier: float = 0.0
+    # ML filter — walk-forward logistic regression gate (default OFF)
+    ml_filter_enabled: bool = False
+    ml_filter_min_samples: int = 30
 
 
 # ------------------------------------------------------------------
@@ -468,6 +471,8 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         risk_section.get("slippage_buffer_pips", DEFAULT_MARKET_SLIPPAGE_PIPS)
     )
     cfg.sl_atr_multiplier = float(risk_section.get("sl_atr_multiplier", 0.0))
+    cfg.ml_filter_enabled = bool(section.get("ml_filter_enabled", False))
+    cfg.ml_filter_min_samples = int(section.get("ml_filter_min_samples", 30))
     _validate_trading_config(cfg)
     return cfg
 

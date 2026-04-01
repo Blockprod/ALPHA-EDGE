@@ -437,6 +437,32 @@ def _compute_regime_label(
     return "low_vol" if current_tr < 0.80 * median_tr else "high_vol"
 
 
+def _extract_signal_features(
+    signal: dict[str, Any],
+    bar_dt: Any,
+    all_atrs: np.ndarray,
+    bar_index: int,
+    carry_rates: dict[str, float] | None,
+    pair: str,
+) -> list[float]:
+    """Extract ML feature vector from a momentum signal (no lookahead)."""
+    adx = float(signal.get("adx", 0.0))
+    ema_fast = float(signal.get("ema_fast", 0.0))
+    ema_slow = float(signal.get("ema_slow", 1.0))
+    ema_delta_pct = (ema_fast - ema_slow) / ema_slow if ema_slow != 0.0 else 0.0
+    carry_diff = 0.0
+    if carry_rates and len(pair) >= 6:
+        carry_diff = abs(
+            carry_rates.get(pair[:3], 0.0) - carry_rates.get(pair[3:6], 0.0)
+        )
+    atr_now = float(all_atrs[bar_index]) if bar_index < len(all_atrs) else 0.0
+    atr_slice = all_atrs[max(0, bar_index - 20) : bar_index]
+    atr_avg = float(np.mean(atr_slice)) if len(atr_slice) > 0 else 0.0
+    atr_ratio = atr_now / atr_avg if atr_avg > 0.0 else 1.0
+    dow = bar_dt.weekday() if bar_dt is not None and hasattr(bar_dt, "weekday") else 0
+    return [adx, ema_delta_pct, carry_diff, atr_ratio, float(dow)]
+
+
 def _compute_atr_pips(
     daily_bars: list[dict[str, Any]],
     bar_index: int,
@@ -592,6 +618,10 @@ def _backtest_pair(
     # Pre-build bar arrays once
     _all_highs = np.array([b["high"] for b in daily_bars], dtype=np.float64)
     _all_lows = np.array([b["low"] for b in daily_bars], dtype=np.float64)
+    _all_atrs = np.array(
+        [_compute_atr_pips(daily_bars, i, pip_size) for i in range(len(daily_bars))],
+        dtype=np.float64,
+    )
 
     excluded_days = set(config.trading.excluded_days)
     max_trades_per_day = config.trading.max_trades_per_day
@@ -602,9 +632,20 @@ def _backtest_pair(
     _regime_rejections: int = 0
     _day_limit_rejections: int = 0
     _daily_loss_rejections: int = 0
+    _ml_rejections: int = 0
     _bars_processed: int = 0
     _trades_by_day: dict[str, int] = {}
     _daily_pnl_usd: dict[str, float] = {}  # daily loss circuit breaker
+
+    # ML filter: walk-forward logistic regression (trained on past realized trades)
+    _ml_filter: MLSignalFilter | None = None
+    _ml_features_buf: list[list[float]] = []
+    _ml_labels_buf: list[int] = []
+    _ml_min_samples: int = config.trading.ml_filter_min_samples
+    if config.trading.ml_filter_enabled:
+        from alphaedge.engine._experimental.ml_filter import MLSignalFilter
+
+        _ml_filter = MLSignalFilter()
 
     for bar_index in range(lookback, len(daily_bars)):
         bar = daily_bars[bar_index]
@@ -645,6 +686,18 @@ def _backtest_pair(
                 _regime_rejections += 1
                 continue
 
+        # ML filter gate — trained incrementally on past trades (no lookahead)
+        _ml_feats: list[float] | None = None
+        if _ml_filter is not None:
+            _ml_feats = _extract_signal_features(
+                signal, bar_dt, _all_atrs, bar_index, carry_rates, pair
+            )
+            if _ml_filter.is_trained:
+                _ml_pred = _ml_filter.predict(_ml_feats)
+                if not _ml_pred.passed:
+                    _ml_rejections += 1
+                    continue
+
         bar_trades = _collect_daily_trades(
             pair,
             daily_bars,
@@ -683,6 +736,13 @@ def _backtest_pair(
             for t in bar_trades:
                 _daily_pnl_usd[day_key] = _daily_pnl_usd.get(day_key, 0.0) + t.pnl_usd
         trades.extend(bar_trades)
+        # Feed realized outcomes back into ML training buffer (no lookahead)
+        if _ml_filter is not None and _ml_feats is not None and bar_trades:
+            for t in bar_trades:
+                _ml_features_buf.append(_ml_feats)
+                _ml_labels_buf.append(1 if t.outcome == "win" else 0)
+            if len(_ml_labels_buf) >= _ml_min_samples:
+                _ml_filter.train(_ml_features_buf, _ml_labels_buf)
 
     logger.info(
         "ALPHAEDGE BACKTEST: {} \u2014 {} bars, {} signals "
@@ -703,6 +763,7 @@ def _backtest_pair(
         "regime_gate": _regime_rejections,
         "day_limit": _day_limit_rejections,
         "daily_loss_breaker": _daily_loss_rejections,
+        "ml_filter": _ml_rejections,
     }
     return trades, rejection_counts
 
