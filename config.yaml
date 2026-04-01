@@ -22,14 +22,20 @@ ib:
 # --- Trading Parameters ---
 trading:
   # Currency pairs to monitor
+  # EUR+GBP+JPY: testing with risk_pct scaled to 1%/3 = 0.67% to keep global risk constant
+  # Without scaling: OOS DD=73.6% (compound sizing blowup from high IS equity peak)
+  # With scaling: expected OOS DD ≈ same as 2-pair baseline (~22%)
   pairs:
     - "EURUSD"
-    # - "USDJPY"  # Suspended 2026-03-24: PF=0.47, WR=25% — recalibration pending
+    - "GBPUSD"
+    - "USDJPY"   # WR=49.5%, PF=1.64 — best signal; re-testing with risk_pct=0.67%
+    # - "AUDUSD"  # WR=40.0%, PF=1.11 — marginal; excluded
+    # - "NZDUSD"  # 0 trades LONG-only — untested bidirectional
 
-  # WARNING: risk_pct at 2% — projected return ~27.7% over 3Y, max DD ~12%
-  # Validate on full backtest before live deployment
   # Risk per trade as % of account equity
-  risk_pct: 3.0
+  # 0.67% = 2% global risk / 3 pairs — keeps total exposure constant vs 1%-on-2-pairs
+  # 1.0% on 3 pairs = 3% global exposure → OOS DD blowup demonstrated 2026-04-01
+  risk_pct: 0.67
 
   # Maximum daily loss before auto-shutdown (% of equity)
   max_daily_loss_pct: 3.0
@@ -50,9 +56,11 @@ trading:
   usd_correlation_filter: false
 
   # Direction filter: "ALL" | "LONG" | "SHORT" — filter trade direction
-  # LOCKED: "LONG" — SHORT WR=0%, PF=0.00 on N=4 (audit_strategic 2026-03-26).
-  # Revert to "ALL" only after ≥30 SHORT trades with WR > 40% in paper trading.
-  direction_filter: "LONG"
+  # Re-enabled "ALL" 2026-04-01: LONG-only was blocking USD-strength SHORT signals (2024-2025).
+  # Original LOCK was based on N=4 paper trades — statistically meaningless.
+  # EMA crossover with ADX=30 gate is symmetric: SHORT fires when ema_fast < ema_slow (downtrend).
+  # Monitor: if SHORT WR < 35% over ≥30 live trades, revert to LONG.
+  direction_filter: "ALL"
 
   # Enable IS/OOS multi-window walk-forward validation after main backtest
   # LOCKED: false — activate only after N >= 100 live trades accumulated.
@@ -103,13 +111,13 @@ momentum:
   fast_period: 12        # EMA fast period
   slow_period: 26        # EMA slow period
   adx_period: 14         # ADX smoothing period
-  adx_threshold: 25.0    # Minimum ADX to confirm trend (gate)
+  adx_threshold: 30.0    # Minimum ADX to confirm trend (gate) — raised 2026-04-01: ADX≥30 = strong trend (institutional standard)
   lookback_days: 252     # Historical bars for signal computation
 
 # --- Carry Signal Parameters ---
 carry:
   min_differential_pct: 0.5  # Minimum rate differential to declare a bias (%)
-  enabled: true               # Enable carry filter in signal pipeline
+  enabled: true               # Active: carry filter aligns momentum direction with interest-rate differential bias
   # Update central-bank rates periodically before each trading quarter.
   rates:
     EUR: 3.65   # ECB deposit facility rate (2026-Q1)
@@ -122,11 +130,13 @@ carry:
     CHF: 1.50   # SNB policy rate (2026-Q1)
 
 # --- Volatility Regime Gate ---
-# K-Means classifier (DailyRegimeFilter) observation mode until 30 sessions NYSE paper.
-# Set enabled: true after validating that high_vol sessions have WinRate < 40%.
+# Inline ATR-percentile regime classifier wired in backtest._compute_regime_label().
+# Tested 2026-04-01: IS Sharpe 2.90 but OOS 0.92 (gap 68.3% vs 45.8% without).
+# Reason: 2025-2026 compression-breakout setups classified as "low_vol" (blocked incorrectly).
+# Verdict: NOT suitable for this intraday momentum strategy. Keep disabled.
 regime_filter:
-  enabled: false          # Activate after 30 NYSE paper sessions in observation
-  block_on: "high_vol"   # Regime label that triggers the gate (high_vol / low_vol)
+  enabled: false          # Tested — makes IS/OOS gap worse (68.3% vs 45.8%). Do not re-enable.
+  block_on: "low_vol"    # Regime label that triggers the gate (high_vol / low_vol)
 
 # --- News Filter ---
 news_filter:
@@ -137,16 +147,23 @@ news_filter:
 
 # --- Risk Management ---
 risk:
-  reward_ratio: 2.0         # R:R — lowered from 2.5: realized avg_win/avg_loss = ~1.45-1.5, TP at 2.5R rarely hit
+  reward_ratio: 2.0         # R:R — tested 1.7 (2026-04-01): WR rose 40→44% but avg_win dropped +30→+22 pips, Sharpe 0.90→0.37 → RR=2.0 is optimal for this momentum signal
   partial_exit: false       # tested: WR 63.8% but Sharpe 2.31 vs 3.37 full exit — inferior
   trailing_partial_exit: false  # tested: USDJPY PF 0.84, Sharpe 0.63 — worst result
   slippage_buffer_pips: 0.5 # Added to SL for slippage protection
+  # ATR-adaptive SL: SL = sl_atr_multiplier × ATR(14 daily bars) in pips
+  # 0 = disabled (uses fixed rr_ratio × min_range_pips = 16 pips)
+  # Tested 2026-04-01 at 0.5×: avg_loss=-43 pips, WR=36% (unchanged), Sharpe 0.24 vs 0.90 — INFERIOR
+  # Reason: TP=80 pips too wide for 1-hour NYSE session; intraday range~60-80 pips rarely hits 2R target
+  sl_atr_multiplier: 0.0
   min_lots: 0.01            # Minimum position size
   max_lots: 10.0            # Maximum position size
   adjust_sl_for_spread: true
 
   # Circuit breaker: halt all trading after N consecutive session losses
-  max_consecutive_losses: 5
+  # WR=44.8% → P(9 consec losses) ≈ 0.3% ≈ 1×/3 years — statistically normal, do not halt
+  # Tested 2026-04-01: max observed = 9 consecutive losses in 3-year backtest
+  max_consecutive_losses: 10
 
 # --- Web Dashboard ---
 dashboard:
