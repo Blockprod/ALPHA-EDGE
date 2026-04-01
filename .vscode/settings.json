@@ -1,4 +1,4 @@
-{
+﻿{
     // ============================================================
     // PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
     // FILE         : .vscode/settings.json
@@ -7,6 +7,16 @@
 
     // --- Python Environment ---
     "python.defaultInterpreterPath": ".venv/Scripts/python.exe",
+
+    // --- YAML Schema ---
+    "yaml.schemas": {
+        "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.yml"
+    },
+
+    // --- File Exclusions ---
+    "files.exclude": {
+        "**/chat-editing-snapshot-*": true
+    },
 
     // --- Formatting & Linting (Ruff) ---
     "[python]": {
@@ -52,7 +62,7 @@
         "**/.venv": true
     },
 
-    // --- Terminal: Activation auto venv ---
+    // --- Terminal: Auto-activation venv ---
     "terminal.integrated.profiles.windows": {
         "PowerShell": {
             "source": "PowerShell",

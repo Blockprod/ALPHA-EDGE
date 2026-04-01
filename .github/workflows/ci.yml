@@ -10,44 +10,36 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ----------------------------------------------------------------
-  # SAFETY GUARDS — run first, block everything else if they fail
-  # Catches the hardest-to-catch mistakes before any code runs.
-  # ----------------------------------------------------------------
   safety:
     name: Safety Guards
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # Hard stop: ALPHAEDGE_PAPER must never be false in committed files
       - name: Paper trading guard
         run: |
-          if git ls-files '*.py' '*.yaml' '*.yml' '*.env' '*.cfg' | grep -v ".github/workflows/ci.yml" | xargs grep -n "ALPHAEDGE_PAPER=false"; then
+          if git ls-files '*.py' '*.yaml' '*.yml' '*.env' '*.cfg' | grep -v ".github/workflows/ci.yml" | xargs grep -l "ALPHAEDGE_PAPER=false" 2>/dev/null; then
             echo "❌ ALPHAEDGE_PAPER=false found in committed files — BLOCKED"
             exit 1
           fi
           echo "✅ Paper trading guard passed"
 
-      # Hard stop: .env (credentials) must never be committed
       - name: No .env credentials guard
         run: |
-          if git ls-files | grep -E "^\.env$"; then
+          if git ls-files | grep -q "^\.env$"; then
             echo "❌ .env file committed — credentials leak risk — BLOCKED"
             exit 1
           fi
           echo "✅ No .env credentials committed"
 
-      # Hard stop: no # type: ignore shortcuts per project rules
-      - name: "No type-ignore guard"
+      - name: No type-ignore guard
         run: |
-          if grep -rn "# type: ignore" --include="*.py" alphaedge/; then
+          if grep -rn "# type: ignore" --include="*.py" alphaedge/ 2>/dev/null; then
             echo "❌ # type: ignore found — fix the root cause — BLOCKED"
             exit 1
           fi
           echo "✅ No type: ignore shortcuts found"
 
-      # Secret scanning — only on pushes where a before-SHA exists
       - name: Secret scanning (TruffleHog)
         if: github.event_name == 'pull_request'
         uses: trufflesecurity/trufflehog@main
@@ -57,9 +49,6 @@ jobs:
           head: ${{ github.event.pull_request.head.sha }}
           extra_args: --only-verified
 
-  # ----------------------------------------------------------------
-  # QA — lint, types, Cython build, smoke check, tests + coverage
-  # ----------------------------------------------------------------
   qa:
     name: QA (Python 3.11.9)
     needs: safety
@@ -70,13 +59,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Pin to exact version per project rules (Python 3.11.9 strictly)
       - name: Set up Python 3.11.9
         uses: actions/setup-python@v5
         with:
           python-version: "3.11.9"
 
-      # Cache pip to avoid re-downloading on every run
       - name: Cache pip
         uses: actions/cache@v4
         with:
@@ -91,26 +78,31 @@ jobs:
 
       - name: Lint + Format check (Ruff)
         run: |
-          python -m ruff check alphaedge/ --config pyproject.toml
+          python -m ruff check alphaedge/
           python -m ruff format --check alphaedge/
 
       - name: Type checking (Pyright)
         run: python -m pyright alphaedge/
 
-      # Build Cython → produces .so on Linux (equivalent of .pyd on Windows)
       - name: Build Cython extensions
         run: python setup.py build_ext --inplace
 
-      # Verify all 5 compiled modules import cleanly after build
       - name: Compiled core smoke check
         env:
           ALPHAEDGE_CORE_BACKEND: compiled
         run: |
-          python -c "import sys; from alphaedge.core import momentum_detector, order_manager, risk_manager, get_backend_name, get_fallback_modules; backend = get_backend_name(); fallback = get_fallback_modules(); print(f\"Backend: {backend}\"); fallback and (print(f\"Fallbacks: {fallback}\") or sys.exit(\"Compiled modules expected — got stubs\")); print(\"All Cython core modules loaded from compiled .so\")"
-          "
+          python << 'EOF'
+          import sys
+          from alphaedge.core import momentum_detector, order_manager, risk_manager, get_backend_name, get_fallback_modules
+          backend = get_backend_name()
+          fallback = get_fallback_modules()
+          print(f'Backend: {backend}')
+          if fallback:
+              print(f'Fallbacks: {fallback}')
+              sys.exit('Compiled modules expected — got stubs')
+          print('All Cython core modules loaded from compiled .so')
+          EOF
 
-      # Tests run with stubs (no IB Gateway needed in CI)
-      # Coverage threshold ≥80% on config/, utils/, core/ per project rules
       - name: Tests + Coverage (Pytest)
         env:
           ALPHAEDGE_CORE_BACKEND: stubs
@@ -123,7 +115,6 @@ jobs:
             --cov-fail-under=80 \
             -q
 
-      # Upload coverage XML so GitHub PRs can show coverage diff
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
