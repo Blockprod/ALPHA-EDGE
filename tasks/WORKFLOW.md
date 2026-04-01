@@ -43,6 +43,7 @@ Chaque audit suit le même pipeline en **3 étapes** :
 | 14 | [Modernisation Python](#14--modernisation-python-syntax) | Ruff · Pyright · syntaxe 3.11.9 · annotations | Agent |
 | 15 | [AI Best Practices](#15--ai-best-practices) | Hooks · Commands · MCP · Memory · Latency · Feature store | Agent |
 | 16 | [Fix Errors](#16--fix-errors) | Correction erreurs Ruff · Mypy · Pytest — pipeline P1 → P5 | Agent |
+| 17 | [Taille de Lot (Sizing)](#17--taille-de-lot-sizing) | Formule lot size · Compounding · Asymétrie paires · Pistes ATR-scaling · Kelly | Agent |
 
 ---
 
@@ -466,4 +467,31 @@ Vérifie que chaque correction est complète.
 ```
 #file:tasks/audits/fix_errors/P5- FINAL QA_prompt_alphaedge.md
 Run final make qa · vérification ALPHAEDGE_PAPER=true · résumé final.
+```
+
+---
+
+## `17 · TAILLE DE LOT (SIZING)`
+
+> Formule lot size · Compounding sur equity · Asymétrie paires (GBPUSD PF=1.25 vs EURUSD PF=1.80) · Exchange rate USDJPY · Pistes : sizing différencié · ATR-scaling du risk_pct · Half-Kelly · Drawdown-scaled sizing
+> **Baseline verrouillé** : Sharpe=2.90 · OOS=2.59 · MaxDD=9.00% · 579 trades
+
+**Produit A** : `tasks/audits/resultats/audit_lot_sizing_alphaedge.md`
+
+**A — Audit**
+```
+#file:tasks/audits/methode/audit_lot_sizing_prompt.md
+Lance cet audit sur le workspace.
+```
+
+**B — Plan d'action**
+```
+#file:tasks/corrections/generate_action_plan_prompt.md
+Génère le plan d'action depuis l'audit disponible.
+```
+
+**C — Exécution**
+```
+#file:tasks/corrections/execute_corrections_prompt.md
+Démarre l'exécution du plan d'action disponible.
 ```
