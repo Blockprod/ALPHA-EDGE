@@ -38,6 +38,21 @@ trading:
   # 0.67% = 2% global risk / 3 pairs — keeps total exposure constant
   risk_pct: 0.67
 
+  # Per-pair risk override (empty = use global risk_pct for all pairs)
+  # GBPUSD reduced to 0.50%: PF=1.25, 2.4× less efficient — primary MaxDD driver
+  # EURUSD raised to 0.80%: PF=1.80, $46.3/trade — best efficiency
+  # Total global risk: 0.80+0.50+0.70 = 2.00% (unchanged vs 3×0.67%)
+  risk_pct_by_pair:
+    EURUSD: 0.80
+    GBPUSD: 0.50
+    USDJPY: 0.70
+
+  # ATR-scaling reference pips by pair (empty dict = ATR-scaling disabled)
+  # risk_pct_eff = risk_pct * min(1.0, max(0.5, ATR_ref / ATR_current))
+  # When ATR_current > ATR_ref: risk is reduced (up to 50% minimum)
+  # ATR-scaling désactivé (coût −16% P&L pour −0.89pp OOS DD — ratio défavorable)
+  atr_ref_pips_by_pair: {}
+
   # Maximum daily loss before auto-shutdown (% of equity)
   max_daily_loss_pct: 3.0
 
@@ -69,6 +84,12 @@ trading:
   walk_forward_train_months: 18
   walk_forward_test_months: 3
   walk_forward_step_months: 3
+
+  # ML signal filter — logistic regression on 5 features (ADX, EMA delta, carry diff, ATR ratio, weekday)
+  # Walk-forward inline training: model retrained after each realized trade (min_samples required)
+  # Set ml_filter_enabled: true to activate; compare OOS Sharpe vs baseline (2.59)
+  ml_filter_enabled: false   # OFF — set to true to enable walk-forward ML gating
+  ml_filter_min_samples: 30  # Minimum trades before model starts filtering
 
   # Maximum acceptable spread in pips (skip trade if exceeded)
   max_spread_pips: 2.0
@@ -157,6 +178,9 @@ risk:
   # 0 = disabled (uses fixed rr_ratio × min_range_pips = 16 pips)
   # Tested 2026-04-01 at 0.5×: avg_loss=-43 pips, WR=36% (unchanged), Sharpe 0.24 vs 0.90 — INFERIOR
   # Reason: TP=80 pips too wide for 1-hour NYSE session; intraday range~60-80 pips rarely hits 2R target
+  # Decoupled SL/TP (tested 2026-04-01): fixed TP=rr²×min_range=32p + ATR SL → INFERIOR
+  # When ATR SL > TP (e.g. USDJPY ATR~100p × 0.3 = 30p > ... but TP=32p barely works),
+  # order manager rejects trades with R:R < min_rr (1.8). USDJPY 0 trades, EURUSD 25 only.
   sl_atr_multiplier: 0.0
   min_lots: 0.01            # Minimum position size
   max_lots: 10.0            # Maximum position size

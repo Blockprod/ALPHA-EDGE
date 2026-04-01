@@ -27,6 +27,7 @@ from alphaedge.config.constants import (
     MIN_LOTS,
     PIP_SIZES,
     PROJECT_TITLE,
+    REFERENCE_FX_RATE,
 )
 from alphaedge.config.loader import AppConfig, load_config
 from alphaedge.engine.backtest_export import export_results_csv, plot_equity_curve
@@ -258,6 +259,8 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
         starting_equity,
         config.trading.risk_pct,
         config.trading.max_lot_size,  # _max_lot_size: kept for call-site compatibility
+        risk_pct_by_pair=config.trading.risk_pct_by_pair or None,
+        atr_ref_pips_by_pair=config.trading.atr_ref_pips_by_pair or None,
     )
 
     # Overall stats
@@ -362,6 +365,12 @@ def _validate_backtest_signal(
     order_mod: Any,
 ) -> dict[str, Any] | None:
     """Apply live-like sizing and bracket validation before simulating a trade."""
+    # C-02: use REFERENCE_FX_RATE instead of 0.0 so USDJPY pip_value is correct.
+    # This is a gate-only check — P&L is always overridden by _apply_equity_sizing.
+    # C-03: starting_equity is fixed (not the running equity). Diverges from live
+    # (position_manager uses current_equity). Dormant: equity never falls below
+    # starting_equity in observed runs. Full fix deferred — requires equity tracker
+    # threaded through _collect_daily_trades.
     pos_result: dict[str, Any] = risk_mod.calculate_position_size(
         account_equity=config.trading.starting_equity,
         risk_pct=config.trading.risk_pct,
@@ -371,7 +380,7 @@ def _validate_backtest_signal(
         lot_type=config.trading.lot_type,
         min_lots=MIN_LOTS,
         max_lots=config.trading.max_lot_size,
-        exchange_rate=0.0,
+        exchange_rate=REFERENCE_FX_RATE.get(pair, 1.0),
     )
     if not pos_result.get("is_valid", False):
         return None
@@ -393,6 +402,10 @@ def _validate_backtest_signal(
     if not bracket.get("is_valid", False):
         return None
 
+    # C-04: lot_size is returned for API consistency but is not stored in TradeRecord
+    # and is not used in _simulate_trade_exit (which uses 1 micro lot implicitly).
+    # P&L is driven entirely by _apply_equity_sizing. If a USD P&L variant or
+    # ATR-scaling (Piste 3.3) is implemented, store lot_size in TradeRecord then.
     return {
         "signal": {
             **signal,
@@ -735,6 +748,10 @@ def _backtest_pair(
             # Accumulate daily P&L for circuit breaker tracking
             for t in bar_trades:
                 _daily_pnl_usd[day_key] = _daily_pnl_usd.get(day_key, 0.0) + t.pnl_usd
+        # Store ATR at entry for each trade (used by ATR-scaling in _apply_equity_sizing)
+        atr_at_bar = float(_all_atrs[bar_index])
+        for t in bar_trades:
+            t.atr_pips = atr_at_bar
         trades.extend(bar_trades)
         # Feed realized outcomes back into ML training buffer (no lookahead)
         if _ml_filter is not None and _ml_feats is not None and bar_trades:
@@ -746,7 +763,7 @@ def _backtest_pair(
 
     logger.info(
         "ALPHAEDGE BACKTEST: {} \u2014 {} bars, {} signals "
-        "(ADX={}, carry={}, regime={}, day-limit={}, daily-loss={}, trades={})",
+        "(ADX={}, carry={}, regime={}, day-limit={}, daily-loss={}, ml={}, trades={})",
         pair,
         _bars_processed,
         _bars_processed - _adx_rejections,
@@ -755,6 +772,7 @@ def _backtest_pair(
         _regime_rejections,
         _day_limit_rejections,
         _daily_loss_rejections,
+        _ml_rejections,
         len(trades),
     )
     rejection_counts = {

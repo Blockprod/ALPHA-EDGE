@@ -42,6 +42,7 @@ class TradeRecord:
     carry_pips: float = (
         0.0  # overnight carry accrual (positive = earns, negative = pays)
     )
+    atr_pips: float = 0.0  # ATR(14) in pips at entry bar — used by ATR-scaling sizing
 
 
 # ------------------------------------------------------------------

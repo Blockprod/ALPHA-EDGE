@@ -229,6 +229,11 @@ class TradingConfig:
     # ML filter — walk-forward logistic regression gate (default OFF)
     ml_filter_enabled: bool = False
     ml_filter_min_samples: int = 30
+    # Per-pair risk % override — empty dict falls back to global risk_pct
+    risk_pct_by_pair: dict[str, float] = field(default_factory=dict)
+    # ATR-scaling reference pips by pair — empty dict disables ATR-scaling
+    # Formula: risk_pct_eff = risk_pct * min(1.0, max(0.5, ATR_ref / ATR_current))
+    atr_ref_pips_by_pair: dict[str, float] = field(default_factory=dict)
 
 
 # ------------------------------------------------------------------
@@ -473,6 +478,12 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
     cfg.sl_atr_multiplier = float(risk_section.get("sl_atr_multiplier", 0.0))
     cfg.ml_filter_enabled = bool(section.get("ml_filter_enabled", False))
     cfg.ml_filter_min_samples = int(section.get("ml_filter_min_samples", 30))
+    cfg.risk_pct_by_pair = {
+        k: float(v) for k, v in section.get("risk_pct_by_pair", {}).items()
+    }
+    cfg.atr_ref_pips_by_pair = {
+        k: float(v) for k, v in section.get("atr_ref_pips_by_pair", {}).items()
+    }
     _validate_trading_config(cfg)
     return cfg
 
@@ -495,6 +506,11 @@ def _validate_trading_config(cfg: TradingConfig) -> None:
         )
     if not 0.0 < cfg.risk_pct <= 10.0:
         raise ValueError(f"risk_pct must be in (0, 10], got {cfg.risk_pct}")
+    for _pair, _pct in cfg.risk_pct_by_pair.items():
+        if not (0.0 < _pct <= 10.0):
+            raise ValueError(
+                f"risk_pct_by_pair[{_pair!r}] = {_pct} — must be in (0, 10]"
+            )
     if cfg.rr_ratio <= 0.0:
         raise ValueError(f"rr_ratio must be > 0, got {cfg.rr_ratio}")
     if cfg.max_daily_loss_pct <= 0.0:

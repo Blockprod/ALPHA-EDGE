@@ -289,6 +289,8 @@ def _apply_equity_sizing(
     starting_equity: float,
     risk_pct: float,
     _max_lot_size: float = 10.0,  # kept for call-site compatibility
+    risk_pct_by_pair: dict[str, float] | None = None,
+    atr_ref_pips_by_pair: dict[str, float] | None = None,
 ) -> None:
     """
     Recompute pnl_usd using compound fixed-fraction position sizing.
@@ -312,7 +314,16 @@ def _apply_equity_sizing(
     equity = starting_equity
     for t in trades:
         if t.sl_pips > 0:
-            risk_usd = equity * risk_pct / 100.0
+            pct = (risk_pct_by_pair or {}).get(t.pair, risk_pct)
+            # ATR-scaling: reduce risk when ATR is elevated vs reference
+            # Formula: pct_eff = pct * min(1.0, max(0.5, ATR_ref / ATR_current))
+            # Caps: never increase above configured pct; never reduce below 50%
+            if atr_ref_pips_by_pair and t.atr_pips > 0.0:
+                atr_ref = atr_ref_pips_by_pair.get(t.pair, 0.0)
+                if atr_ref > 0.0:
+                    atr_scale = min(1.0, max(0.5, atr_ref / t.atr_pips))
+                    pct = pct * atr_scale
+            risk_usd = equity * pct / 100.0
             t.pnl_usd = risk_usd * (t.pnl_pips / t.sl_pips)
         else:
             t.pnl_usd = 0.0
