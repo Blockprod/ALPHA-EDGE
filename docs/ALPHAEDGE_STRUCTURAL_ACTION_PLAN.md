@@ -1,4 +1,4 @@
-﻿# ⚡ ALPHAEDGE — STRUCTURAL ACTION PLAN
+# ⚡ ALPHAEDGE — STRUCTURAL ACTION PLAN
 
 > **Source**: Audit structurel du 2026-03-09 (6 dimensions : A→F)
 > **Score de départ**: 5.2 / 10 — *Structurally noisy. Strong bones, poor hygiene.*
@@ -31,7 +31,7 @@
 ### P0-01 — Supprimer `ALPHAEDGE_ACTION_PLAN.md` du tracking Git
 
 **Dimension** : [F] Sécurité
-**Risque** : Contenu propriétaire (stratégie FCR) potentiellement exposé dans l'historique Git
+**Risque** : Contenu propriétaire (stratégie legacy range) potentiellement exposé dans l'historique Git
 
 **Problème** :
 Le fichier `ALPHAEDGE_ACTION_PLAN.md` est listé dans `.gitignore` sous "Proprietary / Sensitive", mais ajouter un fichier à `.gitignore` après un premier commit **ne le retire pas de l'historique**. Il reste indexé et visible pour quiconque a accès au remote.
@@ -264,7 +264,7 @@ Il n'existe aucun fichier d'entrée AI. Un LLM lisant le repo doit traverser 3 f
 ```markdown
 ## Project: ALPHAEDGE — Momentum+Carry Forex Trading Bot
 - Stack: Python 3.11.9 / Cython 3.0 / ib_insync / loguru / Rich / vectorbt
-- Architecture: IB Gateway → data_feed → [fcr_detector/gap_detector/engulfing_detector].pyx
+- Architecture: IB Gateway → data_feed → [momentum_detector/gap_detector/engulfing_detector].pyx
   → risk_manager.pyx → order_manager.pyx → broker.py
 - Core rule: core/ modules are Cython (.pyx) — ALWAYS run `make build` after editing
 - Safety rule: ALPHAEDGE_PAPER=true must remain default in .env.example

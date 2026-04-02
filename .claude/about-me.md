@@ -1,8 +1,8 @@
-﻿# Profil utilisateur — AlphaEdge
+# Profil utilisateur — AlphaEdge
 
 ## Rôle
 - Trader indépendant + développeur Python solo
-- Expertise : Cython 3.0, IB Gateway, stratégies quantitatives (FCR / Momentum / Carry)
+- Expertise : Cython 3.0, IB Gateway, stratégies quantitatives (legacy range / Momentum / Carry)
 - Timezone : Europe/Paris (CET/CEST — DST-aware)
 
 ## Langue

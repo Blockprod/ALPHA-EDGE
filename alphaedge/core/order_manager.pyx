@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/core/order_manager.pyx
 # DESCRIPTION  : Cython order management — entry, SL, TP brackets
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -9,7 +9,7 @@
 # ============================================================
 # cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True
 
-"""ALPHAEDGE — FCR Forex Trading Bot: bracket order builder and validator."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: bracket order builder and validator."""
 
 from libc.math cimport fabs
 

@@ -58,7 +58,7 @@ logger = get_logger()
 _MIN_SHARPE_IMPROVEMENT: float = 1.05
 
 # Baseline Sharpe to beat — UPDATE after first Momentum+Carry backtest
-# (3.37 is the FCR baseline; Momentum+Carry OOS target is Sharpe >= 0.8)
+# (3.37 is the legacy baseline; Momentum+Carry OOS target is Sharpe >= 0.8)
 _baseline_sharpe: float = 3.37
 
 

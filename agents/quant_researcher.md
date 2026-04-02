@@ -1,4 +1,4 @@
-﻿# ALPHAEDGE — Agent : Quant Researcher
+# ALPHAEDGE — Agent : Quant Researcher
 
 Checklist anti-biais et protocole de validation statistique.
 
@@ -14,7 +14,7 @@ Valider que toute modification de la stratégie (modules `core/*.pyx`) ou de ses
 
 ### Look-ahead bias
 
-- [ ] Les données FCR utilisent uniquement les bougies **closes** au moment du signal
+- [ ] Les données legacy range utilisent uniquement les bougies **closes** au moment du signal
 - [ ] `engulfing_detector` reçoit uniquement les bougies antérieures à la bougie courante
 - [ ] La division IS/OOS est faite **avant** tout calcul de paramètre
 

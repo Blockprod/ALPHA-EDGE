@@ -1,4 +1,4 @@
-﻿# ALPHAEDGE — Agent : Dev Engineer
+# ALPHAEDGE — Agent : Dev Engineer
 
 Procédure d'ajout de fonctionnalité et pipeline CI.
 
@@ -130,6 +130,6 @@ state matches a previous version.
 
 | Type | Pattern | Exemple |
 |------|---------|---------|
-| Happy path | `test_<module>_<feature>.py` | `test_fcr_detector_detect.py` |
+| Happy path | `test_<module>_<feature>.py` | `test_momentum_detector_detect.py` |
 | Edge case | `test_<module>_<scenario>.py` | `test_risk_manager_daily.py` |
 | Validation | `test_<module>_validation.py` | `test_order_manager_validation.py` |

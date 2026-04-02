@@ -44,7 +44,7 @@ def python_func(a: float, b: float) -> float:
 
 ```python
 # Dans le .pyi — utiliser les types Python natifs
-def detect_fcr(
+def detect_momentum(
     candles_data: list[dict],    # pas list[dict[str, float]]
     min_range_pips: float,
     pip_size: float,

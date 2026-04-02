@@ -1,4 +1,4 @@
-﻿# ALPHAEDGE — Claude Context
+# ALPHAEDGE — Claude Context
 # Pipeline complet · Modules · Contraintes
 
 ---
@@ -8,7 +8,7 @@
 ```
 IB Gateway (port 4002 paper / 4001 live)
   └─► data_feed.py           — reqHistoricalData M5 + M1 (ib_insync)
-        └─► fcr_detector.pyx  — détecte la range FCR sur M5 (lookback=6 bougies)
+        └─► momentum_detector.pyx  — détecte la range legacy range sur M5 (lookback=6 bougies)
               si None → STOP
         └─► gap_detector.pyx  — filtre ATR spike (atr_period=14, min_atr_ratio=2.0)
               si detected=False → STOP
@@ -30,7 +30,7 @@ IB Gateway (port 4002 paper / 4001 live)
 
 | Module | Langage | Responsabilité |
 |--------|---------|----------------|
-| `core/fcr_detector.pyx` | Cython | Détection range FCR sur M5 |
+| `core/momentum_detector.pyx` | Cython | Détection range legacy range sur M5 |
 | `core/gap_detector.pyx` | Cython | Filtre ATR spike / volatilité M1 |
 | `core/engulfing_detector.pyx` | Cython | Signal engulfing M1 + qualité |
 | `core/risk_manager.pyx` | Cython | Sizing position + daily loss limit |
@@ -72,8 +72,8 @@ IB Gateway (port 4002 paper / 4001 live)
 | Max daily loss | 3.0% | `DEFAULT_MAX_DAILY_LOSS_PCT` |
 | Max trades/session | 2 | `DEFAULT_MAX_TRADES_PER_SESSION` |
 | Max spread | 2.0 pips | `DEFAULT_MAX_SPREAD_PIPS` |
-| FCR min range | 8.0 pips | `DEFAULT_MIN_RANGE_PIPS` |
-| FCR lookback | 6 bougies M5 | `DEFAULT_FCR_LOOKBACK` |
+| legacy range min range | 8.0 pips | `DEFAULT_MIN_RANGE_PIPS` |
+| legacy range lookback | 6 bougies M5 | `DEFAULT_legacy range_LOOKBACK` |
 | ATR period | 14 | `DEFAULT_ATR_PERIOD` |
 | ATR min ratio | 2.0× | `DEFAULT_MIN_ATR_RATIO` |
 | Volume ratio min | 1.0× | `DEFAULT_MIN_VOLUME_RATIO` |
@@ -88,7 +88,7 @@ IB Gateway (port 4002 paper / 4001 live)
 ## Ce qui ne doit PAS changer sans benchmark
 
 - `DEFAULT_RR_RATIO` : backtest de référence Sharpe ≥ baseline
-- `DEFAULT_MIN_RANGE_PIPS` : sensibilité détection FCR mesurée
+- `DEFAULT_MIN_RANGE_PIPS` : sensibilité détection legacy range mesurée
 - `DEFAULT_ATR_PERIOD` + `DEFAULT_MIN_ATR_RATIO` : filtre volatilité calibré
 - Toute logique dans `core/*.pyx` : stratégie propriétaire
 

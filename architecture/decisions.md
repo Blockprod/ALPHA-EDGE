@@ -1,4 +1,4 @@
-﻿# ALPHAEDGE — Architecture Decisions
+# ALPHAEDGE — Architecture Decisions
 
 Enregistrement des décisions architecturales (ADR) du projet.
 
@@ -9,9 +9,9 @@ Enregistrement des décisions architecturales (ADR) du projet.
 **Date** : 2026-01
 **Statut** : ✅ Accepté
 
-**Contexte** : Les fonctions de détection FCR, gap et engulfing sont appelées sur chaque barre M1 (potentiellement 60 appels/heure par paire). La latence minimise l'écart entre signal et exécution.
+**Contexte** : Les fonctions de détection legacy range, gap et engulfing sont appelées sur chaque barre M1 (potentiellement 60 appels/heure par paire). La latence minimise l'écart entre signal et exécution.
 
-**Décision** : Implémenter `fcr_detector`, `gap_detector`, `engulfing_detector`, `risk_manager`, `order_manager` en Cython 3.0 (`.pyx`).
+**Décision** : Implémenter `momentum_detector`, `gap_detector`, `engulfing_detector`, `risk_manager`, `order_manager` en Cython 3.0 (`.pyx`).
 
 **Conséquences** :
 - `make build` obligatoire après tout changement `.pyx`
@@ -40,7 +40,7 @@ Enregistrement des décisions architecturales (ADR) du projet.
 **Date** : 2026-01
 **Statut** : ✅ Accepté
 
-**Contexte** : Chaque étape du pipeline (FCR → gap → engulfing → sizing → ordre) est une condition nécessaire. Un signal partiel ne doit jamais conduire à un ordre.
+**Contexte** : Chaque étape du pipeline (legacy range → gap → engulfing → sizing → ordre) est une condition nécessaire. Un signal partiel ne doit jamais conduire à un ordre.
 
 **Décision** : Chaque fonction de détection retourne `None` / `detected: False` / `is_valid: False` si la condition n'est pas remplie. L'orchestrateur (`signal_pipeline.py`) s'arrête immédiatement à la première valeur négative.
 
@@ -59,12 +59,12 @@ Enregistrement des décisions architecturales (ADR) du projet.
 
 ---
 
-## ADR-005 — Suppression modules FCR legacy (fcr_detector, gap_detector, engulfing_detector)
+## ADR-005 — Suppression modules legacy range legacy (momentum_detector, gap_detector, engulfing_detector)
 
 **Date** : 2026-03-27
 **Statut** : ✅ Accepté
 
-**Contexte** : La stratégie a été migrée de FCR (Failed Candle Range, M1/M5) vers Momentum+Carry (Daily/H4) lors de l'audit #13. Les trois modules `fcr_detector.pyx`, `gap_detector.pyx`, `engulfing_detector.pyx` étaient devenus du code mort : non listés dans `setup.py`, sans stubs dans `_stubs/`, non importés dans `core/__init__.py`.
+**Contexte** : La stratégie a été migrée de legacy range (Failed Candle Range, M1/M5) vers Momentum+Carry (Daily/H4) lors de l'audit #13. Les trois modules `momentum_detector.pyx`, `gap_detector.pyx`, `engulfing_detector.pyx` étaient devenus du code mort : non listés dans `setup.py`, sans stubs dans `_stubs/`, non importés dans `core/__init__.py`.
 
 **Décision** : Suppression des 6 fichiers (`.pyx` + `.c` générés) le 2026-03-27 (audit #12 — finding M-03). Les 3 modules actifs restants sont `momentum_detector`, `risk_manager`, `order_manager`.
 

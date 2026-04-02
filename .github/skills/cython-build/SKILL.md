@@ -16,7 +16,7 @@ It triggers a full recompilation — slow and irreversible mid-session.
 
 | Module | `.pyx` source | Python stub |
 |--------|--------------|-------------|
-| FCR detection | `core/fcr_detector.pyx` | `core/_stubs/fcr_detector.py` |
+| legacy range detection | `core/momentum_detector.pyx` | `core/_stubs/momentum_detector.py` |
 | Gap / ATR filter | `core/gap_detector.pyx` | `core/_stubs/gap_detector.py` |
 | Engulfing signal | `core/engulfing_detector.pyx` | `core/_stubs/engulfing_detector.py` |
 | Position sizing | `core/risk_manager.pyx` | `core/_stubs/risk_manager.py` |
@@ -86,12 +86,12 @@ cython: <description of change>
 
 ## Example — Add a field to a `cdef struct`
 
-The real modules use `cdef struct`, not `cdef class`. Example: add a `candle_count` field to `FCRResult` in `fcr_detector.pyx`.
+The real modules use `cdef struct`, not `cdef class`. Example: add a `candle_count` field to `legacy rangeResult` in `momentum_detector.pyx`.
 
 **Step 1 — `.pyx`:**
 ```cython
-# alphaedge/core/fcr_detector.pyx
-cdef struct FCRResult:
+# alphaedge/core/momentum_detector.pyx
+cdef struct legacy rangeResult:
     bint detected
     double range_high
     double range_low
@@ -100,7 +100,7 @@ cdef struct FCRResult:
     int candle_count       # ← new field
 ```
 
-**Step 2 — stub** (`core/_stubs/fcr_detector.py`): add `"candle_count": int` to the returned `dict` in `detect_fcr()`.
+**Step 2 — stub** (`core/_stubs/momentum_detector.py`): add `"candle_count": int` to the returned `dict` in `detect_momentum()`.
 
 **Step 3:**
 ```powershell

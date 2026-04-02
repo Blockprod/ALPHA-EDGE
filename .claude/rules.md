@@ -1,4 +1,4 @@
-﻿# ALPHAEDGE — Claude Rules
+# ALPHAEDGE — Claude Rules
 # Règles de modification pour agents Claude
 
 ---
@@ -24,7 +24,7 @@
 1. Sécurité capital    → risk_manager.pyx · session_lifecycle.py
 2. Gestion du risque   → constants.py · loader.py
 3. Exécution ordres    → order_manager.pyx · broker.py
-4. Signal de trading   → fcr_detector.pyx · gap_detector.pyx · engulfing_detector.pyx
+4. Signal de trading   → momentum_detector.pyx · gap_detector.pyx · engulfing_detector.pyx
 5. Backtest / analyse  → backtest*.py
 6. Dashboard / logs    → dashboard.py · web_dashboard.py · logger.py
 ```

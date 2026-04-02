@@ -1,4 +1,4 @@
-﻿# ⚡ ALPHAEDGE — MASTER AUDIT
+# ⚡ ALPHAEDGE — MASTER AUDIT
 
 > **Date**: 2026-03-07
 > **Reviewer**: Senior Quant Developer / Risk Architect
@@ -39,7 +39,7 @@
 
 | Layer | Role | Modules | Assessment |
 |-------|------|---------|------------|
-| **Cython Core** | Low-latency signal engine | `fcr_detector.pyx`, `gap_detector.pyx`, `engulfing_detector.pyx`, `order_manager.pyx`, `risk_manager.pyx` | ✅ Clean separation — all 5 modules are self-contained with no inter-module imports |
+| **Cython Core** | Low-latency signal engine | `momentum_detector.pyx`, `gap_detector.pyx`, `engulfing_detector.pyx`, `order_manager.pyx`, `risk_manager.pyx` | ✅ Clean separation — all 5 modules are self-contained with no inter-module imports |
 | **Python Engine** | Orchestration & I/O | `strategy.py`, `broker.py`, `data_feed.py`, `backtest.py`, `dashboard.py` | ✅ Clear responsibility boundaries |
 | **Config** | Constants & YAML loading | `constants.py`, `loader.py` | ✅ Centralized, validated |
 | **Utils** | Cross-cutting concerns | `logger.py`, `timezone.py` | ✅ Minimal, focused |
@@ -47,7 +47,7 @@
 **Architecture Pattern**: The project follows a **signal pipeline architecture**:
 
 ```
-IB Gateway → data_feed.py → [M5 bars] → fcr_detector.pyx → FCR range
+IB Gateway → data_feed.py → [M5 bars] → momentum_detector.pyx → legacy range range
                            → [M1 bars] → gap_detector.pyx → ATR spike
                                         → engulfing_detector.pyx → Signal
                                         → risk_manager.pyx → Position sizing
@@ -59,11 +59,11 @@ IB Gateway → data_feed.py → [M5 bars] → fcr_detector.pyx → FCR range
 - Clean Cython ↔ Python boundary: Cython modules expose pure `def` functions returning Python `dict`, no leaked C types
 - No circular imports — dependency graph is strictly top-down
 - Each Cython module uses `cdef struct` for internal computation and serializes to `dict` at the boundary
-- Strategy orchestrator (`FCRStrategy`) cleanly coordinates all modules through a single entry point
+- Strategy orchestrator (`StrategyEngine`) cleanly coordinates all modules through a single entry point
 
 **Weaknesses Identified**:
 
-- 🟠 **Tight coupling in `strategy.py`**: The `FCRStrategy` class directly instantiates `BrokerConnection`, `OrderExecutor`, `HistoricalDataFeed`, and `RealtimeDataFeed` — no dependency injection. This makes unit testing the strategy orchestrator impossible without IB Gateway
+- 🟠 **Tight coupling in `strategy.py`**: The `StrategyEngine` class directly instantiates `BrokerConnection`, `OrderExecutor`, `HistoricalDataFeed`, and `RealtimeDataFeed` — no dependency injection. This makes unit testing the strategy orchestrator impossible without IB Gateway
 - 🟡 **Module index access**: `self._modules[0]`, `self._modules[1]`, etc. in `strategy.py` is fragile — a tuple rename or reorder silently breaks all signal flow
 - 🟡 **Missing interface contracts**: No ABC or Protocol classes defining what detectors/risk modules must implement — extensibility relies on convention only
 - 🟡 **No pure-Python fallback stubs**: Tests for Cython modules fail entirely if not compiled (15/19 test files fail on import). The `_import_core_modules()` function raises `ImportError` instead of providing test-safe stubs
@@ -72,14 +72,14 @@ IB Gateway → data_feed.py → [M5 bars] → fcr_detector.pyx → FCR range
 
 | Step | Data | Source → Destination | Status |
 |------|------|---------------------|--------|
-| 1 | M5 OHLCV | `data_feed.fetch_m5_pre_session()` → `fcr_detector.detect_fcr()` | ✅ Correct |
-| 2 | FCR range | `fcr_detector` → `engulfing_detector` (via `state.fcr_result`) | ✅ Correct |
+| 1 | M5 OHLCV | `data_feed.fetch_m5_pre_session()` → `momentum_detector.detect_momentum()` | ✅ Correct |
+| 2 | legacy range range | `momentum_detector` → `engulfing_detector` (via `state.legacy range_result`) | ✅ Correct |
 | 3 | M1 OHLCV | `RealtimeDataFeed._on_bar_update()` → `_on_new_m1_bar()` → `_detect_engulfing()` | ⚠️ 5s bars aggregated as M1 — see Section 8 |
 | 4 | Gap detection | `gap_detector.detect_gap()` | ⚠️ Called in `_detect_gap()` but **never invoked** in the live flow — see below |
 | 5 | Risk check | `risk_manager.check_daily_limit()` → equity via IB | ✅ Correct |
 | 6 | Order | `order_manager.create_bracket_order()` → `broker.place_bracket_order()` | ✅ Correct |
 
-**Critical Finding**: 🔴 **Gap detection is wired but NOT called in the live session flow**. The `_detect_gap()` method exists in `FCRStrategy` but is never invoked in `run_session()` or `_on_new_m1_bar()`. The strategy trades engulfing signals without requiring an ATR spike confirmation, contradicting the stated FCR+Gap+Engulfing pipeline.
+**Critical Finding**: 🔴 **Gap detection is wired but NOT called in the live session flow**. The `_detect_gap()` method exists in `StrategyEngine` but is never invoked in `run_session()` or `_on_new_m1_bar()`. The strategy trades engulfing signals without requiring an ATR spike confirmation, contradicting the stated legacy range+Gap+Engulfing pipeline.
 
 ### 1.3 Scalability
 
@@ -238,7 +238,7 @@ risk_amount = account_equity * (risk_pct / 100.0)  # Default: 1%
 | Feature | Implementation | Status |
 |---------|---------------|--------|
 | Pip size | `USDJPY: 0.01`, `EURJPY: 0.01`, `GBPJPY: 0.01` in `PIP_SIZES` | ✅ Correct |
-| FCR range in pips | `(high - low) / 0.01` | ✅ Correct |
+| legacy range range in pips | `(high - low) / 0.01` | ✅ Correct |
 | Pip value conversion | Division by exchange rate when `pip_size >= 0.001` | ✅ Correct |
 | Stop loss calculation | Uses same `fabs(entry - stop_loss) / pip_size` formula | ✅ Correct |
 
@@ -296,7 +296,7 @@ def _validate_with_vectorbt(trades):
 
 | Bias Type | Status | Evidence |
 |-----------|--------|----------|
-| **Look-ahead bias** | 🔴 **PRESENT** | `_detect_signal_at_bar()` uses `m5_equivalent = bars[max(0, index - 10) : index - 2]` — this slices M1 bars as "M5 equivalent" by using raw bar indexes, not timestamp-based session alignment. The FCR range is computed from bars immediately before the evaluation bar, not from pre-9:30 ET bars. In live, FCR is computed once before session; in backtest, it's re-computed at every bar. |
+| **Look-ahead bias** | 🔴 **PRESENT** | `_detect_signal_at_bar()` uses `m5_equivalent = bars[max(0, index - 10) : index - 2]` — this slices M1 bars as "M5 equivalent" by using raw bar indexes, not timestamp-based session alignment. The legacy range range is computed from bars immediately before the evaluation bar, not from pre-9:30 ET bars. In live, legacy range is computed once before session; in backtest, it's re-computed at every bar. |
 | **Data leakage** | 🟠 **LIKELY** | The backtest uses a single `bars` array of M1 data. M5 candles are simulated by slicing `bars[i-10:i-2]`. There is no actual M5 aggregation or session-boundary enforcement. The M1→M5 mapping is structurally incorrect. |
 | **Survivorship bias** | 🟡 **MINOR** | Three pairs hardcoded (EURUSD, GBPUSD, USDJPY) — these are the most liquid and thus least affected by survivorship. But the selection is not justified by systematic screening. |
 | **Over-optimization** | 🟠 **RISK** | ATR spike threshold (`1.5x`), volume ratio (`1.2x`), min range (`5 pips`) are set as constants with no documented parameter sensitivity analysis. |
@@ -339,7 +339,7 @@ def _validate_with_vectorbt(trades):
 | Format | `[ALPHAEDGE] UTC_time | Paris_time | LEVEL | location | message` | ✅ Clear |
 | Log rotation | `alphaedge_{YYYY-MM-DD}.log` daily rotation | ✅ Correct |
 | Log retention | 30 days | ✅ Configured |
-| Strategy signals logged | ✅ FCR detection, engulfing signals | Present |
+| Strategy signals logged | ✅ legacy range detection, engulfing signals | Present |
 | Risk events logged | ✅ "Daily loss limit breached" | Present |
 | Order execution logged | ✅ Bracket order details | Present |
 | IB Gateway status | ✅ Connect/disconnect events | Present |
@@ -355,7 +355,7 @@ def _validate_with_vectorbt(trades):
 |-------|---------|--------|
 | Header | Project title + IB connection status (green/red dot) | ✅ |
 | Time | UTC + Europe/Paris + session active/inactive | ✅ |
-| Signals | Per-pair: FCR range, gap status, signal direction, spread | ✅ |
+| Signals | Per-pair: legacy range range, gap status, signal direction, spread | ✅ |
 | Position & P&L | Open position, direction, P&L pips/USD, trades today, daily P&L | ✅ |
 | Trade eligibility | "Blocked — daily limit" / "Max trades reached" / "Eligible (N left)" | ✅ |
 | Footer | Ctrl+C instruction + version | ✅ |
@@ -382,7 +382,7 @@ def _validate_with_vectorbt(trades):
 
 ---
 
-# PART II — STRATEGIC & STATISTICAL AUDIT (FCR FOREX STRATEGY)
+# PART II — STRATEGIC & STATISTICAL AUDIT (legacy range FOREX STRATEGY)
 
 ---
 
@@ -390,11 +390,11 @@ def _validate_with_vectorbt(trades):
 
 ### 6.1 Exact Behavior (Inferred from Code)
 
-1. **Pre-session** (before 9:30 ET): Fetch M5 candles (30 min lookback). Identify the last M5 candle as the FCR (Failed Candle Range) — take its high/low as the range boundaries
+1. **Pre-session** (before 9:30 ET): Fetch M5 candles (30 min lookback). Identify the last M5 candle as the legacy range (Failed Candle Range) — take its high/low as the range boundaries
 2. **Session open** (9:30–10:30 ET): Subscribe to real-time 5-second bars on M1 timeframe
 3. **Signal trigger**: On each new bar, check if the last two M1 candles form an engulfing pattern where:
-   - Bearish engulfing: current close ≤ FCR low → SHORT
-   - Bullish engulfing: current close ≥ FCR high → LONG
+   - Bearish engulfing: current close ≤ legacy range low → SHORT
+   - Bullish engulfing: current close ≥ legacy range high → LONG
 4. **Volume confirmation**: Current candle tick volume ≥ 1.2× average of last 20 candles
 5. **Entry**: At engulfing candle close price
 6. **Stop loss**: At engulfing candle wick (high for bearish, low for bullish)
@@ -403,10 +403,10 @@ def _validate_with_vectorbt(trades):
 
 ### 6.2 Economic Rationale
 
-**Thesis**: At NYSE open (9:30 ET), equity order flow creates cross-market volatility expansion in Forex. The FCR range (pre-session M5 high/low) acts as a liquidity zone. When price breaks through this zone with a confirmed engulfing pattern and above-average tick volume, it signals a directional momentum burst.
+**Thesis**: At NYSE open (9:30 ET), equity order flow creates cross-market volatility expansion in Forex. The legacy range range (pre-session M5 high/low) acts as a liquidity zone. When price breaks through this zone with a confirmed engulfing pattern and above-average tick volume, it signals a directional momentum burst.
 
 **Classification**: This is a **breakout-of-range + momentum confirmation** strategy. More specifically:
-- **Primary**: Volatility expansion breakout (FCR range breach)
+- **Primary**: Volatility expansion breakout (legacy range range breach)
 - **Secondary**: Candle pattern confirmation (engulfing)
 - **Tertiary**: Volume confirmation (tick count proxy)
 
@@ -414,7 +414,7 @@ def _validate_with_vectorbt(trades):
 
 | Element | Coherence Assessment |
 |---------|---------------------|
-| M5 FCR range as reference level | 🟡 Using a single M5 candle's high/low is thin. Institutional support/resistance typically requires multiple touches. A single 5-minute range captures noise more than structure. |
+| M5 legacy range range as reference level | 🟡 Using a single M5 candle's high/low is thin. Institutional support/resistance typically requires multiple touches. A single 5-minute range captures noise more than structure. |
 | M1 engulfing as trigger | ✅ Appropriate — M1 provides the resolution needed for the 15:30–16:30 UTC window |
 | ATR spike as "gap equivalent" | ⚠️ Conceptually valid for Forex (continuous market, no gaps). Implementation exists but **is not connected** to the live trading flow |
 | Tick volume as Forex volume proxy | 🟡 Tick count is a weak volume proxy. It measures broker-specific activity, not actual interbank flow. Validity varies by broker and data source. |
@@ -427,14 +427,14 @@ Forex does not gap (except over weekends). Using ATR ratio (session / pre-sessio
 
 ## 7. Statistical Validity
 
-### 7.1 FCR Range Detection Correctness
+### 7.1 legacy range Range Detection Correctness
 
 ```python
-# Uses the LAST M5 candle before session as FCR candidate
+# Uses the LAST M5 candle before session as legacy range candidate
 cdef dict last_candle_data = candles_data[len(candles_data) - 1]
 ```
 
-**Assessment**: 🟠 The FCR is defined as the high/low of a **single M5 candle** (the last one before 9:30 ET). This is an extremely narrow range definition:
+**Assessment**: 🟠 The legacy range is defined as the high/low of a **single M5 candle** (the last one before 9:30 ET). This is an extremely narrow range definition:
 - For EUR/USD, a typical M5 candle range pre-session is 5–15 pips
 - A 5-pip range (minimum threshold) gives a 5-pip SL — after spread/slippage, this leaves very tight margins
 - There is no multi-candle consolidation zone identification (no support/resistance confirmation)
@@ -454,7 +454,7 @@ DEFAULT_MIN_ATR_RATIO: float = 1.5
 | Factor | Assessment |
 |--------|------------|
 | Engulfing pattern base rate | Engulfing patterns occur frequently on M1 — low signal-to-noise ratio without additional filters |
-| FCR boundary filter | Adds meaningful constraint (close must breach range) — reduces false positives |
+| legacy range boundary filter | Adds meaningful constraint (close must breach range) — reduces false positives |
 | Tick volume confirmation | 🟡 1.2× average is a weak threshold. Tick count distributions are heavily skewed; the mean is not a robust baseline. Median or percentile would be more appropriate |
 | Combined edge | Unknown — **no backtest results presented** to validate the combined filter's predictive power |
 
@@ -474,7 +474,7 @@ Does the NYSE open produce exploitable volatility on Forex?
 | Required win rate for profitability after costs | ~30% (accounting for spread + slippage) |
 | Typical M1 engulfing breakout win rate on Forex | 25–40% (depending on filter quality) |
 
-**Assessment**: 🟡 The 3:1 RR ratio is aggressive but not unrealistic. The key question is whether the combined FCR+engulfing+volume filter produces a win rate above 30%. **This has not been validated due to the absence of backtest results.**
+**Assessment**: 🟡 The 3:1 RR ratio is aggressive but not unrealistic. The key question is whether the combined legacy range+engulfing+volume filter produces a win rate above 30%. **This has not been validated due to the absence of backtest results.**
 
 ### 7.6 Missing Statistical Validations
 
@@ -489,7 +489,7 @@ Does the NYSE open produce exploitable volatility on Forex?
 
 ## 8. Signal Construction & Entry Logic
 
-### 8.1 FCR High/Low Calculation
+### 8.1 legacy range High/Low Calculation
 
 ```python
 result.range_high = candle.high
@@ -498,7 +498,7 @@ result.range_low = candle.low
 
 ✅ Correct — simple extraction from the M5 OHLC bar.
 
-🟠 **Concern**: The `detect_fcr_scan()` function selects the candle with the "widest range" from the lookback window. This biases toward volatile pre-session candles, which may not represent meaningful support/resistance levels.
+🟠 **Concern**: The `detect_momentum_scan()` function selects the candle with the "widest range" from the lookback window. This biases toward volatile pre-session candles, which may not represent meaningful support/resistance levels.
 
 ### 8.2 Gap/ATR Spike Detection
 
@@ -511,7 +511,7 @@ detected = ratio >= 1.5
 
 ✅ Correct formula. Uses high-low as true range proxy (appropriate for continuous Forex).
 
-🔴 **Critical**: This detection is **wired but never called in live mode**. The `_detect_gap()` method in `FCRStrategy` is defined but `run_session()` and `_on_new_m1_bar()` never invoke it. Signals are generated without gap/ATR confirmation.
+🔴 **Critical**: This detection is **wired but never called in live mode**. The `_detect_gap()` method in `StrategyEngine` is defined but `run_session()` and `_on_new_m1_bar()` never invoke it. Signals are generated without gap/ATR confirmation.
 
 ### 8.3 Engulfing Candle Validation
 
@@ -521,7 +521,7 @@ detected = ratio >= 1.5
 | Body engulfment | ✅ Current body must engulf previous body (open/close comparison) | Correct |
 | Body size ratio | ❌ **Not checked** | Missing — a 1-pip body can "engulf" a 0.5-pip body, which has no conviction |
 | Wick tolerance | ❌ **Not checked** | Missing — long wicks on the engulfing candle indicate rejection, weakening the signal |
-| Close position relative to range | ✅ Must close beyond FCR boundary | Correct |
+| Close position relative to range | ✅ Must close beyond legacy range boundary | Correct |
 
 ### 8.4 Tick-Count Volume Proxy
 
@@ -587,7 +587,7 @@ tp = entry + (fabs(entry - stop_loss) * 3.0)
 |------|------------|
 | EUR/USD | ✅ Correct in pip terms (0.0001 base) |
 | GBP/USD | ✅ Correct in pip terms (0.0001 base) |
-| USD/JPY | ✅ Correct in pip terms (0.01 base) — tested in `test_fcr_detector_jpy.py` |
+| USD/JPY | ✅ Correct in pip terms (0.01 base) — tested in `test_momentum_detector_jpy.py` |
 
 ### 9.3 Max 2 Trades / Session
 
@@ -641,9 +641,9 @@ for order in bracket:
 |---------|--------|
 | Economic calendar filter | ❌ **NOT IMPLEMENTED** |
 | News blackout window | ❌ **NOT IMPLEMENTED** |
-| Behavior during news | The bot trades blindly — FCR range and engulfing signals will fire on news-driven volatility |
+| Behavior during news | The bot trades blindly — legacy range range and engulfing signals will fire on news-driven volatility |
 
-**Risk**: 🔴 NFP (first Friday of month, 8:30 ET) occurs 1 hour before session window. The pre-session M5 candles will capture the news spike as the FCR range. The engulfing signals at 9:30 may fire on the aftershock, with widened spreads and extreme slippage. The 0.5-pip slippage assumption is dangerously optimistic during NFP.
+**Risk**: 🔴 NFP (first Friday of month, 8:30 ET) occurs 1 hour before session window. The pre-session M5 candles will capture the news spike as the legacy range range. The engulfing signals at 9:30 may fire on the aftershock, with widened spreads and extreme slippage. The 0.5-pip slippage assumption is dangerously optimistic during NFP.
 
 ### 10.2 IB Gateway Disconnection Mid-Trade
 
@@ -698,7 +698,7 @@ class RequestThrottler:
 
 ## 11. Strategy–Risk Engine Interaction
 
-### 11.1 Does the FCR Strategy Stand Alone Without Risk Overlay?
+### 11.1 Does the legacy range Strategy Stand Alone Without Risk Overlay?
 
 **No.** Without the risk overlay:
 - No position sizing → undefined lot sizes
@@ -727,7 +727,7 @@ The strategy **requires** the risk framework to be viable. This is correct archi
 
 | Module | Operations | Data Size | Python Equivalent Time |
 |--------|-----------|-----------|----------------------|
-| `fcr_detector` | 1 dict comparison + arithmetic | ~6 candles | <1ms in Python |
+| `momentum_detector` | 1 dict comparison + arithmetic | ~6 candles | <1ms in Python |
 | `gap_detector` | 2 ATR computations (n=14) | ~20 candles | <1ms in Python |
 | `engulfing_detector` | 2 candle comparisons + volume check | ~20 candles | <1ms in Python |
 | `order_manager` | 6 comparisons + arithmetic | 1 order | <1ms in Python |
@@ -754,7 +754,7 @@ The Cython layer is defensible as a learning exercise or as preparation for futu
 | C3 | **No IB Gateway disconnection recovery** | `strategy.py` — reconnect logic exists but never invoked | Unprotected position if IB drops mid-trade. No orphaned bracket detection. |
 | C4 | **No news filter** | Not implemented | Blind trading during NFP/FOMC with 0.5-pip slippage assumption. Catastrophic risk. |
 | C5 | **No position closure at session end** | `strategy.py:run_session()` | Open positions left unmonitored after bot disconnects from IB. |
-| C6 | **Look-ahead bias in backtest** | `backtest.py:_detect_signal_at_bar()` | FCR range recomputed per-bar, not once pre-session. Backtest results are unreliable. |
+| C6 | **Look-ahead bias in backtest** | `backtest.py:_detect_signal_at_bar()` | legacy range range recomputed per-bar, not once pre-session. Backtest results are unreliable. |
 | C7 | **CI/CD pipeline broken** | `Makefile:qa` | 15/19 test files fail without Cython compilation. No CI config exists. |
 
 ### 🟠 MAJOR — Severe Fragility / Statistical Weakness
@@ -796,10 +796,10 @@ The Cython layer is defensible as a learning exercise or as preparation for futu
 | Priority | Issue | Fix |
 |----------|-------|-----|
 | **P1** | C2: 5-second bars used as M1 candles | Aggregate 5-second bars into proper M1 OHLCV candles before feeding to signal pipeline. Trigger engulfing detection only on M1 candle close (every 60 seconds). |
-| **P2** | C1: Gap detection disconnected | Wire `_detect_gap()` into `run_session()` after FCR detection. Require `gap_result.detected == True` before enabling engulfing scanning for each pair. |
+| **P2** | C1: Gap detection disconnected | Wire `_detect_gap()` into `run_session()` after legacy range detection. Require `gap_result.detected == True` before enabling engulfing scanning for each pair. |
 | **P3** | C5: No session-end position closure | At session end, check for open positions via `get_open_positions()`. Log warning if positions remain. Optionally close at market or allow bracket to expire with a configurable time stop. |
-| **P4** | C6: Look-ahead bias in backtest | Redesign `_backtest_pair()` to compute FCR once per session using pre-9:30 ET M5 bars only (filter by timestamp). Separate M1 bars by session boundary. |
-| **P5** | M7: No engulfing body-size check | Add minimum body-size ratio (e.g., current body ≥ 0.5× FCR range) and maximum wick ratio (e.g., wick ≤ 2× body) to `engulfing_detector.pyx`. |
+| **P4** | C6: Look-ahead bias in backtest | Redesign `_backtest_pair()` to compute legacy range once per session using pre-9:30 ET M5 bars only (filter by timestamp). Separate M1 bars by session boundary. |
+| **P5** | M7: No engulfing body-size check | Add minimum body-size ratio (e.g., current body ≥ 0.5× legacy range range) and maximum wick ratio (e.g., wick ≤ 2× body) to `engulfing_detector.pyx`. |
 
 ### 13.2 Mandatory Fixes Before Live Deployment on IBKR
 
@@ -820,7 +820,7 @@ The Cython layer is defensible as a learning exercise or as preparation for futu
 | **S2** | Walk-forward optimization | Implement rolling 3-month train / 1-month test with anchored or rolling window. |
 | **S3** | Parameter sensitivity analysis | Grid-search ATR threshold (1.0–2.5), volume ratio (1.0–2.0), min range (3–10 pips), RR ratio (2.0–4.0). Plot performance heatmaps. |
 | **S4** | Fix vectorbt validation | Pass percentage returns (pnl_usd / equity) instead of raw pip values. Compare Sharpe and max drawdown. |
-| **S5** | Dependency injection | Refactor `FCRStrategy` to accept broker/feed instances as parameters, enabling unit testing with mocks. |
+| **S5** | Dependency injection | Refactor `StrategyEngine` to accept broker/feed instances as parameters, enabling unit testing with mocks. |
 
 ### 13.4 Advanced Quantitative Improvements
 
@@ -828,7 +828,7 @@ The Cython layer is defensible as a learning exercise or as preparation for futu
 |----------|-------------|-------------|
 | **A1** | Session volatility regime filter | Compute rolling 20-day ATR at 9:30 ET. Only trade when current ATR is within 0.5–2.0× of the rolling mean. Skip abnormally quiet or violent sessions. |
 | **A2** | Multi-session expansion | Test the strategy on London open (3:00 ET) and Asia-London overlap. Different pairs may show edge at different sessions. |
-| **A3** | Machine learning signal filter | Train a logistic regression on historical signals to predict win/loss using features: ATR ratio, FCR range size, volume ratio, spread, day of week, consecutive-loss count. |
+| **A3** | Machine learning signal filter | Train a logistic regression on historical signals to predict win/loss using features: ATR ratio, legacy range range size, volume ratio, spread, day of week, consecutive-loss count. |
 | **A4** | Portfolio-level correlation filter | If extended to multiple pairs, check correlation between signal directions. Avoid correlated drawdowns (e.g., long EUR/USD + short USD/JPY = doubled USD risk). |
 | **A5** | Monte Carlo max drawdown | Run 10,000 permutations of trade outcomes to estimate 95th percentile maximum drawdown. Use this for position sizing instead of historical max drawdown. |
 
@@ -855,7 +855,7 @@ $$\text{Overall} = \frac{7.5 + 7.0 + 3.0 + 5.5 + 3.5}{5} = \textbf{5.3 / 10}$$
 $$P(\text{survival}_{12m}) = \textbf{15\%}$$
 
 **Rationale**: The strategy has reasonable architecture and risk guardrails, but:
-- The core signal (M1 engulfing at FCR boundary) has no validated statistical edge
+- The core signal (M1 engulfing at legacy range boundary) has no validated statistical edge
 - The live trading path has a fundamental bug (5-second bars as M1)
 - Gap detection is disconnected — removing a key filter
 - No news protection during the most dangerous events
@@ -868,7 +868,7 @@ $$P(\text{survival}_{12m}) = \textbf{15\%}$$
 
 The ALPHAEDGE system demonstrates competent software engineering (clean code, proper logging, correct IB bracket orders, DST handling) but suffers from **critical disconnects between design intent and implementation**:
 
-1. The documented pipeline (FCR → Gap → Engulfing) is only partially wired — gap detection is dead code
+1. The documented pipeline (legacy range → Gap → Engulfing) is only partially wired — gap detection is dead code
 2. The live trading path processes 5-second bars as M1 candles — invalidating the signal construction
 3. The backtest has look-ahead bias — results cannot be trusted
 4. No statistical evidence supports the strategy's positive expectancy

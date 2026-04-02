@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/stubs/ib_insync.pyi
 # DESCRIPTION  : Minimal type stub for ib_insync — covers only
 #                the API surface actually used in ALPHAEDGE.

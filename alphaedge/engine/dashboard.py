@@ -118,14 +118,14 @@ def _build_signal_panel(
     signal_table.add_column("Spread", width=10)
 
     for pair_data in state.get("pairs", []):
-        fcr_str = _format_range(pair_data.get("range") or pair_data.get("fcr"))
+        range_str = _format_range(pair_data.get("range"))
         gap_str = _format_gap(pair_data.get("gap"))
         signal_str = _format_signal(pair_data.get("signal"))
         spread_str = f"{pair_data.get('spread', 0.0):.1f} pips"
 
         signal_table.add_row(
             pair_data.get("pair", "—"),
-            fcr_str,
+            range_str,
             gap_str,
             signal_str,
             spread_str,
@@ -137,12 +137,12 @@ def _build_signal_panel(
 # ------------------------------------------------------------------
 # Format pre-session range status
 # ------------------------------------------------------------------
-def _format_range(fcr: dict[str, Any] | None) -> str:
+def _format_range(range_data: dict[str, Any] | None) -> str:
     """Format pre-session range result for dashboard display."""
-    if fcr is None:
+    if range_data is None:
         return "[dim]Scanning...[/]"
-    if fcr.get("detected"):
-        return f"H:{fcr['range_high']:.5f}\nL:{fcr['range_low']:.5f}"
+    if range_data.get("detected"):
+        return f"H:{range_data['range_high']:.5f}\nL:{range_data['range_low']:.5f}"
     return "[dim]None[/]"
 
 
@@ -322,14 +322,18 @@ async def _demo_state() -> dict[str, Any]:
         "pairs": [
             {
                 "pair": "EURUSD",
-                "fcr": {"detected": True, "range_high": 1.08550, "range_low": 1.08400},
+                "range": {
+                    "detected": True,
+                    "range_high": 1.08550,
+                    "range_low": 1.08400,
+                },
                 "gap": {"detected": False, "atr_ratio": 0.8},
                 "signal": None,
                 "spread": 0.8,
             },
             {
                 "pair": "GBPUSD",
-                "fcr": None,
+                "range": None,
                 "gap": None,
                 "signal": None,
                 "spread": 1.2,

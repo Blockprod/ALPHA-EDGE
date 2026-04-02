@@ -1,4 +1,4 @@
-﻿# ⚡ ALPHAEDGE — ROADMAP
+# ⚡ ALPHAEDGE — ROADMAP
 
 > **Source** : Consolidation de `ALPHAEDGE_PLAN_ACTION_AUDIT.md` + `ALPHAEDGE_POST_AUDIT_ACTION_PLAN.md`
 > **Date** : 2026-03-09
@@ -48,7 +48,7 @@ P3-01..P3-05  — à démarrer uniquement après P0+P1 complets
 # P0 — BLOQUANTS PRODUCTION
 
 > **Objectif** : Éliminer les risques de perte financière directe et les biais de backtest critiques
-> **Condition de sortie** : `make qa` passe, paper trading possible avec pipeline FCR→Gap→Engulfing
+> **Condition de sortie** : `make qa` passe, paper trading possible avec pipeline legacy range→Gap→Engulfing
 
 ---
 
@@ -59,7 +59,7 @@ P3-01..P3-05  — à démarrer uniquement après P0+P1 complets
 **Risque** : Deux signaux simultanés ouvrent 2 positions → violation règle "max 1 pair open"
 
 **Actions** :
-- [x] Ajouter `self._trade_lock = asyncio.Lock()` dans `FCRStrategy.__init__()`
+- [x] Ajouter `self._trade_lock = asyncio.Lock()` dans `StrategyEngine.__init__()`
 - [x] Créer `_atomic_check_and_execute()` qui re-vérifie `check_pair_limit()` et `trades_today` sous le lock
 - [x] Remplacer l'appel direct `_check_spread_and_execute()` par `_atomic_check_and_execute()`
 - [x] Wrapper `state.is_position_open = False` dans `_on_trade_closed()` sous le même lock
@@ -105,10 +105,10 @@ P3-01..P3-05  — à démarrer uniquement après P0+P1 complets
 ### P0-04 — Gap detector non connecté au flux live
 
 **Fichier** : `alphaedge/engine/strategy.py`
-**Risque** : La stratégie trade des signaux engulfing sans confirmation ATR spike → pipeline FCR→Gap→Engulfing incomplet
+**Risque** : La stratégie trade des signaux engulfing sans confirmation ATR spike → pipeline legacy range→Gap→Engulfing incomplet
 
 **Actions** :
-- [x] Dans `run_session()`, après la détection FCR, appeler `_detect_gap()` pour chaque paire et stocker dans `state.gap_result`
+- [x] Dans `run_session()`, après la détection legacy range, appeler `_detect_gap()` pour chaque paire et stocker dans `state.gap_result`
 - [x] Dans `_on_new_m1_bar()`, ajouter un guard : si `not state.gap_result["detected"]` → return
 - [x] Logger le ratio ATR et le statut gap pour chaque paire au début de session
 - [x] Valider avec un test : session sans spike ATR → 0 trades exécutés
@@ -120,15 +120,15 @@ P3-01..P3-05  — à démarrer uniquement après P0+P1 complets
 ### P0-05 — Look-ahead bias dans le backtest
 
 **Fichier** : `alphaedge/engine/backtest.py`
-**Risque** : FCR recalculé à chaque barre en backtest vs. calculé une seule fois en live → résultats optimistes non reproductibles
+**Risque** : legacy range recalculé à chaque barre en backtest vs. calculé une seule fois en live → résultats optimistes non reproductibles
 
 **Actions** :
-- [x] Restructurer `_backtest_pair()` pour calculer le FCR **une seule fois par session** avec les barres M5 pré-9:30 ET
+- [x] Restructurer `_backtest_pair()` pour calculer le legacy range **une seule fois par session** avec les barres M5 pré-9:30 ET
 - [x] Filtrer les barres par timestamp (pas par index) pour séparer pré-session vs. session
 - [x] Appliquer le même filtre gap ATR que le live (baseline pré-session, ratio ≥ 1.5)
 - [x] Documenter : les métriques doivent changer après correction (c'est attendu)
 
-**Critère** : FCR calculé 1 fois par session. Barres filtrées par timestamp.
+**Critère** : legacy range calculé 1 fois par session. Barres filtrées par timestamp.
 
 ---
 
@@ -207,7 +207,7 @@ P3-01..P3-05  — à démarrer uniquement après P0+P1 complets
 **Risque** : `reconnect()` existe mais n'est jamais appelé automatiquement — déconnexion IB = arrêt silencieux
 
 **Actions** :
-- [x] Câbler `self._broker.ib.disconnectedEvent += self._lifecycle._on_ib_disconnect` dans `FCRStrategy.__init__()`
+- [x] Câbler `self._broker.ib.disconnectedEvent += self._lifecycle._on_ib_disconnect` dans `StrategyEngine.__init__()`
 - [x] Implémenter `_on_ib_disconnect()` : log CRITICAL → `broker.reconnect()` → réconcilier positions → re-souscrire flux
 - [x] Sur échec reconnect : log CRITICAL + shutdown propre
 - [x] Détecter ordres orphelins après reconnect via `ib.openOrders()`
@@ -310,14 +310,14 @@ P3-01..P3-05  — à démarrer uniquement après P0+P1 complets
 
 ---
 
-### P2-08 — Injection de dépendances dans `FCRStrategy`
+### P2-08 — Injection de dépendances dans `StrategyEngine`
 
 **Fichier** : `alphaedge/engine/strategy.py`
 
 **Actions** :
-- [x] Modifier `FCRStrategy.__init__()` pour accepter `broker`, `historical_feed`, `realtime_feed` optionnels
+- [x] Modifier `StrategyEngine.__init__()` pour accepter `broker`, `historical_feed`, `realtime_feed` optionnels
 - [x] Les valeurs par défaut instancient les classes réelles (comportement préservé)
-- [x] Permet de tester `FCRStrategy` avec des mocks sans IB Gateway
+- [x] Permet de tester `StrategyEngine` avec des mocks sans IB Gateway
 
 ---
 
@@ -379,7 +379,7 @@ P3-01..P3-05  — à démarrer uniquement après P0+P1 complets
 
 **Actions** :
 - [x] Uniquement si P3-01 à P3-04 valident un edge pur — ne pas ajouter de complexité sur une stratégie non prouvée
-- [x] Entraîner un classifier léger (Random Forest ou XGBoost) sur les features des signaux FCR+gap+engulfing
+- [x] Entraîner un classifier léger (Random Forest ou XGBoost) sur les features des signaux legacy range+gap+engulfing
 - [x] Filtrer les signaux avec probabilité de succès < 60%
 - [x] Valider que le filtre améliore le Sharpe OOS (pas seulement IS)
 
@@ -444,7 +444,7 @@ P2 — ✅ COMPLET :
 [x] P2-05 — state persistence complète (open_pairs)
 [x] P2-06 — config validation étendue (pairs, lot_type, port)
 [x] P2-07 — gestion positions en fin de session
-[x] P2-08 — injection de dépendances FCRStrategy
+[x] P2-08 — injection de dépendances StrategyEngine
 
 P3 — ✅ COMPLET :
 [x] P3-01 — split IS/OOS 70/30

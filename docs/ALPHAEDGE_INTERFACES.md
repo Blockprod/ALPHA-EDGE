@@ -1,4 +1,4 @@
-﻿# ALPHAEDGE — Public Core Interfaces & Return Value Contracts
+# ALPHAEDGE — Public Core Interfaces & Return Value Contracts
 
 > Implementation is [PROPRIETARY]. These are call signatures and behavioral
 > contracts only. Do not infer, reverse-engineer, or reconstruct strategy logic.
@@ -13,7 +13,7 @@
 
 | Function | Returns None / falsy | Correct agent behavior |
 |----------|----------------------|------------------------|
-| `detect_fcr(...)` | No valid FCR found | STOP — do not proceed to gap detection |
+| `detect_momentum(...)` | No valid legacy range found | STOP — do not proceed to gap detection |
 | `detect_gap(...)` | `detected: False` | STOP — do not proceed to engulfing detection |
 | `detect_engulfing(...)` | `None` | STOP — do not place any order |
 | `calculate_position_size(...)` | `is_valid: False` | STOP — do not submit order, log WARNING |
@@ -22,17 +22,17 @@
 
 ---
 
-## fcr_detector
+## momentum_detector
 
 ```python
-detect_fcr(
+detect_momentum(
     candles_data: list[dict],
     min_range_pips: float,
     pip_size: float
 ) -> dict | None
 # Returns: {detected, range_high, range_low, range_size, candle_timestamp} | None
 
-detect_fcr_scan(
+detect_momentum_scan(
     candles_data: list[dict],
     min_range_pips: float,
     pip_size: float,
@@ -64,7 +64,7 @@ is_in_gap_zone(
 ```python
 detect_engulfing(
     candles_data,
-    fcr_high, fcr_low,
+    legacy range_high, legacy range_low,
     rr_ratio, pip_size,
     volume_period, min_volume_ratio,
     min_body_ratio=0.3,

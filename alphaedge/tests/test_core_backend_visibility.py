@@ -66,9 +66,11 @@ class TestCoreBackendVisibility:
         with patch.object(
             importlib,
             "import_module",
-            return_value=SimpleNamespace(__name__="alphaedge.core._stubs.fcr_detector"),
+            return_value=SimpleNamespace(
+                __name__="alphaedge.core._stubs.momentum_detector"
+            ),
         ):
-            core.load_core_module("fcr_detector")
+            core.load_core_module("momentum_detector")
             backend_name = core.get_backend_name()
             fallback_modules = core.get_fallback_modules()
 

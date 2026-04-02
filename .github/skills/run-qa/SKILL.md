@@ -1,4 +1,4 @@
-﻿---
+---
 name: run-qa
 description: >
   Use when: running make qa, diagnosing lint/mypy/pytest errors, checking
@@ -65,7 +65,7 @@ make qa
 ```
 test_<module>_<scenario>.py    # one scenario per file
 ```
-Examples: `test_fcr_detector_detect.py`, `test_risk_manager_daily.py`
+Examples: `test_momentum_detector_detect.py`, `test_risk_manager_daily.py`
 
 ## Baseline
 

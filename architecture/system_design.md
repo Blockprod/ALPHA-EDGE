@@ -1,10 +1,10 @@
-﻿# ALPHAEDGE — Architecture System Design
+# ALPHAEDGE — Architecture System Design
 
 ---
 
 ## Vue d'ensemble
 
-ALPHAEDGE est un bot de trading Forex automatisé ciblant le signal FCR (Fair Competition Range) à l'ouverture de session NYSE et London. Il s'exécute sur Interactive Brokers via IB Gateway.
+ALPHAEDGE est un bot de trading Forex automatisé ciblant le signal legacy range (Fair Competition Range) à l'ouverture de session NYSE et London. Il s'exécute sur Interactive Brokers via IB Gateway.
 
 ---
 
@@ -15,9 +15,9 @@ IB Gateway (TWS/IB Gateway)
     │
     ▼
 data_feed.py  ─────────────  reqHistoricalData
-    │                        M5 (FCR) + M1 (entry)
+    │                        M5 (legacy range) + M1 (entry)
     │
-    ├──► fcr_detector.pyx    FCR range detection
+    ├──► momentum_detector.pyx    legacy range range detection
     │    lookback=6 M5 bars  min_range=8 pips
     │    → {range_high, range_low, range_size} | None
     │
@@ -69,7 +69,7 @@ config.yaml + .env
 
 | Module `.pyx` | Module runtime | Stub test |
 |--------------|----------------|-----------|
-| `fcr_detector.pyx` | `fcr_detector.pyd` | `_stubs/fcr_detector.py` |
+| `momentum_detector.pyx` | `momentum_detector.pyd` | `_stubs/momentum_detector.py` |
 | `gap_detector.pyx` | `gap_detector.pyd` | `_stubs/gap_detector.py` |
 | `engulfing_detector.pyx` | `engulfing_detector.pyd` | `_stubs/engulfing_detector.py` |
 | `risk_manager.pyx` | `risk_manager.pyd` | `_stubs/risk_manager.py` |

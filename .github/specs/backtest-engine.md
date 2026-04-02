@@ -1,4 +1,4 @@
-﻿# Spec — Backtest Engine
+# Spec — Backtest Engine
 
 > Comportement attendu de `alphaedge/engine/backtest.py` et modules associés.
 > Source : `alphaedge/engine/backtest.py`, `backtest_simulation.py`, `backtest_stats.py`
@@ -33,7 +33,7 @@ config.yaml / constants.py
   └─► backtest.py              — orchestration principale
         └─► data_feed.py       — chargement données historiques
         └─► backtest_simulation.py — tick par tick M5/M1
-              └─► fcr_detector    — signal
+              └─► momentum_detector    — signal
               └─► gap_detector    — filtre
               └─► engulfing_detector — entrée
               └─► risk_manager    — sizing
@@ -64,7 +64,7 @@ config.yaml / constants.py
 `backtest_filters.py` — filtres applicables :
 - `news_filter` : exclure les fenêtres autour des publications macro
 - `regime_filter` : exclure les périodes de régime adverse
-- `ml_filter` : filtre ML optionnel sur signal FCR
+- `ml_filter` : filtre ML optionnel sur signal legacy range
 
 Tous les filtres sont **optionnels** et configurables dans `config.yaml`.
 

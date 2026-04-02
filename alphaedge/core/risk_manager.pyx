@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/core/risk_manager.pyx
 # DESCRIPTION  : Cython risk management — position sizing and limits
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -9,7 +9,7 @@
 # ============================================================
 # cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True
 
-"""ALPHAEDGE — FCR Forex Trading Bot: risk management and position sizing."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: risk management and position sizing."""
 
 from libc.math cimport fabs, floor
 
