@@ -51,6 +51,7 @@ alphaedge_daily_state.json
 
 # --- Proprietary / Sensitive ---
 ALPHAEDGE_ACTION_PLAN.md
+tasks/
 
 # --- QA Debug Dumps ---
 mypy_errors*.txt

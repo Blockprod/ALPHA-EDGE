@@ -52,6 +52,13 @@ def main() -> int:
             )
             continue
 
+        if filename.startswith("tasks/") or filename.startswith("tasks\\"):
+            violations.append(
+                f"  🔴 {filename}: dossier tasks/ stagé "
+                f"(INTERDIT — contenu sensible/proprietaire)"
+            )
+            continue
+
         path = Path(filename)
         # Exclude documentation/agent dirs and self
         excluded_prefixes = ("tasks/", "tasks\\", "agents/", "agents\\")
