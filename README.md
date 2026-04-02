@@ -1,128 +1,99 @@
+<div align="center">
+
 # ⚡ ALPHAEDGE
-# ALPHAEDGE
 
-This repository contains proprietary trading software.
+**Automated Forex trading bot · NYSE open session · Paper trading by default**
 
+[![CI](https://github.com/Blockprod/ALPHA-EDGE/actions/workflows/ci.yml/badge.svg)](https://github.com/Blockprod/ALPHA-EDGE/actions)
+![Python](https://img.shields.io/badge/Python-3.11.9-informational?style=flat&logo=python&logoColor=white&color=3776AB)
+![Mode](https://img.shields.io/badge/Mode-Paper%20Trading-informational?style=flat&color=2ea44f)
+![Broker](https://img.shields.io/badge/Broker-Interactive%20Brokers-informational?style=flat&color=E31837)
+![Coverage](https://img.shields.io/badge/Coverage-%E2%89%A580%25-informational?style=flat&color=4CAF50)
 
-Minimal README. No documentation provided.
-
-## Running Backtest
-
-```powershell
-python -m alphaedge.engine.backtest
-# ALPHAEDGE
-
-This repository contains proprietary trading software.
-
-**No public documentation is provided.**
-
-For inquiries, contact the project owner.
-| `error: Microsoft Visual C++ 14.0 is required` | Install [VS Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) |
-| `fatal error: Python.h: No such file` | Install `python3.11-dev` (Linux) |
-| `ImportError: cannot import` after build | Re-run `python setup.py build_ext --inplace` |
-
-> **Note**: If Cython modules are not compiled, the strategy engine falls back to a warning mode. Compile before running.
+</div>
 
 ---
 
-## QA Toolchain
+## ⚡ What is ALPHAEDGE?
 
-### Run All QA Checks
+Momentum + carry signal on EURUSD · GBPUSD · USDJPY during the NYSE open
+(15:30–16:30 CET). Executes bracket orders via IB Gateway with compound
+position sizing. Paper trading by default — live mode requires explicit
+confirmation.
+
+---
+
+## 📊 Baseline (2026-04-02 · 3-year backtest)
+
+| Metric | In-Sample | Out-of-Sample |
+|--------|:---------:|:-------------:|
+| Sharpe | **3.06** | 2.59 |
+| Max Drawdown | **6.72%** | 14.33% |
+| Profit Factor | 1.48 | 1.40 |
+| Win Rate | 46.7% | 44.8% |
+| Trades | 405 | 174 |
+
+$10,000 → $26,879 · +168% · 579 trades total
+
+---
+
+## 🛠 Stack
+
+![Python](https://img.shields.io/badge/Code-Python_3.11-informational?style=flat&logo=python&logoColor=white&color=3776AB)
+![Cython](https://img.shields.io/badge/Code-Cython_3.0-informational?style=flat&color=EFC050)
+![IB](https://img.shields.io/badge/Broker-ib__insync-informational?style=flat&color=E31837)
+![Loguru](https://img.shields.io/badge/Log-loguru-informational?style=flat&color=7B68EE)
+![Rich](https://img.shields.io/badge/UI-Rich-informational?style=flat&color=41B3A3)
+![vectorbt](https://img.shields.io/badge/Backtest-vectorbt-informational?style=flat&color=FF8C00)
+
+---
+
+## 🚀 Quickstart
 
 ```powershell
+# 1 — Activate venv
+.venv\Scripts\Activate.ps1
+
+# 2 — Install Git hooks (first time only)
+make install-hooks
+
+# 3 — Run QA
 make qa
-```
 
-This runs: Ruff (lint) → Pyright / Pylance (type checking) → Pytest.
-
-> **Coverage scope** : The ≥80% threshold applies to `config/`, `utils/`, and `core/` (via stubs) only.
-> `engine/` modules require a live IB Gateway connection and are excluded from automated coverage.
-
-### Individual Tools
-
-| Tool | Command | Purpose |
-|------|---------|---------|
-| **Ruff** | `make lint` | Fast linting (E, F, W, I, N, UP rules) |
-| **Pyright** | `make typecheck` | Static type checking (Pylance engine) |
-| **Pylint** | `make pylint` | Deep analysis — included in `make qa-strict` |
-| **Pytest** | `make test` | Unit tests + coverage report |
-
-### Pytest
-
-```powershell
-# Run all tests with coverage
-pytest --cov=alphaedge --cov-report=term-missing -v
-
-# Run specific module tests
-pytest alphaedge/tests/test_fcr_detector_detect.py -v
-
-# Run with output
-pytest -v -s
-```
-
-**Coverage target: ≥ 80%**
-
-### Test Naming Convention
-
-```
-test_<module>_<function_or_scenario>.py
-```
-
----
-
-## Running Backtest
-
-```powershell
+# 4 — Backtest
 python -m alphaedge.engine.backtest
-```
 
-**Outputs:**
-- Trade results CSV
-- Equity curve plot
-- Console summary with key performance metrics
-
-> Backtest requires IB Gateway connection for historical data retrieval.
-
----
-
-## Running Live / Paper
-
-### Paper Trading (Recommended)
-
-```powershell
+# 5 — Paper trading (IB Gateway required on port 4002)
 python -m alphaedge.engine.strategy --mode paper
 ```
 
-### Live Trading
+<details>
+<summary>Build Cython extensions</summary>
 
 ```powershell
-python -m alphaedge.engine.strategy --mode live
+make build   # required after any .pyx edit
 ```
 
-> **⚠️ Live mode requires explicit confirmation prompt.** Set `IB_PAPER_MODE=false` in `.env` and use port **4001**.
+</details>
 
-### Dashboard Preview
+---
 
-```powershell
-python -m alphaedge.engine.dashboard
+## 📁 Structure
+
+```
+alphaedge/
+  config/    — constants + YAML loader
+  core/      — Cython signal detectors (.pyx)
+  engine/    — backtest · live strategy · broker
+  utils/     — timezone · session · alerting
 ```
 
-Displays the Rich terminal dashboard with mock data for layout testing.
-
-### Web Dashboard
-
-```powershell
-make web-dashboard
-```
-
-Starts the FastAPI REST + WebSocket server on port 8080 (standalone process, run in parallel with the strategy). State is read from `alphaedge_daily_state.json` — no direct coupling to the live strategy process.
+Signal pipeline: `data_feed` → `core detectors` → `risk_manager`
+→ `order_manager` → `broker`
 
 ---
 
 ## License
 
-This project is proprietary. All rights reserved.
+Proprietary — all rights reserved.
 
----
-
-**Built with:** Python 3.11.9 · Cython 3.0 · Interactive Brokers · loguru · Rich · vectorbt
