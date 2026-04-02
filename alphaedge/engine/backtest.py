@@ -59,6 +59,7 @@ from alphaedge.engine.backtest_stats import (
 )
 from alphaedge.engine.backtest_types import BacktestReport, BacktestStats, TradeRecord
 from alphaedge.engine.data_feed import BarDiskCache
+from alphaedge.engine.momentum_window import slice_momentum_window
 from alphaedge.engine.walk_forward import (
     WalkForwardReport,
     WalkForwardResult,
@@ -215,6 +216,11 @@ async def run_backtest(config: AppConfig) -> BacktestStats:
     logger.info(
         f"ALPHAEDGE: Backtest range {start_dt.date()} → {end_dt.date()} "
         f"({config.trading.backtest_years} years, {len(pairs)} pairs)"
+    )
+    logger.info(
+        "ALPHAEDGE: Backtest cost calibration (pips) spread=%s slippage=%s",
+        config.trading.cost_spread_multipliers,
+        config.trading.cost_slippage_multipliers,
     )
 
     for idx, pair in enumerate(pairs, 1):
@@ -383,6 +389,10 @@ def _validate_backtest_signal(
         exchange_rate=REFERENCE_FX_RATE.get(pair, 1.0),
     )
     if not pos_result.get("is_valid", False):
+        logger.debug(
+            "ALPHAEDGE BACKTEST: %s sizing rejected (is_valid=false)",
+            pair,
+        )
         return None
 
     bracket: dict[str, Any] = order_mod.create_bracket_order(
@@ -400,6 +410,11 @@ def _validate_backtest_signal(
         adjust_for_spread=True,
     )
     if not bracket.get("is_valid", False):
+        logger.debug(
+            "ALPHAEDGE BACKTEST: %s bracket rejected (%s)",
+            pair,
+            bracket.get("rejection_reason", "unknown"),
+        )
         return None
 
     # C-04: lot_size is returned for API consistency but is not stored in TradeRecord
@@ -570,7 +585,12 @@ def _collect_daily_trades(
         "risk_pips": pip_dist_sl,
     }
 
-    spread_pips = compute_variable_slippage(bar_dt, pair=pair)
+    spread_pips = compute_variable_slippage(
+        bar_dt,
+        pair=pair,
+        spread_multipliers=config.trading.cost_spread_multipliers,
+        slippage_multipliers=config.trading.cost_slippage_multipliers,
+    )
     validated = _validate_backtest_signal(
         pair, trade_signal, config, pip_size, spread_pips, risk_manager, order_manager
     )
@@ -627,6 +647,7 @@ def _backtest_pair(
     adx_t = config.trading.momentum_adx_threshold
     carry_enabled = config.trading.carry_enabled
     carry_rates = config.trading.carry_rates
+    carry_min_differential = config.trading.carry_min_differential_pct
 
     # Pre-build bar arrays once
     _all_highs = np.array([b["high"] for b in daily_bars], dtype=np.float64)
@@ -669,7 +690,11 @@ def _backtest_pair(
                 continue
 
         _bars_processed += 1
-        window = daily_bars[bar_index - lookback : bar_index + 1]
+        window = slice_momentum_window(
+            daily_bars,
+            lookback,
+            end_index=bar_index,
+        )
         signal = momentum_detector.detect_momentum(
             bars=window,
             fast_period=fast,
@@ -683,7 +708,11 @@ def _backtest_pair(
 
         # Carry filter (optional)
         if carry_enabled and carry_rates:
-            carry = get_carry_bias(pair=pair, rates=carry_rates)
+            carry = get_carry_bias(
+                pair=pair,
+                rates=carry_rates,
+                min_differential=carry_min_differential,
+            )
             if carry.is_valid and carry.direction != "NEUTRAL":
                 mom_dir: int = int(signal.get("direction", 0))
                 if (mom_dir == 1 and carry.direction == "SHORT") or (

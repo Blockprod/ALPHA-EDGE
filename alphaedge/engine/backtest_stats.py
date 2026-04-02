@@ -726,3 +726,43 @@ def _log_split_report(report: BacktestReport, eur_usd_rate: float = 1.08) -> Non
                     f"ALPHAEDGE: OOS {metric} degraded {pct:.1f}%"
                     f" vs IS (threshold: 30%)"
                 )
+
+
+# ------------------------------------------------------------------
+# Kelly Criterion Validation
+# ------------------------------------------------------------------
+def validate_kelly_compliance(
+    risk_pct: float,
+    wr: float,
+    pf: float,
+    tolerance_factor: float = 4.0,
+) -> dict[str, float | bool]:
+    """Validate if active risk_pct complies with Kelly Criterion.
+
+    Kelly Criterion: f* = (WR * RR - (1 - WR)) / RR
+    ALPHAEDGE uses 1/4-Kelly as conservative threshold.
+
+    Note: Converts PF (profit factor) to RR (risk-reward) via:
+        RR = PF * (1 - WR) / WR
+    """
+    # Convert profit factor (PF) to risk-reward ratio (RR)
+    # PF = (WR * RR) / (1 - WR), so RR = PF * (1 - WR) / WR
+    if wr > 0.0 and wr < 1.0:
+        rr = pf * (1.0 - wr) / wr
+    else:
+        rr = pf  # fallback
+
+    # Kelly f* = (WR * RR - (1 - WR)) / RR
+    numerator = wr * rr - (1.0 - wr)
+    kelly_fraction = numerator / rr if rr > 0 else 0.0
+    kelly_fraction = max(0.0, kelly_fraction)
+    kelly_fractional = kelly_fraction / tolerance_factor
+    is_compliant = risk_pct <= kelly_fractional * 100.0
+    margin_pct = (kelly_fractional * 100.0) - risk_pct
+    return {
+        "kelly_fraction": round(kelly_fraction, 4),
+        "kelly_fractional": round(kelly_fractional, 4),
+        "risk_pct": round(risk_pct, 4),
+        "is_compliant": is_compliant,
+        "margin_pct": round(margin_pct, 2),
+    }

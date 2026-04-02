@@ -51,6 +51,9 @@ def _make_config(
     cfg.trading.max_spread_pips = max_spread_pips
     cfg.trading.rr_ratio = rr_ratio
     cfg.trading.max_lot_size = 1.0
+    cfg.trading.risk_pct_by_pair = {}
+    cfg.trading.atr_ref_pips_by_pair = {}
+    cfg.trading.atr_period = 14
     return cfg
 
 
@@ -103,6 +106,48 @@ class TestPositionManagerSizePosition:
         pm.size_position(state, modules, cfg, _make_signal(), pip_size=0.0001)
         call_kwargs = modules.risk_manager.calculate_position_size.call_args.kwargs
         assert call_kwargs["account_equity"] == 9_000.0
+
+    def test_uses_pair_risk_override(self) -> None:
+        pm = PositionManager()
+        state = _make_state(equity=10_000.0)
+        modules = _make_modules()
+        cfg = _make_config(risk_pct=1.0)
+        cfg.trading.risk_pct_by_pair = {"EURUSD": 0.8}
+
+        pm.size_position(state, modules, cfg, _make_signal(), pip_size=0.0001)
+
+        call_kwargs = modules.risk_manager.calculate_position_size.call_args.kwargs
+        assert call_kwargs["risk_pct"] == 0.8
+
+    def test_atr_scaling_is_bounded_between_50_and_100_pct(self) -> None:
+        pm = PositionManager()
+        state = _make_state(equity=10_000.0)
+        modules = _make_modules()
+        cfg = _make_config(risk_pct=1.0)
+        cfg.trading.risk_pct_by_pair = {"EURUSD": 0.8}
+        cfg.trading.atr_ref_pips_by_pair = {"EURUSD": 60.0}
+
+        pm.size_position(
+            state,
+            modules,
+            cfg,
+            _make_signal(),
+            pip_size=0.0001,
+            current_atr_pips=200.0,
+        )
+        first_call = modules.risk_manager.calculate_position_size.call_args.kwargs
+        assert first_call["risk_pct"] == 0.4
+
+        pm.size_position(
+            state,
+            modules,
+            cfg,
+            _make_signal(),
+            pip_size=0.0001,
+            current_atr_pips=30.0,
+        )
+        second_call = modules.risk_manager.calculate_position_size.call_args.kwargs
+        assert second_call["risk_pct"] == 0.8
 
 
 class TestPositionManagerBuildOrder:

@@ -65,6 +65,7 @@ class StrategyState:
     daily_bars: list[dict[str, Any]] = field(default_factory=list)
     carry_rates: dict[str, float] = field(default_factory=dict)
     pip_size: float = 0.0
+    current_atr_pips: float = 0.0
 
 
 # ------------------------------------------------------------------
@@ -276,10 +277,17 @@ class SwingStrategy:
         signal: dict[str, Any],
         pip_size: float,
         exchange_rate: float = 0.0,
+        current_atr_pips: float = 0.0,
     ) -> dict[str, Any] | None:
         """Calculate and validate position size. Returns None on failure."""
         return self._position_manager.size_position(
-            state, self._modules, self._config, signal, pip_size, exchange_rate
+            state,
+            self._modules,
+            self._config,
+            signal,
+            pip_size,
+            exchange_rate,
+            current_atr_pips,
         )
 
     def _build_validated_order(

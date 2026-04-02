@@ -153,3 +153,32 @@ class TestPerPairSpread:
         """Every pair in BASE_SPREAD_BY_PAIR has a positive spread."""
         for pair, spread in BASE_SPREAD_BY_PAIR.items():
             assert spread > 0.0, f"{pair} has non-positive spread {spread}"
+
+
+class TestCostCalibrationMultipliers:
+    def test_normal_multipliers_scale_cost_in_pips(self) -> None:
+        bar_time = datetime(2024, 1, 2, 10, 15, tzinfo=ET)
+        base = compute_variable_slippage(bar_time, pair="EURUSD")
+        calibrated = compute_variable_slippage(
+            bar_time,
+            pair="EURUSD",
+            spread_multipliers={"normal": 1.25},
+            slippage_multipliers={"normal": 1.10},
+        )
+        expected = BASE_SPREAD_BY_PAIR["EURUSD"] * 1.25 + BASE_SLIPPAGE_PIPS * 1.10
+        assert calibrated == pytest.approx(expected)
+        assert calibrated > base
+
+    def test_news_multipliers_apply_on_news_regime_only(self) -> None:
+        bar_time = datetime(2024, 1, 2, 9, 30, tzinfo=ET)
+        calibrated_news = compute_variable_slippage(
+            bar_time,
+            is_news=True,
+            pair="EURUSD",
+            spread_multipliers={"news": 1.2, "nyse_open": 0.8},
+            slippage_multipliers={"news": 1.1, "nyse_open": 0.8},
+        )
+        expected = (
+            NEWS_SPREAD_PIPS * 1.2 + BASE_SLIPPAGE_PIPS * NEWS_SLIPPAGE_MULTIPLIER * 1.1
+        )
+        assert calibrated_news == pytest.approx(expected)

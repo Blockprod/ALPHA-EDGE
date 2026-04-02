@@ -124,7 +124,11 @@ class SignalPipeline:
         rates: dict[str, float] = (
             getattr(state, "carry_rates", {}) or config.trading.carry_rates
         )
-        return get_carry_bias(pair=state.pair, rates=rates)
+        return get_carry_bias(
+            pair=state.pair,
+            rates=rates,
+            min_differential=config.trading.carry_min_differential_pct,
+        )
 
     # ------------------------------------------------------------------
     # Conflict check helper (public for tests)

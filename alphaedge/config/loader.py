@@ -232,6 +232,14 @@ class TradingConfig:
     # ATR-scaling reference pips by pair — empty dict disables ATR-scaling
     # Formula: risk_pct_eff = risk_pct * min(1.0, max(0.5, ATR_ref / ATR_current))
     atr_ref_pips_by_pair: dict[str, float] = field(default_factory=dict)
+    # Backtest transaction-cost calibration multipliers (unit remains pips)
+    # Keys: normal, nyse_open, news
+    cost_spread_multipliers: dict[str, float] = field(
+        default_factory=lambda: {"normal": 1.0, "nyse_open": 1.0, "news": 1.0}
+    )
+    cost_slippage_multipliers: dict[str, float] = field(
+        default_factory=lambda: {"normal": 1.0, "nyse_open": 1.0, "news": 1.0}
+    )
 
 
 # ------------------------------------------------------------------
@@ -480,6 +488,18 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
     cfg.atr_ref_pips_by_pair = {
         k: float(v) for k, v in section.get("atr_ref_pips_by_pair", {}).items()
     }
+    spread_mult = section.get("cost_spread_multipliers", {})
+    slippage_mult = section.get("cost_slippage_multipliers", {})
+    cfg.cost_spread_multipliers = {
+        "normal": float(spread_mult.get("normal", 1.0)),
+        "nyse_open": float(spread_mult.get("nyse_open", 1.0)),
+        "news": float(spread_mult.get("news", 1.0)),
+    }
+    cfg.cost_slippage_multipliers = {
+        "normal": float(slippage_mult.get("normal", 1.0)),
+        "nyse_open": float(slippage_mult.get("nyse_open", 1.0)),
+        "news": float(slippage_mult.get("news", 1.0)),
+    }
     _validate_trading_config(cfg)
     return cfg
 
@@ -507,6 +527,12 @@ def _validate_trading_config(cfg: TradingConfig) -> None:
             raise ValueError(
                 f"risk_pct_by_pair[{_pair!r}] = {_pct} — must be in (0, 10]"
             )
+    for _k, _v in cfg.cost_spread_multipliers.items():
+        if _v <= 0.0:
+            raise ValueError(f"cost_spread_multipliers[{_k!r}] = {_v} — must be > 0")
+    for _k, _v in cfg.cost_slippage_multipliers.items():
+        if _v <= 0.0:
+            raise ValueError(f"cost_slippage_multipliers[{_k!r}] = {_v} — must be > 0")
     if cfg.rr_ratio <= 0.0:
         raise ValueError(f"rr_ratio must be > 0, got {cfg.rr_ratio}")
     if cfg.max_daily_loss_pct <= 0.0:

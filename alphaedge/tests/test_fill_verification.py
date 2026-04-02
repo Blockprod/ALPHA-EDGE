@@ -58,6 +58,7 @@ class _MockTrade:
 
     def __init__(self, fill_event: _FilledEvent) -> None:
         self.filledEvent = fill_event
+        self.orderStatus: Any | None = None
 
 
 # ------------------------------------------------------------------
@@ -217,6 +218,56 @@ class TestSuccessfulFill:
         assert state.is_position_open is True
         assert state.trades_today == 1
 
+    @pytest.mark.asyncio()
+    async def test_live_slippage_is_recorded_in_pips(self) -> None:
+        strategy = _build_strategy()
+        state = strategy._init_pair_state("EURUSD")
+        state.starting_equity = 10000.0
+        state.current_equity = 10000.0
+
+        strategy._rt_feed.get_live_spread = AsyncMock(return_value=0.00008)
+        strategy._rt_feed.get_mid_price = AsyncMock(return_value=1.25)
+
+        mock_trade = _MockTrade(_FilledEvent(preset=True))
+        mock_trade.orderStatus = MagicMock(avgFillPrice=1.2502)
+        strategy._executor.place_bracket_order = AsyncMock(return_value=[mock_trade])
+
+        result = await strategy._lifecycle._execute_signal(
+            state, _make_signal(), 0.0001
+        )
+
+        assert result is True
+        assert state.live_record is not None
+        assert state.live_record.slippage_pips == pytest.approx(2.0)
+
+    @pytest.mark.asyncio()
+    async def test_execute_signal_applies_pair_override_and_atr_scaling(self) -> None:
+        strategy = _build_strategy()
+        strategy._config.trading.risk_pct = 1.0
+        strategy._config.trading.risk_pct_by_pair = {"EURUSD": 0.8}
+        strategy._config.trading.atr_ref_pips_by_pair = {"EURUSD": 60.0}
+
+        state = strategy._init_pair_state("EURUSD")
+        state.starting_equity = 10000.0
+        state.current_equity = 10000.0
+        state.current_atr_pips = 200.0
+
+        strategy._rt_feed.get_live_spread = AsyncMock(return_value=0.00008)
+        strategy._rt_feed.get_mid_price = AsyncMock(return_value=1.25)
+
+        mock_trade = _MockTrade(_FilledEvent(preset=True))
+        strategy._executor.place_bracket_order = AsyncMock(return_value=[mock_trade])
+
+        result = await strategy._lifecycle._execute_signal(
+            state, _make_signal(), 0.0001
+        )
+
+        assert result is True
+        call_kwargs = (
+            strategy._modules.risk_manager.calculate_position_size.call_args.kwargs
+        )
+        assert call_kwargs["risk_pct"] == 0.4
+
 
 class TestMockedLiveCycle:
     """Verify one mocked live cycle from session init through close."""
@@ -300,3 +351,50 @@ class TestMockedLiveCycle:
         await asyncio.sleep(0.1)
 
         assert state.is_position_open is False
+
+    @pytest.mark.asyncio()
+    async def test_init_session_pairs_truncates_daily_window(self) -> None:
+        strategy = _build_strategy()
+        strategy._config.trading.momentum_lookback_days = 2
+        session_start = datetime(2026, 3, 20, 13, 30, tzinfo=UTC)
+
+        daily_bars = [
+            {
+                "open": 1.10 + i * 0.001,
+                "high": 1.11 + i * 0.001,
+                "low": 1.09 + i * 0.001,
+                "close": 1.10 + i * 0.001,
+            }
+            for i in range(8)
+        ]
+
+        strategy._hist_feed.fetch_bars = AsyncMock(return_value=daily_bars)
+        strategy._modules.momentum_detector.detect_momentum.return_value = {
+            "detected": True,
+            "direction": 1,
+            "strength": 0.70,
+            "ema_fast": 1.10,
+            "ema_slow": 1.09,
+            "adx": 30.0,
+            "timestamp": 1710941400,
+        }
+
+        with patch(
+            "alphaedge.engine.session_lifecycle.check_volatility_regime",
+            return_value=MagicMock(allowed=True),
+        ):
+            active_pairs = await strategy._lifecycle._init_session_pairs(
+                starting_equity=10_000.0,
+                live_equity=10_000.0,
+                persisted=None,
+                session_start=session_start,
+            )
+
+        assert active_pairs == ["EURUSD"]
+        state = strategy._states["EURUSD"]
+        assert len(state.daily_bars) == 3
+
+        called_bars = (
+            strategy._modules.momentum_detector.detect_momentum.call_args.kwargs["bars"]
+        )
+        assert len(called_bars) == 3

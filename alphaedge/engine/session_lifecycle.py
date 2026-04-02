@@ -31,6 +31,8 @@ from alphaedge.config.constants import (
 )
 from alphaedge.engine.live_journal import append_live_trade_csv
 from alphaedge.engine.live_types import LiveTradeRecord
+from alphaedge.engine.momentum_window import slice_momentum_window
+from alphaedge.engine.usd_exposure import would_amplify_usd_exposure
 from alphaedge.utils.alerting import (
     Alert,
     AlertEvent,
@@ -69,6 +71,11 @@ if TYPE_CHECKING:
     from alphaedge.engine.strategy import StrategyState, SwingStrategy
 
 logger = get_logger()
+
+
+def _is_usd_filter_enabled(value: Any) -> bool:
+    """Return True only for explicit boolean true config values."""
+    return isinstance(value, bool) and value
 
 
 class SessionLifecycle:
@@ -265,7 +272,13 @@ class SessionLifecycle:
                     return False
                 exchange_rate = mid
 
-            pos_result = self._s._size_position(state, signal, pip_size, exchange_rate)
+            pos_result = self._s._size_position(
+                state,
+                signal,
+                pip_size,
+                exchange_rate,
+                current_atr_pips=state.current_atr_pips,
+            )
             if pos_result is None:
                 return False
 
@@ -653,12 +666,33 @@ class SessionLifecycle:
         if self._s._news_filter.is_news_blackout(now_utc(), pair):
             return
 
-        # Correlation check: block signal if a highly-correlated pair is open.
-        # NOTE: This live algorithm uses a pairwise correlation matrix which differs
-        # from the backtest algorithm in backtest.py that uses USD directional exposure
-        # (long vs short USD). Align both algorithms before enabling multi-pair trading.
-        # See audit_pipeline_alphaedge.md — P-05.
-        if self._s._correlation_matrix:
+        usd_filter_enabled = _is_usd_filter_enabled(
+            getattr(self._s._config.trading, "usd_correlation_filter", False)
+        )
+        if (
+            usd_filter_enabled
+            and state.signal_result
+            and state.signal_result.get("detected")
+        ):
+            incoming_direction = int(state.signal_result.get("direction") or 0)
+            open_positions: list[tuple[str, int]] = []
+            for open_pair, open_state in self._s._states.items():
+                if not open_state.is_position_open:
+                    continue
+                record = open_state.live_record
+                if record is None:
+                    continue
+                open_positions.append((open_pair, int(record.direction)))
+
+            if would_amplify_usd_exposure(open_positions, pair, incoming_direction):
+                logger.info(
+                    "ALPHAEDGE USD FILTER: %s signal blocked — same-direction "
+                    "USD amplification",
+                    pair,
+                )
+                return
+        elif self._s._correlation_matrix:
+            # Pairwise matrix fallback (used when usd_correlation_filter is disabled).
             open_for_corr = [
                 p for p, s in self._s._states.items() if s.is_position_open
             ]
@@ -1002,7 +1036,20 @@ class SessionLifecycle:
             state = self._s._init_pair_state(pair)
             state.starting_equity = starting_equity
             state.current_equity = live_equity
-            state.daily_bars = daily_bars
+            lookback_days = int(
+                getattr(self._s._config.trading, "momentum_lookback_days", 0)
+            )
+            state.daily_bars = slice_momentum_window(
+                daily_bars,
+                lookback_days,
+            )
+            state.current_atr_pips = (
+                self._s._position_manager.estimate_current_atr_pips(
+                    state.daily_bars,
+                    pip_size,
+                    self._s._config.trading.atr_period,
+                )
+            )
             if persisted:
                 state.trades_today = persisted.trades_today
                 self._s._global_trades_today = persisted.trades_today

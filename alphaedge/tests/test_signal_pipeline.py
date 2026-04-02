@@ -224,3 +224,17 @@ class TestEdgeCases:
         state = _make_state(pair="AUDJPY", carry_rates={})
         carry = pipeline.get_carry(state, AppConfig())
         assert carry.is_valid is False
+
+    def test_get_carry_uses_config_min_differential(self) -> None:
+        pipeline = SignalPipeline()
+        cfg = AppConfig()
+        cfg.trading.carry_min_differential_pct = 2.0
+        state = _make_state(
+            pair="AUDJPY",
+            carry_rates={"AUD": 4.35, "JPY": 2.80},  # diff = +1.55
+        )
+
+        carry = pipeline.get_carry(state, cfg)
+
+        assert carry.is_valid is True
+        assert carry.direction == "NEUTRAL"

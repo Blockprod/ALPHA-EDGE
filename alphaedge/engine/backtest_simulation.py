@@ -69,6 +69,8 @@ def compute_variable_slippage(
     bar_time: datetime | None,
     is_news: bool = False,
     pair: str = "EURUSD",
+    spread_multipliers: dict[str, float] | None = None,
+    slippage_multipliers: dict[str, float] | None = None,
 ) -> float:
     """
     Compute variable slippage + spread cost based on market conditions.
@@ -87,12 +89,17 @@ def compute_variable_slippage(
     float
         Total spread+slippage cost in pips.
     """
+    spread_mult = spread_multipliers or {}
+    slippage_mult = slippage_multipliers or {}
+    regime = "normal"
+
     slippage = BASE_SLIPPAGE_PIPS
     base_spread = BASE_SPREAD_BY_PAIR.get(pair, BASE_SPREAD_PIPS)
     spread = base_spread
 
     # News events take priority (highest cost)
     if is_news:
+        regime = "news"
         slippage = BASE_SLIPPAGE_PIPS * NEWS_SLIPPAGE_MULTIPLIER
         spread = NEWS_SPREAD_PIPS
     elif bar_time is not None:
@@ -105,8 +112,12 @@ def compute_variable_slippage(
             <= et_minute
             < SESSION_START_MINUTE + NYSE_OPEN_WINDOW_MINUTES
         ):
+            regime = "nyse_open"
             slippage = BASE_SLIPPAGE_PIPS * NYSE_OPEN_SLIPPAGE_MULTIPLIER
             spread = NYSE_OPEN_SPREAD_PIPS
+
+    slippage *= float(slippage_mult.get(regime, 1.0))
+    spread *= float(spread_mult.get(regime, 1.0))
 
     return slippage + spread
 

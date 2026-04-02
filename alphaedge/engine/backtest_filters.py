@@ -27,6 +27,7 @@ from alphaedge.config.constants import (
 )
 from alphaedge.config.loader import SessionSpec
 from alphaedge.engine.backtest_types import TradeRecord
+from alphaedge.engine.usd_exposure import usd_direction
 from alphaedge.utils.logger import get_logger
 
 logger = get_logger()
@@ -148,13 +149,6 @@ def _apply_usd_correlation_filter(
     second (later entry) is dropped.  Opposite-direction trades (hedge) are
     both kept.
     """
-    _usd_base_pairs = {"USDJPY", "USDCHF", "USDCAD", "USDMXN"}
-
-    def _usd_dir(t: TradeRecord) -> int:
-        if t.pair in _usd_base_pairs:
-            return t.direction  # long USDJPY = USD long
-        return -t.direction  # long EURUSD = USD short
-
     et_tz = ZoneInfo("America/New_York")
     sessions: defaultdict[date, list[TradeRecord]] = defaultdict(list)
     for t in trades:
@@ -168,7 +162,7 @@ def _apply_usd_correlation_filter(
     for day in sorted(sessions):
         net_usd = 0
         for t in sorted(sessions[day], key=lambda x: x.entry_time):
-            d = _usd_dir(t)
+            d = usd_direction(t.pair, int(t.direction))
             if net_usd != 0 and d == net_usd:
                 blocked += 1
                 continue

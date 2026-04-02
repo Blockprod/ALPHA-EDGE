@@ -24,6 +24,30 @@ if TYPE_CHECKING:
 logger = get_logger()
 
 
+def _compute_atr_pips(
+    bars: list[dict[str, Any]],
+    pip_size: float,
+    period: int,
+) -> float:
+    """Compute ATR(period) in pips from right-aligned daily bars."""
+    if pip_size <= 0.0 or period <= 0 or len(bars) < 3:
+        return 0.0
+
+    end = len(bars) - 1
+    start = max(1, end - period)
+    trs: list[float] = []
+    for i in range(start, end):
+        high = float(bars[i]["high"])
+        low = float(bars[i]["low"])
+        prev_close = float(bars[i - 1]["close"])
+        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        trs.append(tr)
+
+    if not trs:
+        return 0.0
+    return (sum(trs) / len(trs)) / pip_size
+
+
 class PositionManager:
     """
     Stateless container for position sizing and bracket order building.
@@ -44,6 +68,7 @@ class PositionManager:
         signal: dict[str, Any],
         pip_size: float,
         exchange_rate: float = 0.0,
+        current_atr_pips: float = 0.0,
     ) -> dict[str, Any] | None:
         """
         Calculate and validate position size.
@@ -52,10 +77,20 @@ class PositionManager:
         minimum lot or equity too low).
         """
         equity = state.current_equity or state.starting_equity
+        base_risk_pct = config.trading.risk_pct_by_pair.get(
+            state.pair,
+            config.trading.risk_pct,
+        )
+        effective_risk_pct = base_risk_pct
+        atr_ref = config.trading.atr_ref_pips_by_pair.get(state.pair, 0.0)
+        if atr_ref > 0.0 and current_atr_pips > 0.0:
+            atr_scale = min(1.0, max(0.5, atr_ref / current_atr_pips))
+            effective_risk_pct = base_risk_pct * atr_scale
+
         max_cap: float = getattr(config.trading, "max_lot_size", MAX_LOTS)
         pos_result: dict[str, Any] = modules.risk_manager.calculate_position_size(
             account_equity=equity,
-            risk_pct=config.trading.risk_pct,
+            risk_pct=effective_risk_pct,
             sl_pips=signal["risk_pips"],
             pair=state.pair,
             pip_size=pip_size,
@@ -75,6 +110,15 @@ class PositionManager:
             pos_result = dict(pos_result)
             pos_result["lot_size"] = max_cap
         return pos_result
+
+    @staticmethod
+    def estimate_current_atr_pips(
+        daily_bars: list[dict[str, Any]],
+        pip_size: float,
+        atr_period: int,
+    ) -> float:
+        """Estimate current ATR in pips from available daily bars."""
+        return _compute_atr_pips(daily_bars, pip_size, atr_period)
 
     # ------------------------------------------------------------------
     # Bracket order building

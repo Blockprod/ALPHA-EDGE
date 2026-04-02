@@ -51,6 +51,7 @@ def _make_strategy(pairs: list[str] | None = None) -> SwingStrategy:
     config.trading.volume_period = 20
     config.trading.min_volume_ratio = 1.0
     config.trading.min_volume_ratio_by_pair = {}
+    config.trading.usd_correlation_filter = False
     config.trading.min_body_ratio = 0.5
     config.trading.max_wick_ratio = 0.5
     config.trading.risk_pct = 1.0
@@ -358,3 +359,34 @@ class TestCorrelationCheckInBar:
 
         assert len(captured) == 1
         assert "GBPUSD" in captured[0]
+
+    def test_usd_filter_blocks_same_direction_amplification(self) -> None:
+        strat = self._make_strat_with_state("GBPUSD")
+        strat._config.trading.usd_correlation_filter = True
+        gbp_state = strat._states["GBPUSD"]
+        gbp_state.signal_result = {"detected": True, "direction": 1, "adx": 28.0}
+        eur_state = StrategyState(pair="EURUSD")
+        eur_state.is_position_open = True
+        eur_state.live_record = MagicMock(direction=1)
+        strat._states["EURUSD"] = eur_state
+        strat._lifecycle._on_new_m1_bar(
+            "GBPUSD",
+            {"open": 1.265, "high": 1.266, "low": 1.264, "close": 1.2655},
+        )
+        strat._modules.risk_manager.check_pair_limit.assert_not_called()
+
+    def test_usd_filter_allows_hedging_direction(self) -> None:
+        strat = self._make_strat_with_state("USDJPY")
+        strat._config.trading.usd_correlation_filter = True
+        jpy_state = strat._states["USDJPY"]
+        jpy_state.signal_result = {"detected": True, "direction": 1, "adx": 28.0}
+        eur_state = StrategyState(pair="EURUSD")
+        eur_state.is_position_open = True
+        eur_state.live_record = MagicMock(direction=1)
+        strat._states["EURUSD"] = eur_state
+        strat._modules.risk_manager.check_pair_limit.return_value = {"allowed": False}
+        strat._lifecycle._on_new_m1_bar(
+            "USDJPY",
+            {"open": 151.50, "high": 151.60, "low": 151.40, "close": 151.55},
+        )
+        strat._modules.risk_manager.check_pair_limit.assert_called_once()
