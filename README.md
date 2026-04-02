@@ -78,21 +78,6 @@ make build   # required after any .pyx edit
 
 ---
 
-## 📁 Structure
-
-```
-alphaedge/
-  config/    — constants + YAML loader
-  core/      — Cython signal detectors (.pyx)
-  engine/    — backtest · live strategy · broker
-  utils/     — timezone · session · alerting
-```
-
-Signal pipeline: `data_feed` → `core detectors` → `risk_manager`
-→ `order_manager` → `broker`
-
----
-
 ## License
 
 Proprietary — all rights reserved.
