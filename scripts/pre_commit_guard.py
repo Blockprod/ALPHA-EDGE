@@ -16,6 +16,17 @@ def get_staged_files() -> list[str]:
 def check_file(path: Path) -> list[str]:
     violations: list[str] = []
     try:
+        raw = path.read_bytes()
+    except OSError:
+        return violations
+
+    # Reject UTF-8 BOM: some CI tools (e.g., pyright config parser) fail on it.
+    if raw.startswith(b"\xef\xbb\xbf"):
+        violations.append(
+            f"  🔴 {path}: contient un BOM UTF-8 (INTERDIT — casse la CI)"
+        )
+
+    try:
         content = path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return violations
