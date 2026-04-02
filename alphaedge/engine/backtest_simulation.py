@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/backtest_simulation.py
 # DESCRIPTION  : Trade simulation functions (slippage, SL/TP exit models)
 # PYTHON       : 3.11.9

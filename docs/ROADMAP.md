@@ -1,4 +1,4 @@
-# ⚡ ALPHAEDGE — ROADMAP
+﻿# ⚡ ALPHAEDGE — ROADMAP
 
 > **Source** : Consolidation de `ALPHAEDGE_PLAN_ACTION_AUDIT.md` + `ALPHAEDGE_POST_AUDIT_ACTION_PLAN.md`
 > **Date** : 2026-03-09

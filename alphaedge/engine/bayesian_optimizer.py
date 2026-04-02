@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/bayesian_optimizer.py
 # DESCRIPTION  : Bayesian parameter search with Optuna
 # PYTHON       : 3.11.9
@@ -23,7 +23,7 @@ from alphaedge.engine.sensitivity import SENSITIVITY_PARAMS, _run_with_params
 
 _DEFAULT_PARAM_NAMES = [
     "adx_threshold",
-    "momentum_fast_period",  # EMA fast (8–20) — replaces FCR-specific min_body_ratio
+    "momentum_fast_period",  # EMA fast (8–20)
     "momentum_slow_period",  # EMA slow (20–50)
     "rr_ratio",
 ]

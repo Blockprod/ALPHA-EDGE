@@ -1,4 +1,4 @@
-# Spec — Order Execution
+﻿# Spec — Order Execution
 
 > Comportement attendu de `create_bracket_order()` et de `broker.py`.
 > Source : `alphaedge/core/order_manager.pyx` + `alphaedge/engine/broker.py`

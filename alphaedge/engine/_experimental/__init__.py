@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/_experimental/__init__.py
 # DESCRIPTION  : Experimental / not-yet-integrated modules
 # ============================================================

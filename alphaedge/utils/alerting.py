@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/utils/alerting.py
 # DESCRIPTION  : External alerting via Telegram and Discord webhooks
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -421,7 +421,7 @@ def alert_signal_detected(pair: str, direction: str) -> Alert:
         event=AlertEvent.SIGNAL_DETECTED,
         level=AlertLevel.INFO,
         title=f"Signal: {pair} {direction}",
-        message=f"FCR + Gap + Engulfing confirmed on {pair}.",
+        message=f"Momentum + Carry signal confirmed on {pair}.",
     )
 
 

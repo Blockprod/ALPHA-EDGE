@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_risk_manager_slippage.py
 # DESCRIPTION  : Tests for slippage buffer application
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: risk manager tests — slippage."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: risk manager tests — slippage."""
 
 from __future__ import annotations
 

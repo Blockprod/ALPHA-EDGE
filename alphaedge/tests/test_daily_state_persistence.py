@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_daily_state_persistence.py
 # DESCRIPTION  : Tests for P0-03 daily state persistence
 # AUTHOR       : ALPHAEDGE Dev Team

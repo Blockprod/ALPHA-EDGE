@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/utils/timezone.py
 # DESCRIPTION  : DST-aware timezone conversion using zoneinfo
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: timezone utilities with auto DST."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: timezone utilities with auto DST."""
 
 from __future__ import annotations
 
@@ -257,14 +257,14 @@ def is_dst_transition_week(dt_utc: datetime | None = None) -> bool:
 
 
 # ------------------------------------------------------------------
-# Get pre-session time window for FCR detection
+# Get pre-session time window
 # ------------------------------------------------------------------
 def get_pre_session_window_utc(
     minutes_before: int = 30,
     date: datetime | None = None,
 ) -> tuple[datetime, datetime]:
     """
-    Get the time window before session open for M5 FCR detection.
+    Get the time window before session open for pre-session bar fetch.
 
     Parameters
     ----------

@@ -1,4 +1,4 @@
-name: AlphaEdge CI
+﻿name: AlphaEdge CI
 
 on:
   push:

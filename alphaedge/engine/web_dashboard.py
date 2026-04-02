@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/web_dashboard.py
 # DESCRIPTION  : FastAPI web dashboard with REST + WebSocket
 # AUTHOR       : ALPHAEDGE Dev Team

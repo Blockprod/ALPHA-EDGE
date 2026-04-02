@@ -1,4 +1,4 @@
-# Paramètres de configuration — ALPHAEDGE
+﻿# Paramètres de configuration — ALPHAEDGE
 
 > Référence pour `run-backtest`. Valeurs nominales actuelles (2026-03-26).
 > Source de vérité : `alphaedge/config/constants.py` + `config.yaml`.

@@ -1,4 +1,4 @@
----
+﻿---
 modele: sonnet-4.6
 mode: agent
 contexte: codebase
@@ -38,7 +38,7 @@ Paper trading opérationnel — live techniquement possible mais non testé en r
 2. **`_apply_cli_mode()` contourne le garde ENV** — override `is_paper=False` sans vérifier `ALPHAEDGE_PAPER`, exécuté *après* `_resolve_ib_mode_and_port()`.
 3. **3 fichiers `.pyx` orphelins** — `fcr_detector`, `gap_detector`, `engulfing_detector` : non compilés, pas de stubs, hors pipeline. Risque de confusion à la maintenance.
 4. **`EUR_USD_RATE` hardcodé (1.08) dans le live** vs valeur configurable en backtest : source de vérité divergente pour `pnl_eur`.
-5. **Documentation stale** — `pyproject.toml` et `.gitignore` décrivent encore "FCR Forex Trading Bot".
+5. **Documentation stale** — `pyproject.toml` et `.gitignore` décrivent encore "Momentum+Carry Forex Trading Bot".
 
 ---
 
@@ -283,7 +283,7 @@ Ces fichiers sont du code mort issu de la stratégie FCR abandonnée. Ils ne fon
 | M-01 | 🟠 Majeur | 4 & 8 | `alert_daily_summary` toujours `wins=0, losses=0, pnl_usd=0.0` codés en dur — opérateur reçoit rapport de fin de session structurellement faux | `session_lifecycle.py:918-920` | Visibilité opérateur nulle sur P&L live réel |
 | M-02 | 🟠 Majeur | 5 & 6 | `_apply_cli_mode("live")` override `is_paper=False` sans re-vérifier `ALPHAEDGE_PAPER` ENV — contourne le garde primaire documenté | `strategy.py:326` | Vecteur live non-intentionnel si opérateur distrait ; violation contrat ENV-first |
 | M-03 | 🟡 Mineur | 9 | 3 `.pyx` orphelins FCR legacy (`fcr_detector`, `gap_detector`, `engulfing_detector`) — non compilés, pas de stubs, hors pipeline | `alphaedge/core/*.pyx` | Confusion maintenance ; 3 fichiers `.c` générés inutilement dans le repo |
-| M-04 | 🟡 Mineur | 1 & 9 | Documentation stale : `pyproject.toml:4,16` + `.gitignore:4` décrivent "FCR Forex Trading Bot" — stratégie migrée Momentum+Carry | `pyproject.toml:4,16` · `.gitignore:4` | Désinformation outillage CI/CD ; confusion nouveaux contributeurs |
+| M-04 | 🟡 Mineur | 1 & 9 | Documentation stale : `pyproject.toml:4,16` + `.gitignore:4` décrivent "Momentum+Carry Forex Trading Bot" — stratégie migrée Momentum+Carry | `pyproject.toml:4,16` · `.gitignore:4` | Désinformation outillage CI/CD ; confusion nouveaux contributeurs |
 | M-05 | 🟡 Mineur | 6 | `EUR_USD_RATE = 1.08` (constante `constants.py:62`) utilisé dans le moteur live pour `pnl_eur` ; backtest utilise `config.trading.eur_usd_rate` (configurable) — source de vérité divergente | `session_lifecycle.py:27` · `constants.py:62` vs `loader.py:394` | `pnl_eur` du journal live non-configurable ; écart silent si taux EUR/USD s'éloigne de 1.08 |
 | M-06 | 🟡 Mineur | 2 & 8 | Divergence algorithme corrélation live/backtest : live = matrice Pearson ρ, backtest = exposition USD directionnelle — documentée (NOTE commentaire) mais non résolue | `session_lifecycle.py:~625` | Résultat backtest non reproductible en live si multi-paire activé |
 | M-07 | 🟡 Mineur | 8 | Tests manquants pour les 2 bugs structurels identifiés : `alert_daily_summary` avec valeurs réelles, et `_apply_cli_mode("live")` post-ENV | `alphaedge/tests/` | M-01 et M-02 resteraient non-régression même après correction sans tests dédiés |

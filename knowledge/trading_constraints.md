@@ -1,23 +1,22 @@
-# ALPHAEDGE — Trading Constraints
+﻿# ALPHAEDGE — Trading Constraints
 
-Contraintes de trading FCR extraites du code source.
+Contraintes de trading extraites du code source — stratégie Momentum+Carry.
 
 ---
 
-## Stratégie FCR — Fair Competition Range
+## Stratégie Momentum+Carry
 
 ### Définition
 
-Le signal FCR est une zone de consolidation détectée sur M5 avant l'ouverture de session. Un trade est pris quand le prix revient dans cette zone avec un engulfing M1 confirmé.
+Le signal combine un filtre de momentum directionnel (ADX + croix EMA sur bougies Daily) avec un signal carry positif. Un trade est pris quand les deux signaux sont alignés dans la même direction.
 
 ### Conditions d'entrée (toutes obligatoires)
 
-1. **FCR détecté** : range ≥ 8 pips (`DEFAULT_MIN_RANGE_PIPS`) sur 6 bougies M5 (`DEFAULT_FCR_LOOKBACK`)
-2. **Gap validé** : ATR spike ≥ 2.0× ATR moyen (`DEFAULT_MIN_ATR_RATIO`) sur 14 périodes (`DEFAULT_ATR_PERIOD`)
-3. **Engulfing confirmé** : bougie M1 englobante avec body ≥ 30% (`DEFAULT_MIN_BODY_RATIO`), wick ≤ 150% (`DEFAULT_MAX_WICK_RATIO`), volume ≥ 1.0× (`DEFAULT_MIN_VOLUME_RATIO`)
-4. **Spread acceptable** : spread live ≤ 2.0 pips (`DEFAULT_MAX_SPREAD_PIPS`)
-5. **Limite quotidienne non atteinte** : < 2 trades/session (`DEFAULT_MAX_TRADES_PER_SESSION`)
-6. **Daily loss limit non atteinte** : perte < 3.0% equity (`DEFAULT_MAX_DAILY_LOSS_PCT`)
+1. **Momentum détecté** : ADX ≥ seuil (`DEFAULT_ADX_THRESHOLD`) + EMA fast > EMA slow (long) ou inverse (short)
+2. **Carry positif** : taux d'intérêt de la paire favorable dans la direction du trade
+3. **Spread acceptable** : spread live ≤ 2.0 pips (`DEFAULT_MAX_SPREAD_PIPS`)
+4. **Limite quotidienne non atteinte** : < 2 trades/session (`DEFAULT_MAX_TRADES_PER_SESSION`)
+5. **Daily loss limit non atteinte** : perte < 3.0% equity (`DEFAULT_MAX_DAILY_LOSS_PCT`)
 
 ---
 

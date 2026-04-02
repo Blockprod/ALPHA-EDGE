@@ -1,4 +1,4 @@
-# Exemple de bloc d'audit bien formé — ALPHAEDGE
+﻿# Exemple de bloc d'audit bien formé — ALPHAEDGE
 
 > Référence pour `audit-workflow`. Copier la structure, adapter le contenu.
 

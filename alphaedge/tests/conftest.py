@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/conftest.py
 # DESCRIPTION  : Shared pytest fixtures for all test modules
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: pytest shared fixtures."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: pytest shared fixtures."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def _global_clear_daily_state() -> Generator[None, None, None]:
 
 
 # ------------------------------------------------------------------
-# Sample M5 candle data for FCR tests
+# Sample OHLCV candle data for backtest/signal tests
 # ------------------------------------------------------------------
 @pytest.fixture()
 def sample_m5_candles() -> list[dict[str, Any]]:

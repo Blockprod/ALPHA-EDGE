@@ -1,10 +1,10 @@
-# ⚡ ALPHAEDGE — MASTER AUDIT
+﻿# ⚡ ALPHAEDGE — MASTER AUDIT
 
 > **Date**: 2026-03-07
 > **Reviewer**: Senior Quant Developer / Risk Architect
 > **Scope**: Full System + Strategic & Statistical Audit
 > **Target**: Live Forex deployment via IBKR IB Gateway
-> **Repository**: ALPHAEDGE — FCR Forex Trading Bot
+> **Repository**: ALPHAEDGE — Momentum+Carry Forex Trading Bot
 
 ---
 

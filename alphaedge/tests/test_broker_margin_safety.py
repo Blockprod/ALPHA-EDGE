@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_broker_margin_safety.py
 # DESCRIPTION  : Tests for fail-closed margin checks
 # AUTHOR       : ALPHAEDGE Dev Team

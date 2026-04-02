@@ -1,5 +1,5 @@
-# ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+﻿# ============================================================
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : Makefile
 # DESCRIPTION  : CI-ready QA and build targets
 # AUTHOR       : ALPHAEDGE Dev Team

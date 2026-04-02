@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_backtest_export.py
 # DESCRIPTION  : Tests for backtest_export module (P3-02 SRP extraction)
 # AUTHOR       : ALPHAEDGE Dev Team

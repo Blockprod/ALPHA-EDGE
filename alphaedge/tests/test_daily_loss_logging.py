@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_daily_loss_logging.py
 # DESCRIPTION  : Tests for daily loss kill-switch log severity
 # PYTHON       : 3.11.9

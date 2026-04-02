@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_backtest_execution_validation.py
 # DESCRIPTION  : Backtest execution validation parity with live filters
 # PYTHON       : 3.11.9

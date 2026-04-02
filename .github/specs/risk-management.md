@@ -1,4 +1,4 @@
-# Spec — Risk Management
+﻿# Spec — Risk Management
 
 > Comportement attendu de `calculate_position_size()` et `check_daily_limit()`.
 > Source : `alphaedge/core/risk_manager.pyx` + `alphaedge/core/_stubs/risk_manager.py`

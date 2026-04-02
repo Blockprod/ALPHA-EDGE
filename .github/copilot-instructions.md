@@ -1,4 +1,4 @@
-# ⚡ ALPHAEDGE — GitHub Copilot Instructions
+﻿# ⚡ ALPHAEDGE — GitHub Copilot Instructions
 
 > This file is read automatically by GitHub Copilot in every session.
 > It defines the project context, rules, and workflow for AI-assisted development.
@@ -9,7 +9,7 @@
 
 | Field | Value |
 |-------|-------|
-| Name | ALPHAEDGE — FCR Forex Trading Bot |
+| Name | ALPHAEDGE — Momentum+Carry Forex Trading Bot |
 | Python | **3.11.9 strictly** — never use 3.12+ syntax |
 | Stack | Python / Cython 3.0 / ib_insync / loguru / Rich / vectorbt |
 | Broker | Interactive Brokers via IB Gateway |
@@ -21,10 +21,8 @@
 
 ```
 IB Gateway
-  └─► data_feed.py          [Python]  — M5 bar feed
-        └─► fcr_detector.pyx [Cython]  — FCR range detection
-        └─► gap_detector.pyx [Cython]  — ATR spike filter
-        └─► engulfing_detector.pyx [Cython] — M1 entry signal
+  └► data_feed.py          [Python]  — Daily bar feed
+        └► momentum_detector.pyx [Cython]  — ADX + EMA momentum signal
               └─► risk_manager.pyx [Cython]  — Position sizing
               └─► order_manager.pyx [Cython] — Bracket order
                     └─► broker.py    [Python] — IB order submission
@@ -39,7 +37,7 @@ IB Gateway
 
 1. **`ALPHAEDGE_PAPER=true` is the default.** Never suggest live trading without explicit user confirmation.
 2. **After editing any `.pyx` file, run `make build`** to recompile Cython. The `.pyx` sources are not the runtime modules — the compiled `.pyd`/`.so` files are.
-3. **Do not modify `alphaedge/core/` logic** without explicit instruction. The FCR strategy is proprietary.
+3. **Do not modify `alphaedge/core/` logic** without explicit instruction. Core signal logic is proprietary.
 4. **`make qa` must pass before any commit:** Ruff lint + Mypy (`pyproject.toml`) + Pytest ≥80% coverage.
 5. **Python 3.11.9 only.** No 3.12+ syntax.
 6. **Coverage threshold applies to `config/`, `utils/`, `core/` only.** `engine/` modules are excluded (require IB Gateway).
@@ -51,7 +49,7 @@ IB Gateway
 <important if="modifying any file">
 
 
-- Never modify `core/*.pyx` without explicit instruction from the user *(proprietary FCR logic — changes invalidate all backtest results)*
+- Never modify `core/*.pyx` without explicit instruction from the user *(proprietary signal logic — changes invalidate all backtest results)*
 - Never commit `.env`, `*.log`, or any proprietary action plan files
 - Never run `make build` unless a `.pyx` file was intentionally modified *(slow and irreversible mid-session — triggers full recompilation)*
 - Never use `# type: ignore` or `# pyright: ignore` as a fix — find and fix the root cause *(silences real type errors — fix the root cause instead)*
@@ -102,7 +100,7 @@ IB Gateway
 
 | Function | Returns None / falsy | Correct agent behavior |
 |----------|----------------------|------------------------|
-| `detect_fcr(...)` | No valid FCR found | STOP — do not proceed to gap detection |
+| `detect_momentum(...)` | No valid signal | STOP — do not proceed |
 | `detect_gap(...)` | `detected: False` | STOP — do not proceed to engulfing detection |
 | `detect_engulfing(...)` | `None` | STOP — do not place any order |
 | `calculate_position_size(...)` | `is_valid: False` | STOP — do not submit order, log WARNING |
@@ -143,7 +141,7 @@ make clean                      # remove build artifacts
 All test files must follow: `test_<module>_<scenario>.py`
 
 Examples:
-- `test_fcr_detector_detect.py` — happy path FCR detection
+- `test_momentum_detector_detect.py` — happy path momentum detection
 - `test_risk_manager_daily.py` — daily loss limit check
 - `test_order_manager_validation.py` — bracket order rejection
 

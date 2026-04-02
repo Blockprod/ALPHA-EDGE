@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/__init__.py
 # DESCRIPTION  : Test suite package initializer
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,4 +7,4 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: pytest test suite."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: pytest test suite."""

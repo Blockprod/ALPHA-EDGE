@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_timezone_weekend.py
 # DESCRIPTION  : Tests for weekend guard in timezone utils
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: timezone weekend guard tests."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: timezone weekend guard tests."""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/dashboard.py
 # DESCRIPTION  : Rich terminal dashboard for real-time monitoring
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: real-time Rich terminal dashboard."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: real-time Rich terminal dashboard."""
 
 from __future__ import annotations
 
@@ -112,13 +112,13 @@ def _build_signal_panel(
     """
     signal_table = Table(show_header=True, header_style="bold yellow")
     signal_table.add_column("Pair", width=10)
-    signal_table.add_column("FCR", width=15)
+    signal_table.add_column("Range", width=15)
     signal_table.add_column("Gap", width=10)
     signal_table.add_column("Signal", width=12)
     signal_table.add_column("Spread", width=10)
 
     for pair_data in state.get("pairs", []):
-        fcr_str = _format_fcr(pair_data.get("fcr"))
+        fcr_str = _format_range(pair_data.get("range") or pair_data.get("fcr"))
         gap_str = _format_gap(pair_data.get("gap"))
         signal_str = _format_signal(pair_data.get("signal"))
         spread_str = f"{pair_data.get('spread', 0.0):.1f} pips"
@@ -135,10 +135,10 @@ def _build_signal_panel(
 
 
 # ------------------------------------------------------------------
-# Format FCR detection status
+# Format pre-session range status
 # ------------------------------------------------------------------
-def _format_fcr(fcr: dict[str, Any] | None) -> str:
-    """Format FCR result for dashboard display."""
+def _format_range(fcr: dict[str, Any] | None) -> str:
+    """Format pre-session range result for dashboard display."""
     if fcr is None:
         return "[dim]Scanning...[/]"
     if fcr.get("detected"):

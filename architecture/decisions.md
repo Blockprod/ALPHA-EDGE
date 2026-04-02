@@ -1,4 +1,4 @@
-# ALPHAEDGE — Architecture Decisions
+﻿# ALPHAEDGE — Architecture Decisions
 
 Enregistrement des décisions architecturales (ADR) du projet.
 

@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/config/loader.py
 # DESCRIPTION  : YAML config and .env loader with validation
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: configuration file loader."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: configuration file loader."""
 
 from __future__ import annotations
 
@@ -199,12 +199,10 @@ class TradingConfig:
     min_volume_ratio_by_pair: dict[str, float] = field(default_factory=dict)
     min_atr_ratio_by_pair: dict[str, float] = field(default_factory=dict)
     pair_aliases: dict[str, str] = field(default_factory=dict)  # virtual → real IB pair
-    fcr_timeframe: str = "5 mins"  # Timeframe for FCR detection (pre-session bars)
     excluded_days: list[int] = field(default_factory=list)  # 0=Mon..6=Sun to exclude
     usd_correlation_filter: bool = (
         False  # Block trades that amplify USD directional exposure
     )
-    fcr_range_cv_max: float = 1.0  # Max CV of pre-session bar ranges (0.0 = disabled)
     direction_filter: str = "ALL"  # "ALL" | "LONG" | "SHORT"
     walk_forward_enabled: bool = False  # Call run_walk_forward after main backtest
     walk_forward_train_months: int = 18  # IS window length in months
@@ -408,10 +406,8 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         starting_equity=float(section.get("starting_equity", 10000.0)),
         partial_exit=bool(risk_section.get("partial_exit", False)),
         trailing_partial_exit=bool(risk_section.get("trailing_partial_exit", False)),
-        fcr_timeframe=str(struct_section.get("fcr_timeframe", "5 mins")),
         excluded_days=[int(d) for d in section.get("excluded_days", [])],
         usd_correlation_filter=bool(section.get("usd_correlation_filter", False)),
-        fcr_range_cv_max=float(struct_section.get("fcr_range_cv_max", 1.0)),
         direction_filter=str(section.get("direction_filter", "ALL")),
         walk_forward_enabled=bool(section.get("walk_forward_enabled", False)),
         walk_forward_train_months=int(section.get("walk_forward_train_months", 18)),

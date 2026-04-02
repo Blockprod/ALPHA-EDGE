@@ -1,4 +1,4 @@
-# ALPHAEDGE — Claude Context
+﻿# ALPHAEDGE — Claude Context
 # Pipeline complet · Modules · Contraintes
 
 ---

@@ -1,4 +1,4 @@
-# /fix — Pipeline de correction d'erreurs P1 → P5
+﻿# /fix — Pipeline de correction d'erreurs P1 → P5
 
 Exécute le pipeline complet de correction des erreurs Ruff / Mypy / Pytest.
 

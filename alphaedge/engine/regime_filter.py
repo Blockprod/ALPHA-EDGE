@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/regime_filter.py
 # DESCRIPTION  : Daily market regime classifier (K-Means, observation mode)
 # PYTHON       : 3.11.9

@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_paper_live_separation.py
 # DESCRIPTION  : Tests for paper/live safety normalization
 # AUTHOR       : ALPHAEDGE Dev Team

@@ -1,4 +1,4 @@
----
+﻿---
 modele: sonnet-4.6
 mode: agent
 contexte: codebase

@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_broker_circuit_breaker_reset.py
 # DESCRIPTION  : Circuit breaker auto-reset behaviour in BrokerConnection
 # PYTHON       : 3.11.9

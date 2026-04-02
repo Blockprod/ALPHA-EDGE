@@ -1,4 +1,4 @@
----
+﻿---
 name: run-qa
 description: >
   Use when: running make qa, diagnosing lint/mypy/pytest errors, checking

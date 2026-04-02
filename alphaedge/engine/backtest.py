@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/backtest.py
 # DESCRIPTION  : Backtesting engine with vectorbt and IB data
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: historical backtesting engine."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: historical backtesting engine."""
 
 from __future__ import annotations
 

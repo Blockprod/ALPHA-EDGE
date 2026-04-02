@@ -1,4 +1,4 @@
-# ALPHAEDGE — Agent : Code Auditor
+﻿# ALPHAEDGE — Agent : Code Auditor
 
 Checklists de sécurité, qualité et intégrité du code.
 

@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # ALPHAEDGE — Enregistrement des tâches planifiées Windows
 # LANCER CE SCRIPT EN TANT QU'ADMINISTRATEUR
 # Clic droit → "Exécuter avec PowerShell en tant qu'administrateur"

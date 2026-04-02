@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_backtest_simulation_carry_unknown.py
 # DESCRIPTION  : compute_overnight_carry — unknown pair / missing rate guards
 # SCENARIO     : Unrecognised pair or incomplete rates → returns 0.0 safely

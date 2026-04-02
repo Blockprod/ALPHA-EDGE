@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/monte_carlo.py
 # DESCRIPTION  : Monte Carlo drawdown estimation via trade permutations
 # AUTHOR       : ALPHAEDGE Dev Team

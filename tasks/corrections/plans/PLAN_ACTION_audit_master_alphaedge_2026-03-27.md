@@ -1,4 +1,4 @@
----
+﻿---
 modele: sonnet-4.6
 mode: agent
 contexte: codebase
@@ -109,17 +109,17 @@ make qa
 
 ### [C-04] Mettre à jour la documentation stale (pyproject.toml + .gitignore)
 **Fichiers :**
-- `pyproject.toml:4` — `description = "ALPHAEDGE — FCR Forex Trading Bot"`
-- `pyproject.toml:16` — `description = "ALPHAEDGE — FCR Forex Trading Bot"`
-- `.gitignore:4` — commentaire header "FCR Forex Trading Bot"
+- `pyproject.toml:4` — `description = "ALPHAEDGE — Momentum+Carry Forex Trading Bot"`
+- `pyproject.toml:16` — `description = "ALPHAEDGE — Momentum+Carry Forex Trading Bot"`
+- `.gitignore:4` — commentaire header "Momentum+Carry Forex Trading Bot"
 - `setup.py` — header commentaire projet (si applicable)
-**Problème :** La description du projet dans `pyproject.toml` et le header `.gitignore` décrivent encore "FCR Forex Trading Bot" alors que la stratégie est Momentum+Carry depuis la migration (audit #13).
+**Problème :** La description du projet dans `pyproject.toml` et le header `.gitignore` décrivent encore "Momentum+Carry Forex Trading Bot" alors que la stratégie est Momentum+Carry depuis la migration (audit #13).
 **Correction :**
-Remplacer "FCR Forex Trading Bot" par "Momentum+Carry Forex Trading Bot" dans :
+Remplacer "Momentum+Carry Forex Trading Bot" par "Momentum+Carry Forex Trading Bot" dans :
 - `pyproject.toml:4` (section `[project]`)
 - `pyproject.toml:16` (si doublon confirmé — vérifier avant)
 - `.gitignore:4` (commentaire header)
-- `setup.py:7` (commentaire "FCR Forex Trading Bot" en header)
+- `setup.py:7` (commentaire "Momentum+Carry Forex Trading Bot" en header)
 **Validation :**
 ```powershell
 make qa

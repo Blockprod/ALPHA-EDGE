@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_ml_filter_live_status.py
 # DESCRIPTION  : Tests for ML shim live-integration status markers
 # PYTHON       : 3.11.9

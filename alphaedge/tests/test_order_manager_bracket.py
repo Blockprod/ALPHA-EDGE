@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_order_manager_bracket.py
 # DESCRIPTION  : Tests for bracket order creation and validation
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: order manager tests — brackets."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: order manager tests — brackets."""
 
 from __future__ import annotations
 

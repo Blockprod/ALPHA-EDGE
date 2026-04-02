@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul 2>&1
 title ALPHAEDGE - Installation Tâches Planifiées
 echo.
@@ -114,7 +114,7 @@ echo [*] Création tâche %TASK_BOT%...
 echo ^<?xml version="1.0" encoding="UTF-16"?^>
 echo ^<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"^>
 echo   ^<RegistrationInfo^>
-echo     ^<Description^>ALPHAEDGE FCR Forex Trading Bot — paper trading auto-start^</Description^>
+echo     ^<Description^>ALPHAEDGE Momentum+Carry Forex Trading Bot — paper trading auto-start^</Description^>
 echo   ^</RegistrationInfo^>
 echo   ^<Triggers^>
 echo     ^<LogonTrigger^>

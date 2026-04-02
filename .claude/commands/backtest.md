@@ -1,4 +1,4 @@
-# /backtest — Lance et interprète le backtest AlphaEdge
+﻿# /backtest — Lance et interprète le backtest AlphaEdge
 
 Lire le skill complet avant de commencer :
 `.github/skills/run-backtest/SKILL.md`

@@ -1,4 +1,4 @@
-{
+﻿{
   "permissions": {
     "allow": ["make qa", "make test", "make build", "make bench", "make clean"],
     "deny": ["git push --force", "rm -rf"]

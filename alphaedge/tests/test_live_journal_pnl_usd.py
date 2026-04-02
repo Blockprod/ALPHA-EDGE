@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_live_journal_pnl_usd.py
 # DESCRIPTION  : PnL USD formula — multi-pair parametrized test
 # SCENARIO     : exchange_rate correctly converts raw PnL to USD

@@ -20,17 +20,21 @@ def check_file(path: Path) -> list[str]:
     except OSError:
         return violations
 
-    # Interdit : détection de la variable de mode live (jamais la chaîne brute)
-    if "ALPHAEDGE_PAPER=" in content and "=false" in content:
-        violations.append(
-            f"  🔴 {path}: contient la variable de mode live interdite (INTERDIT)"
-        )
+    # `# type: ignore` forbidden in Python source only (not docs/config)
+    if path.suffix in {".py", ".pyx"}:
+        if "# type: ignore" in content:
+            violations.append(
+                f"  🔴 {path}: contient '# type: ignore' "
+                f"(INTERDIT — trouver la vraie cause)"
+            )
 
-    if "# type: ignore" in content:
-        violations.append(
-            f"  🔴 {path}: contient '# type: ignore' "
-            f"(INTERDIT — trouver la vraie cause)"
-        )
+    # ALPHAEDGE_PAPER=false forbidden in Python/YAML application config
+    # (CI workflows legitimately set PAPER=false for integration tests)
+    if path.suffix in {".py", ".yaml"} and path.parts[0] != ".github":
+        if "ALPHAEDGE_PAPER=" in content and "=false" in content:
+            violations.append(
+                f"  🔴 {path}: contient la variable de mode live interdite (INTERDIT)"
+            )
 
     return violations
 
@@ -49,6 +53,12 @@ def main() -> int:
             continue
 
         path = Path(filename)
+        # Exclude documentation/agent dirs and self
+        excluded_prefixes = ("tasks/", "tasks\\", "agents/", "agents\\")
+        if any(str(path).startswith(p) for p in excluded_prefixes):
+            continue
+        if path.name == "pre_commit_guard.py":
+            continue
         if path.suffix in {".py", ".pyx", ".yaml", ".yml", ".toml", ".json", ".md"}:
             violations.extend(check_file(path))
 

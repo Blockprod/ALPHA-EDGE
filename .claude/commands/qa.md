@@ -1,4 +1,4 @@
-# /qa — Lance make qa et résume le résultat
+﻿# /qa — Lance make qa et résume le résultat
 
 Exécute la commande suivante dans le terminal :
 

@@ -1,4 +1,4 @@
-# Erreurs QA connues — ALPHAEDGE
+﻿# Erreurs QA connues — ALPHAEDGE
 
 > Référence pour `run-qa`. Erreurs Ruff / Pyright réellement rencontrées sur ce projet.
 > Mise à jour après chaque nouvelle erreur résolue.

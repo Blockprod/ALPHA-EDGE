@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_fill_verification.py
 # DESCRIPTION  : Tests for P1-02 bracket fill verification
 # AUTHOR       : ALPHAEDGE Dev Team

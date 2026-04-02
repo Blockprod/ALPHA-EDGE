@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/utils/__init__.py
 # DESCRIPTION  : Utility modules package initializer
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -8,4 +8,4 @@
 # LAST UPDATED : 2026-03-07
 # ============================================================
 # pylint: disable=cyclic-import
-"""ALPHAEDGE — FCR Forex Trading Bot: shared utility modules."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: shared utility modules."""

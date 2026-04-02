@@ -1,4 +1,4 @@
-# /session-end — Résumé de fin de session
+﻿# /session-end — Résumé de fin de session
 
 Génère un bilan structuré de la session courante et propose les mises à jour nécessaires.
 

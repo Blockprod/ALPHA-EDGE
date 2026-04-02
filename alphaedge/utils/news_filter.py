@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/utils/news_filter.py
 # DESCRIPTION  : Economic news blackout filter
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-08
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: economic news blackout filter.
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: economic news blackout filter.
 
 Loads an economic calendar CSV and blocks trading signals during
 high-impact news windows to avoid volatile whipsaw moves.

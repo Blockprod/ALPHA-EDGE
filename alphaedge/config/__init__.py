@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/config/__init__.py
 # DESCRIPTION  : Configuration modules package initializer
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,4 +7,4 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-07
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: configuration loading and constants."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: configuration loading and constants."""

@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_bayesian_optimizer_search.py
 # DESCRIPTION  : Unit tests for Optuna-based parameter search
 # SCENARIO     : Return shape · ranges · trial count · metric switch

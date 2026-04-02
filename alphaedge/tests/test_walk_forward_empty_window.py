@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_walk_forward_empty_window.py
 # DESCRIPTION  : S-05 — walk-forward edge case: N<5 bars returns empty report
 # ============================================================

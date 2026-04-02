@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/backtest_export.py
 # DESCRIPTION  : Backtest result export: CSV and equity curve chart
 # AUTHOR       : ALPHAEDGE Dev Team

@@ -1,4 +1,4 @@
-# ALPHAEDGE — Agent : Dev Engineer
+﻿# ALPHAEDGE — Agent : Dev Engineer
 
 Procédure d'ajout de fonctionnalité et pipeline CI.
 

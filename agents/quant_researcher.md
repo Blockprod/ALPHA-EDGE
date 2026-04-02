@@ -1,4 +1,4 @@
-# ALPHAEDGE — Agent : Quant Researcher
+﻿# ALPHAEDGE — Agent : Quant Researcher
 
 Checklist anti-biais et protocole de validation statistique.
 

@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_risk_manager_pair_limit.py
 # DESCRIPTION  : Tests for per-pair limit enforcement
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-22
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: risk manager tests — pair limit."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: risk manager tests — pair limit."""
 
 from __future__ import annotations
 

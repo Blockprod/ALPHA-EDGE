@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/utils/pair_correlation.py
 # DESCRIPTION  : Multi-pair correlation analysis and risk adjustment
 # AUTHOR       : ALPHAEDGE Dev Team

@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_spread_error_blocks_trade.py
 # DESCRIPTION  : Tests for P0-02 spread/mid_price None blocks trade
 # AUTHOR       : ALPHAEDGE Dev Team

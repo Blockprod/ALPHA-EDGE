@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/live_types.py
 # DESCRIPTION  : Live trade record type — journal de trading live
 # AUTHOR       : ALPHAEDGE Dev Team

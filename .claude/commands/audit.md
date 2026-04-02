@@ -1,4 +1,4 @@
-# /audit — Pipeline complet A → B → C
+﻿# /audit — Pipeline complet A → B → C
 
 Lance le pipeline d'audit AlphaEdge en 3 étapes.
 

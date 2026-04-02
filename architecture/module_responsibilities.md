@@ -1,4 +1,4 @@
-# ALPHAEDGE — Module Responsibilities
+﻿# ALPHAEDGE — Module Responsibilities
 
 > Source canonique du tableau des modules.
 > Référencé par CLAUDE.md. Mis à jour ici uniquement.

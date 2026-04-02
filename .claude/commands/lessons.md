@@ -1,4 +1,4 @@
-# /lessons — Consulter et enrichir tasks/lessons.md
+﻿# /lessons — Consulter et enrichir tasks/lessons.md
 
 ## Lecture
 Afficher le contenu complet de `tasks/lessons.md`.

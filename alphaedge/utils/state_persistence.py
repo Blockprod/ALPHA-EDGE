@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/utils/state_persistence.py
 # DESCRIPTION  : Daily state persistence to survive restarts
 # AUTHOR       : ALPHAEDGE Dev Team

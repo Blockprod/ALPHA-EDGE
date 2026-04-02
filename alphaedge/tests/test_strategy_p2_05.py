@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_strategy_p2_05.py
 # DESCRIPTION  : P2-05 — state persistence wired to SL/TP fills + startup reconcile
 # ============================================================

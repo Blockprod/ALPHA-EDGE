@@ -1,4 +1,4 @@
----
+﻿---
 modele: sonnet-4.6
 mode: agent
 contexte: codebase
@@ -58,18 +58,18 @@ Statut : ✅
 ### [C-02] Mettre à jour le titre de `WORKFLOW.md`
 
 Fichier : `tasks/WORKFLOW.md:11`
-Problème : La ligne 11 contient encore `# ALPHAEDGE — FCR Forex Trading Bot (IB Gateway)`.
-  Toutes les occurrences de "FCR Forex Trading Bot" ont été mises à jour dans les fichiers
+Problème : La ligne 11 contient encore `# ALPHAEDGE — Momentum+Carry Forex Trading Bot (IB Gateway)`.
+  Toutes les occurrences de "Momentum+Carry Forex Trading Bot" ont été mises à jour dans les fichiers
   `engine/`, `core/`, `config/`, mais le fichier guide du workflow lui-même n'a pas été mis à jour.
   La session courante a déjà rebrandé `constants.py`, `data_feed.py`, `broker.py`,
   `position_manager.py`, `core/__init__.py` (corrections C-10 de l'audit structural).
 Correction :
   Remplacer la ligne 11 :
-    # ALPHAEDGE — FCR Forex Trading Bot (IB Gateway)
+    # ALPHAEDGE — Momentum+Carry Forex Trading Bot (IB Gateway)
   par :
     # ALPHAEDGE — Momentum+Carry Forex Trading Bot (IB Gateway)
 Validation :
-  grep "FCR Forex Trading Bot" tasks/WORKFLOW.md  # doit retourner aucun résultat
+  grep "Momentum+Carry Forex Trading Bot" tasks/WORKFLOW.md  # doit retourner aucun résultat
 Dépend de : Aucune
 Statut : ✅
 

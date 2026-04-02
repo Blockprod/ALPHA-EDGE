@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_core_backend_visibility.py
 # DESCRIPTION  : Tests for core backend visibility and fallback reporting
 # AUTHOR       : ALPHAEDGE Dev Team

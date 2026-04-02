@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_is_oos_split.py
 # DESCRIPTION  : Tests for IS/OOS split, report, and CSV export
 # ============================================================

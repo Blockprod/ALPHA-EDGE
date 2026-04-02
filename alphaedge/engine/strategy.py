@@ -304,7 +304,7 @@ class SwingStrategy:
 # ------------------------------------------------------------------
 def _parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="ALPHAEDGE — FCR Forex Trading Bot")
+    parser = argparse.ArgumentParser(description="ALPHAEDGE — Momentum+Carry")
     parser.add_argument(
         "--mode",
         choices=["paper", "live"],

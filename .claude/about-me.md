@@ -1,4 +1,4 @@
-# Profil utilisateur — AlphaEdge
+﻿# Profil utilisateur — AlphaEdge
 
 ## Rôle
 - Trader indépendant + développeur Python solo

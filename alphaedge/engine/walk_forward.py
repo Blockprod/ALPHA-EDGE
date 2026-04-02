@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/walk_forward.py
 # DESCRIPTION  : Walk-forward optimization framework
 # AUTHOR       : ALPHAEDGE Dev Team

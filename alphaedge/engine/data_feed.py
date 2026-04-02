@@ -572,7 +572,7 @@ class HistoricalDataFeed:
         lookback_minutes: int = 30,
     ) -> list[dict[str, Any]]:
         """
-        Fetch M5 bars before NYSE session open for FCR detection.
+        Fetch M5 bars before NYSE session open for pre-session analysis.
 
         Parameters
         ----------

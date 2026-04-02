@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/backtest_types.py
 # DESCRIPTION  : Shared data types used by the backtest subsystem
 # AUTHOR       : ALPHAEDGE Dev Team

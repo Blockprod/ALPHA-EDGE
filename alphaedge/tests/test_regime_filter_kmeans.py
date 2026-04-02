@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_regime_filter_kmeans.py
 # DESCRIPTION  : Unit tests for DailyRegimeFilter (K-Means)
 # SCENARIO     : Fit · predict · recalibration · empty data

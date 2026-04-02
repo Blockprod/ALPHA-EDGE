@@ -1,4 +1,4 @@
-# ⚡ ALPHAEDGE — STRUCTURAL ACTION PLAN
+﻿# ⚡ ALPHAEDGE — STRUCTURAL ACTION PLAN
 
 > **Source**: Audit structurel du 2026-03-09 (6 dimensions : A→F)
 > **Score de départ**: 5.2 / 10 — *Structurally noisy. Strong bones, poor hygiene.*
@@ -262,7 +262,7 @@ Il n'existe aucun fichier d'entrée AI. Un LLM lisant le repo doit traverser 3 f
 
 **Contenu minimal requis dans les deux fichiers** :
 ```markdown
-## Project: ALPHAEDGE — FCR Forex Trading Bot
+## Project: ALPHAEDGE — Momentum+Carry Forex Trading Bot
 - Stack: Python 3.11.9 / Cython 3.0 / ib_insync / loguru / Rich / vectorbt
 - Architecture: IB Gateway → data_feed → [fcr_detector/gap_detector/engulfing_detector].pyx
   → risk_manager.pyx → order_manager.pyx → broker.py

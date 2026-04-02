@@ -1,4 +1,4 @@
-# Spec — Backtest Engine
+﻿# Spec — Backtest Engine
 
 > Comportement attendu de `alphaedge/engine/backtest.py` et modules associés.
 > Source : `alphaedge/engine/backtest.py`, `backtest_simulation.py`, `backtest_stats.py`

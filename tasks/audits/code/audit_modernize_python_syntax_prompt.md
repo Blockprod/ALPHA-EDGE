@@ -1,4 +1,4 @@
-Voici la **version finale optimisée** du prompt, intégrant strictement vos exigences non négociables tout en conservant la structure XML-like légère, le raisonnement renforcé et les bonnes pratiques pour Claude Sonnet 4.6.
+﻿Voici la **version finale optimisée** du prompt, intégrant strictement vos exigences non négociables tout en conservant la structure XML-like légère, le raisonnement renforcé et les bonnes pratiques pour Claude Sonnet 4.6.
 
 ```markdown
 ---

@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/utils/session_manager.py
 # DESCRIPTION  : Multi-session window manager (NYSE + London)
 # AUTHOR       : ALPHAEDGE Dev Team

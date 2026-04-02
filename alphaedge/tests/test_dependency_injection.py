@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_dependency_injection.py
 # DESCRIPTION  : Tests for dependency injection in SwingStrategy (T2.8)
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-08
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: dependency injection tests."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: dependency injection tests."""
 # pylint: disable=no-member  # MagicMock modules have dynamic members
 
 from __future__ import annotations

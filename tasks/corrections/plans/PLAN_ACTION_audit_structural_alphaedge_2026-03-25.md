@@ -1,4 +1,4 @@
----
+﻿---
 modele: sonnet-4.6
 mode: agent
 contexte: codebase
@@ -193,7 +193,7 @@ Statut : ✅
 
 ---
 
-### [C-10] Corriger les headers "FCR Forex Trading Bot" dans 8 fichiers
+### [C-10] Corriger les headers "Momentum+Carry Forex Trading Bot" dans 8 fichiers
 
 Fichier :
   - `alphaedge/engine/data_feed.py:1,11`
@@ -201,13 +201,13 @@ Fichier :
   - `alphaedge/engine/position_manager.py:1`
   - `alphaedge/config/constants.py:1,19`
   - `alphaedge/core/__init__.py:1,14`
-Problème : Les headers de module mentionnent encore "FCR Forex Trading Bot"
+Problème : Les headers de module mentionnent encore "Momentum+Carry Forex Trading Bot"
 créant de la confusion lors des revues de code.
 Correction :
-  Remplacer "FCR Forex Trading Bot" par "Momentum+Carry Forex Trading Bot"
+  Remplacer "Momentum+Carry Forex Trading Bot" par "Momentum+Carry Forex Trading Bot"
   (ou "ALPHAEDGE — Momentum+Carry Strategy") dans les headers/docstrings de ces fichiers.
 Validation :
-  grep -r "FCR Forex Trading Bot" alphaedge/  # aucun résultat attendu
+  grep -r "Momentum+Carry Forex Trading Bot" alphaedge/  # aucun résultat attendu
   make qa
   # Attendu : 0 erreurs · tests verts
 Dépend de : Aucune
@@ -263,4 +263,4 @@ make qa (validation finale)
 | C-07 | `.gitignore` — alphaedge/logs/*.txt | 🟡 | `.gitignore` | XS (< 15min) | ✅ | 2026-03-25 |
 | C-08 | `.gitignore` — scripts/sweep*.txt | 🟡 | `.gitignore` | XS (< 15min) | ✅ | 2026-03-25 |
 | C-09 | Header backtest_filters.py FCR→Momentum | 🟡 | `backtest_filters.py:1-14` | XS (< 15min) | ✅ | 2026-03-25 |
-| C-10 | Headers "FCR Forex Trading Bot" × 8 fichiers | 🟡 | 5 fichiers | XS (< 30min) | ✅ | 2026-03-25 |
+| C-10 | Headers "Momentum+Carry Forex Trading Bot" × 8 fichiers | 🟡 | 5 fichiers | XS (< 30min) | ✅ | 2026-03-25 |

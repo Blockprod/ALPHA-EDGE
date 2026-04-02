@@ -1,4 +1,4 @@
-# ALPHAEDGE — Claude Rules
+﻿# ALPHAEDGE — Claude Rules
 # Règles de modification pour agents Claude
 
 ---

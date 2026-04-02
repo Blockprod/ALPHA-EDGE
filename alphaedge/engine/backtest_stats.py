@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/backtest_stats.py
 # DESCRIPTION  : Aggregate statistics computation for backtests
 # AUTHOR       : ALPHAEDGE Dev Team

@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_backtest_news_filter.py
 # DESCRIPTION  : Tests for P2-03 news filter integration in backtest
 # AUTHOR       : ALPHAEDGE Dev Team

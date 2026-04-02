@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_position_manager.py
 # DESCRIPTION  : Unit tests for PositionManager sizing and order building
 # PYTHON       : 3.11.9

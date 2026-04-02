@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/utils/volatility_regime.py
 # DESCRIPTION  : Session volatility regime filter (rolling ATR)
 # AUTHOR       : ALPHAEDGE Dev Team

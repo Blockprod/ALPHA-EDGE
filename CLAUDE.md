@@ -1,4 +1,4 @@
-# ⚡ ALPHAEDGE — AI Agent Entry Point
+﻿# ⚡ ALPHAEDGE — AI Agent Entry Point
 
 > **Read this file first.** Review `tasks/lessons.md` at the start of EVERY session — no exceptions.
 
@@ -41,7 +41,7 @@ Execute in this exact order before touching any file:
 
 | Field | Value |
 |-------|-------|
-| Name | ALPHAEDGE — FCR Forex Trading Bot |
+| Name | ALPHAEDGE — Momentum+Carry Forex Trading Bot |
 | Python | **3.11.9 strictly** — never use 3.12+ syntax |
 | Stack | Python / Cython 3.0 / ib_insync / loguru / Rich / vectorbt |
 | Broker | Interactive Brokers via IB Gateway |
@@ -68,7 +68,7 @@ alphaedge/
 .github/
   skills/      — workflows réutilisables (audit-workflow · cython-build · run-qa · run-backtest)
   prompts/     — templates tâches récurrentes (add-test · cython-build · new-util)
-  specs/       — contrats comportement fonctions critiques (fcr · order · risk · backtest)
+  specs/       — contrats comportement fonctions critiques (momentum · order · risk · backtest)
 tasks/
   audits/      — prompts code/ et methode/ + resultats/ (rapports d'audit)
   corrections/ — plans d'action datés + prompts d'exécution (generate · execute)
@@ -95,7 +95,7 @@ Les `.pyd`/`.so` sont le runtime — un `.pyx` sans `make build` est silencieuse
 
 | Function | Falsy return | Behavior |
 |----------|-------------|----------|
-| `detect_fcr(...)` | `None` | STOP — do not proceed |
+| `detect_momentum(...)` | `None` | STOP — do not proceed |
 | `detect_gap(...)` | `detected: False` | STOP — do not proceed |
 | `detect_engulfing(...)` | `None` | STOP — no order |
 | `calculate_position_size(...)` | `is_valid: False` | STOP — log WARNING |

@@ -1,4 +1,4 @@
----
+﻿---
 modele: sonnet-4.6
 mode: agent
 contexte: codebase
@@ -212,9 +212,9 @@ Artefacts de sweep présents dans le dossier : `sweep_output.txt`, `targeted_swe
 
 ### Headers de fichiers obsolètes
 
-🟡 **S-10 — Headers "FCR Forex Trading Bot" dans 8 fichiers**
+🟡 **S-10 — Headers "Momentum+Carry Forex Trading Bot" dans 8 fichiers**
 - `data_feed.py:1,11`, `broker.py:1,11`, `position_manager.py:1`, `constants.py:1,19`,
-  `core/__init__.py:1,14` — mention "FCR Forex Trading Bot" dans les headers
+  `core/__init__.py:1,14` — mention "Momentum+Carry Forex Trading Bot" dans les headers
 - Cosmétique, mais crée de la confusion dans les revues de code
 
 ---
@@ -238,7 +238,7 @@ Les corrections S-01 et S-02 sont requises avant paper trading : elles créent d
 | S-07 | 4 | Fichiers .txt dans alphaedge/logs/ non couverts par .gitignore | `alphaedge/logs/*.txt` | 🟡 | Artefacts potentiellement commités | XS |
 | S-08 | 4 | Artefacts sweep dans scripts/ (sweep_output.txt, targeted_sweep.txt) | `scripts/sweep_output.txt`, `scripts/targeted_sweep.txt` | 🟡 | Pollution du repo | XS |
 | S-09 | 5 | `fcr_lookback_candles` orphelin dans TradingConfig (couplé à S-01/S-02) | `loader.py:188` | 🟠 | Pollution IDE/doc, validé inutilement au démarrage | XS |
-| S-10 | 5 | Headers "FCR Forex Trading Bot" dans 8 fichiers | `data_feed.py:1`, `broker.py:1`, `constants.py:1,19`, `core/__init__.py:1` | 🟡 | Confusion dans les revues de code | XS |
+| S-10 | 5 | Headers "Momentum+Carry Forex Trading Bot" dans 8 fichiers | `data_feed.py:1`, `broker.py:1`, `constants.py:1,19`, `core/__init__.py:1` | 🟡 | Confusion dans les revues de code | XS |
 
 Sévérité : 🔴 Critique · 🟠 Majeur · 🟡 Mineur
 Effort : XS (< 1h) · S (< 4h) · M (< 1j) · L (> 1j)

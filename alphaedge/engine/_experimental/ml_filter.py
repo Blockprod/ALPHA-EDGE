@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/_experimental/ml_filter.py
 # DESCRIPTION  : ML-based signal filter (logistic regression) — EXPERIMENTAL
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -16,7 +16,7 @@ Uses walk-forward training to prevent look-ahead bias.
 Only passes signals where P(win) exceeds a calibrated threshold.
 
 Features are calibrated for the Momentum+Carry strategy.
-FCR-era features (fcr_range, volume_ratio) have been removed.
+Legacy features (fcr_range, volume_ratio) have been removed.
 
 EXPERIMENTAL — see alphaedge/engine/_experimental/__init__.py.
 """

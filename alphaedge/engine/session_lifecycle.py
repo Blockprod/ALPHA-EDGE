@@ -963,7 +963,7 @@ class SessionLifecycle:
         session_start: datetime,
     ) -> list[str]:
         """
-        Check regime gate, detect FCR, and init state for each configured pair.
+        Check regime gate and init state for each configured pair.
 
         Returns the list of active pairs that passed the regime filter.
         Also builds and stores the pairwise correlation matrix.
@@ -1077,7 +1077,7 @@ class SessionLifecycle:
                 starting_equity = live_equity
             session_start, _session_end = get_session_window_utc()
 
-            # Process each pair — regime gate, FCR detection, state init
+            # Process each pair — regime gate, signal init
             active_pairs = await self._init_session_pairs(
                 starting_equity,
                 live_equity,

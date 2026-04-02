@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_strategy_p2_04.py
 # DESCRIPTION  : P2-04 — volatility_regime + pair_correlation integration
 # ============================================================

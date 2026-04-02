@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_spread_monitor.py
 # DESCRIPTION  : Tests for continuous spread monitoring (T2.3)
 # AUTHOR       : ALPHAEDGE Dev Team
@@ -7,7 +7,7 @@
 # PYTHON       : 3.11.9
 # LAST UPDATED : 2026-03-08
 # ============================================================
-"""ALPHAEDGE — FCR Forex Trading Bot: spread monitoring tests."""
+"""ALPHAEDGE — Momentum+Carry Forex Trading Bot: spread monitoring tests."""
 
 from __future__ import annotations
 

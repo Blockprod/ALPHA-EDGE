@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : scripts/_cv_sweep.py
 # DESCRIPTION  : Focused sweep on fcr_range_cv_max.
 #                Finds the optimal CV filter value per pair and globally.

@@ -1,4 +1,4 @@
-# ALPHAEDGE — Agent : Risk Manager
+﻿# ALPHAEDGE — Agent : Risk Manager
 
 Séquence de protection capital et scénarios de risque.
 

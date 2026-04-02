@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : scripts/param_sweep.py
 # DESCRIPTION  : Parameter sweep / grid-search for strategy tuning.
 #                Loads cache once, runs _backtest_pair with varying

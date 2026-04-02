@@ -1,4 +1,4 @@
----
+﻿---
 agent: agent
 description: Full Cython edit → build → QA workflow for ALPHAEDGE
 ---

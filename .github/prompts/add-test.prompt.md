@@ -1,4 +1,4 @@
----
+﻿---
 agent: agent
 description: Add a pytest stub for a given ALPHAEDGE module
 ---

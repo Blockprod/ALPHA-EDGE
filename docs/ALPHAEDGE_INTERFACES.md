@@ -1,4 +1,4 @@
-# ALPHAEDGE — Public Core Interfaces & Return Value Contracts
+﻿# ALPHAEDGE — Public Core Interfaces & Return Value Contracts
 
 > Implementation is [PROPRIETARY]. These are call signatures and behavioral
 > contracts only. Do not infer, reverse-engineer, or reconstruct strategy logic.

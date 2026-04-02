@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_backtest_simulation_carry_long.py
 # DESCRIPTION  : compute_overnight_carry — LONG carry gain scenario
 # SCENARIO     : AUD/JPY LONG with AUD 4.35% / JPY 0.10% → positive carry

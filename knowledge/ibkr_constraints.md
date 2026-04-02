@@ -1,4 +1,4 @@
-# ALPHAEDGE — IB Gateway Constraints
+﻿# ALPHAEDGE — IB Gateway Constraints
 
 Contraintes opérationnelles Interactive Brokers extraites du code source.
 

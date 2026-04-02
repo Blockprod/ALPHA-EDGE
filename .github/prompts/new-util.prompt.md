@@ -1,4 +1,4 @@
----
+﻿---
 agent: agent
 description: Add a utility function with type hints and tests to alphaedge/utils/
 ---

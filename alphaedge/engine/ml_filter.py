@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/ml_filter.py
 # DESCRIPTION  : Compatibility shim — code archived to _experimental/
 # PYTHON       : 3.11.9

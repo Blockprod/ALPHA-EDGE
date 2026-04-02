@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/engine/live_journal.py
 # DESCRIPTION  : Live trade journal — CSV append journalier
 # AUTHOR       : ALPHAEDGE Dev Team

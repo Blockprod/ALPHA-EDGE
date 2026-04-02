@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_backtest_simulation_carry_short.py
 # DESCRIPTION  : compute_overnight_carry — SHORT carry cost scenario
 # SCENARIO     : AUD/JPY SHORT with AUD 4.35% / JPY 0.10% → negative carry

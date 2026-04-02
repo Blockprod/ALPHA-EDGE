@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_graceful_shutdown.py
 # DESCRIPTION  : Tests for P1-01 SIGINT/SIGTERM graceful shutdown
 # AUTHOR       : ALPHAEDGE Dev Team

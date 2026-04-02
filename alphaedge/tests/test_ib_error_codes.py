@@ -1,5 +1,5 @@
 # ============================================================
-# PROJECT      : ALPHAEDGE — FCR Forex Trading Bot
+# PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
 # FILE         : alphaedge/tests/test_ib_error_codes.py
 # DESCRIPTION  : Tests for P1-04 IB error code handlers
 # AUTHOR       : ALPHAEDGE Dev Team
