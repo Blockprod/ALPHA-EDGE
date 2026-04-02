@@ -28,8 +28,8 @@ def check_file(path: Path) -> list[str]:
                 f"(INTERDIT — trouver la vraie cause)"
             )
 
-    # ALPHAEDGE_PAPER=false forbidden in Python/YAML application config
-    # (CI workflows legitimately set PAPER=false for integration tests)
+    # Live-mode activation is forbidden in application Python/YAML files.
+    # CI workflows are excluded (they may enable live mode for integration tests).
     if path.suffix in {".py", ".yaml"} and path.parts[0] != ".github":
         if "ALPHAEDGE_PAPER=" in content and "=false" in content:
             violations.append(
