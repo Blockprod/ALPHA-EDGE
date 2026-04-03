@@ -68,7 +68,7 @@ class TestBrokerErrorPolicies:
     async def test_get_account_equity_raises_on_invalid_numeric_value(self) -> None:
         broker = BrokerConnection(IBConfig(is_paper=True))
         broker.ib.isConnected = MagicMock(return_value=True)
-        broker.ib.accountSummary = MagicMock(
+        broker.ib.accountSummaryAsync = AsyncMock(
             return_value=[MagicMock(tag="NetLiquidation", value="not-a-number")]
         )
         executor = OrderExecutor(broker)
