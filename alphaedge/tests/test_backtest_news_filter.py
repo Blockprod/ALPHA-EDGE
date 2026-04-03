@@ -68,7 +68,7 @@ class TestNewsFilterInBacktest:
         # With Cython compiled, may return trades; without it returns []
         # Either way should not raise
         try:
-            result, _ = _backtest_pair("EURUSD", _make_bars(), cfg)
+            result, _, _ = _backtest_pair("EURUSD", _make_bars(), cfg)
             assert isinstance(result, list)
         except Exception:
             pytest.skip("Cython not available — skipping integration path")
@@ -77,7 +77,7 @@ class TestNewsFilterInBacktest:
         """Passing news_filter=None is identical to not passing it."""
         cfg = _make_config()
         try:
-            result, _ = _backtest_pair("EURUSD", _make_bars(), cfg, news_filter=None)
+            result, _, _ = _backtest_pair("EURUSD", _make_bars(), cfg, news_filter=None)
             assert isinstance(result, list)
         except Exception:
             pytest.skip("Cython not available")
@@ -106,7 +106,7 @@ class TestNewsFilterInBacktest:
             "alphaedge.core.momentum_detector.detect_momentum",
             return_value=fake_signal,
         ):
-            result, _ = _backtest_pair("EURUSD", bars, cfg, news_filter=nf)
+            result, _, _ = _backtest_pair("EURUSD", bars, cfg, news_filter=nf)
 
         # All signals suppressed by blackout
         assert result == []
@@ -121,7 +121,7 @@ class TestNewsFilterInBacktest:
         nf.is_news_blackout.return_value = False  # never a blackout
 
         try:
-            result, _ = _backtest_pair(
+            result, _, _ = _backtest_pair(
                 "EURUSD",
                 _make_bars(30),
                 cfg,

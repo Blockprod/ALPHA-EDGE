@@ -57,7 +57,12 @@ from alphaedge.engine.backtest_stats import (
     print_rich_summary,
     split_trades_is_oos,
 )
-from alphaedge.engine.backtest_types import BacktestReport, BacktestStats, TradeRecord
+from alphaedge.engine.backtest_types import (
+    BacktestReport,
+    BacktestStats,
+    RejectionLog,
+    TradeRecord,
+)
 from alphaedge.engine.data_feed import BarDiskCache
 from alphaedge.engine.momentum_window import slice_momentum_window
 from alphaedge.engine.walk_forward import (
@@ -75,6 +80,35 @@ from alphaedge.utils.news_filter import EconomicNewsFilter
 
 logger = get_logger()
 
+
+def _get_pair_profitability_gate_rejection(
+    pair: str,
+    signal: dict[str, Any],
+    config: AppConfig,
+) -> RejectionLog | None:
+    """Return a rejection log when a pair-level profitability gate blocks a signal."""
+    adx_value = float(signal.get("adx", 0.0))
+    direction = int(signal.get("direction", 0))
+
+    if (
+        pair == "GBPUSD"
+        and direction == 1
+        and config.trading.gbpusd_long_adx_min > 0.0
+        and adx_value < config.trading.gbpusd_long_adx_min
+    ):
+        return RejectionLog(
+            date=datetime.now(tz=ZoneInfo("UTC")),
+            pair=pair,
+            direction=direction,
+            rejection_reason="gbpusd_long_below_profitability_gate",
+            rejection_value=adx_value,
+            primary_filter="pair_profitability_gate",
+            signal_strength=adx_value,
+        )
+
+    return None
+
+
 # Re-export all public symbols for backward compatibility so that existing
 # test imports such as ``from alphaedge.engine.backtest import compute_stats``
 # continue to work without modification.
@@ -85,6 +119,7 @@ __all__ = [
     "TradeRecord",
     "BacktestStats",
     "BacktestReport",
+    "RejectionLog",
     # --- statistics (backtest_stats) ---
     "compute_stats",
     "_compute_winrate",
@@ -162,7 +197,7 @@ async def _fetch_pair_trades(
         daily_bars,
         config,
         news_filter=news_filter,
-    )[0]
+    )[0]  # return trades only; rejection logs handled separately
 
 
 async def run_backtest(config: AppConfig) -> BacktestStats:
@@ -622,7 +657,7 @@ def _backtest_pair(
     news_filter: EconomicNewsFilter | None = None,
     *,
     min_sl_pips: float = 0.0,
-) -> tuple[list[TradeRecord], dict[str, int]]:
+) -> tuple[list[TradeRecord], dict[str, int], list[RejectionLog]]:
     """
     Run the Momentum+Carry strategy on historical Daily bars for one pair.
 
@@ -636,7 +671,7 @@ def _backtest_pair(
         from alphaedge.core import momentum_detector, order_manager, risk_manager
     except ImportError:
         logger.warning(f"ALPHAEDGE: Cython not compiled — skipping backtest for {pair}")
-        return trades, {}
+        return trades, {}, []
 
     from alphaedge.engine.carry_signal import get_carry_bias
 
@@ -670,6 +705,7 @@ def _backtest_pair(
     _bars_processed: int = 0
     _trades_by_day: dict[str, int] = {}
     _daily_pnl_usd: dict[str, float] = {}  # daily loss circuit breaker
+    _rejection_logs: list[RejectionLog] = []  # per-trade rejection logging
 
     # ML filter: walk-forward logistic regression (trained on past realized trades)
     _ml_filter: MLSignalFilter | None = None
@@ -704,6 +740,33 @@ def _backtest_pair(
         )
         if signal is None or not signal.get("detected"):
             _adx_rejections += 1
+            if bar_dt is not None and isinstance(bar_dt, datetime):
+                _rejection_logs.append(
+                    RejectionLog(
+                        date=bar_dt,
+                        pair=pair,
+                        direction=0,  # signal not detected, no direction yet
+                        rejection_reason="adx_below_threshold",
+                        rejection_value=float(signal.get("adx", 0.0))
+                        if signal
+                        else 0.0,
+                        primary_filter="adx_gate",
+                        signal_strength=float(signal.get("adx", 0.0))
+                        if signal
+                        else 0.0,
+                    )
+                )
+            continue
+
+        profitability_gate = _get_pair_profitability_gate_rejection(
+            pair,
+            signal,
+            config,
+        )
+        if profitability_gate is not None:
+            if bar_dt is not None and isinstance(bar_dt, datetime):
+                profitability_gate.date = bar_dt
+            _rejection_logs.append(profitability_gate)
             continue
 
         # Carry filter (optional)
@@ -719,6 +782,25 @@ def _backtest_pair(
                     mom_dir == -1 and carry.direction == "LONG"
                 ):
                     _carry_rejections += 1
+                    if bar_dt is not None and isinstance(bar_dt, datetime):
+                        _rejection_logs.append(
+                            RejectionLog(
+                                date=bar_dt,
+                                pair=pair,
+                                direction=mom_dir,
+                                rejection_reason="carry_conflict",
+                                rejection_value=float(
+                                    getattr(carry, "differential_pct", 0.0) or 0.0
+                                ),
+                                primary_filter="carry_filter",
+                                alternative_carries=[
+                                    f"{pair[0:3]}/{carry.direction[-3:]}"
+                                ],
+                                signal_strength=float(signal.get("adx", 0.0))
+                                if signal
+                                else 0.0,
+                            )
+                        )
                     continue
 
         # Regime gate: block ranging/choppy sessions (low_vol) for momentum signals
@@ -726,6 +808,20 @@ def _backtest_pair(
             regime = _compute_regime_label(daily_bars, bar_index, pip_size)
             if regime == config.regime_block_on:
                 _regime_rejections += 1
+                if bar_dt is not None and isinstance(bar_dt, datetime):
+                    _rejection_logs.append(
+                        RejectionLog(
+                            date=bar_dt,
+                            pair=pair,
+                            direction=int(signal.get("direction", 0)),
+                            rejection_reason="regime_gate_blocked",
+                            rejection_value=0.0,  # regime is categorical
+                            primary_filter="regime_gate",
+                            signal_strength=float(signal.get("adx", 0.0))
+                            if signal
+                            else 0.0,
+                        )
+                    )
                 continue
 
         # ML filter gate — trained incrementally on past trades (no lookahead)
@@ -738,6 +834,22 @@ def _backtest_pair(
                 _ml_pred = _ml_filter.predict(_ml_feats)
                 if not _ml_pred.passed:
                     _ml_rejections += 1
+                    if bar_dt is not None and isinstance(bar_dt, datetime):
+                        _rejection_logs.append(
+                            RejectionLog(
+                                date=bar_dt,
+                                pair=pair,
+                                direction=int(signal.get("direction", 0)),
+                                rejection_reason="ml_filter_blocked",
+                                rejection_value=float(
+                                    getattr(_ml_pred, "score", 0.0)
+                                ),  # model score
+                                primary_filter="ml_filter",
+                                signal_strength=float(signal.get("adx", 0.0))
+                                if signal
+                                else 0.0,
+                            )
+                        )
                     continue
 
         bar_trades = _collect_daily_trades(
@@ -812,7 +924,7 @@ def _backtest_pair(
         "daily_loss_breaker": _daily_loss_rejections,
         "ml_filter": _ml_rejections,
     }
-    return trades, rejection_counts
+    return trades, rejection_counts, _rejection_logs
 
 
 # ------------------------------------------------------------------

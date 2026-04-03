@@ -87,3 +87,25 @@ class BacktestReport:
     in_sample: BacktestStats = field(default_factory=BacktestStats)
     out_of_sample: BacktestStats = field(default_factory=BacktestStats)
     degradation: dict[str, float] = field(default_factory=dict)
+
+
+# ------------------------------------------------------------------
+# Rejection log (per-trade details for filter diagnostics)
+# ------------------------------------------------------------------
+@dataclass
+class RejectionLog:
+    """Stores a single signal rejection event with full diagnostic context.
+
+    Used to track why signals are rejected and diagnose filter cascade effects.
+    """
+
+    date: datetime
+    pair: str
+    direction: int  # 1 = LONG, -1 = SHORT
+    rejection_reason: str  # e.g., "adx_below_threshold", "carry_conflict"
+    rejection_value: float = 0.0  # ADX value, carry spreads, etc.
+    primary_filter: str = ""  # filter that rejected first (gate ordering)
+    alternative_carries: list[str] = field(
+        default_factory=list
+    )  # alt carries if carry_conflict
+    signal_strength: float = 0.0  # momentum signal (e.g., ADX value) before rejection

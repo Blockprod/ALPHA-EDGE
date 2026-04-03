@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from alphaedge.config.constants import (
@@ -76,6 +76,19 @@ logger = get_logger()
 def _is_usd_filter_enabled(value: Any) -> bool:
     """Return True only for explicit boolean true config values."""
     return isinstance(value, bool) and value
+
+
+def _should_log_loss_streak_warning(
+    consecutive_losses: int,
+    loss_streak_pnl_usd: float,
+    daily_loss_limit_usd: float,
+) -> bool:
+    """Return True when the configured warning condition is met."""
+    if daily_loss_limit_usd <= 0.0:
+        return False
+    return consecutive_losses > 7 and loss_streak_pnl_usd < -(
+        daily_loss_limit_usd * 0.5
+    )
 
 
 class SessionLifecycle:
@@ -228,7 +241,8 @@ class SessionLifecycle:
             slippage,
         )
 
-        for trade_obj in trades_placed:
+        # Only TP/SL child fills represent position closure events.
+        for trade_obj in trades_placed[1:]:
             trade_obj.filledEvent += lambda _t, _pair=state.pair: self._on_trade_closed(
                 _pair, _t
             )
@@ -357,6 +371,27 @@ class SessionLifecycle:
             async with self._s._trade_lock:
                 state = self._s._states.get(pair)
                 if state:
+                    filled_id = getattr(
+                        getattr(ib_trade, "order", None), "orderId", None
+                    )
+                    close_ids = {
+                        int(v)
+                        for v in (state._tp_order_id, state._sl_order_id)
+                        if isinstance(v, int) and v > 0
+                    }
+                    if (
+                        filled_id is not None
+                        and close_ids
+                        and int(filled_id) not in close_ids
+                    ):
+                        logger.debug(
+                            "ALPHAEDGE: Ignoring non-closing fill event "
+                            "for {} (orderId={})",
+                            pair,
+                            filled_id,
+                        )
+                        return
+
                     state.is_position_open = False
                     logger.info(f"ALPHAEDGE: Position closed for {pair}")
 
@@ -397,17 +432,50 @@ class SessionLifecycle:
                         elif pnl_pips > 0:
                             record.outcome = "win"
                             state.wins_today += 1
+                            state.consecutive_losses_count = 0
+                            state.loss_streak_pnl_usd = 0.0
                         elif pnl_pips == 0.0:
                             record.outcome = "breakeven"
+                            state.consecutive_losses_count = 0
+                            state.loss_streak_pnl_usd = 0.0
                         else:
                             record.outcome = "loss"
                             state.losses_today += 1
+                            state.consecutive_losses_count += 1
+                            state.loss_streak_pnl_usd += record.pnl_usd
+
+                            equity_base = (
+                                state.current_equity
+                                if state.current_equity > 0.0
+                                else state.starting_equity
+                            )
+                            daily_loss_limit_usd = (
+                                equity_base
+                                * self._s._config.trading.max_daily_loss_pct
+                                / 100.0
+                            )
+                            if _should_log_loss_streak_warning(
+                                state.consecutive_losses_count,
+                                state.loss_streak_pnl_usd,
+                                daily_loss_limit_usd,
+                            ):
+                                warning_threshold = -(daily_loss_limit_usd * 0.5)
+                                logger.warning(
+                                    "ALPHAEDGE LOSS STREAK WARNING | ts={} | "
+                                    "pair={} | consecutive_losses={} | "
+                                    "loss_streak_pnl={:+.2f} USD | "
+                                    "threshold={:+.2f} USD | Recovery: "
+                                    "continue trading per protocol; no manual "
+                                    "override unless daily limit is breached.",
+                                    exit_time.isoformat(),
+                                    pair,
+                                    state.consecutive_losses_count,
+                                    state.loss_streak_pnl_usd,
+                                    warning_threshold,
+                                )
                         state.pnl_usd_today += record.pnl_usd
 
                         # Determine exit reason from bracket child order ID
-                        filled_id = getattr(
-                            getattr(ib_trade, "order", None), "orderId", None
-                        )
                         if filled_id is not None and (
                             state._tp_order_id or state._sl_order_id
                         ):
@@ -1010,12 +1078,16 @@ class SessionLifecycle:
             # Fetch daily bars for momentum signal and volatility regime.
             # Use lookback_days × 1.5 calendar days to account for weekends/holidays.
             # Example: 252 trading days × 1.5 ≈ 378 calendar days (~15 months).
+            # IB rejects durations > 365 D — must use years instead.
             _lookback = self._s._config.trading.momentum_lookback_days
             _cal_days = int(_lookback * 1.5)
+            _duration = (
+                f"{(_cal_days + 364) // 365} Y" if _cal_days > 365 else f"{_cal_days} D"
+            )
             daily_bars = await self._s._hist_feed.fetch_bars(
                 pair=pair,
                 timeframe="1 day",
-                duration=f"{_cal_days} D",
+                duration=_duration,
                 end_dt=session_start,
             )
 
@@ -1071,6 +1143,47 @@ class SessionLifecycle:
         return active_pairs
 
     # ------------------------------------------------------------------
+    # Pre-session wait
+    # ------------------------------------------------------------------
+    async def _wait_for_session_open(self) -> None:
+        """Block until the NYSE session window opens, logging a countdown."""
+        while not self._s._shutdown_requested:
+            now = now_utc()
+            session_start, session_end = get_session_window_utc()
+
+            # Already inside the window — proceed immediately
+            if session_start <= now < session_end:
+                return
+
+            if now >= session_end:
+                # Session ended today — find the next weekday's session start
+                next_day = now + timedelta(days=1)
+                while next_day.weekday() >= 5:  # 5=Sat, 6=Sun
+                    next_day += timedelta(days=1)
+                next_start, _ = get_session_window_utc(next_day)
+                wait_h = (next_start - now).total_seconds() / 3600
+                # Log at first check and then every ~15 min to avoid flooding
+                if now.minute % 15 == 0 or wait_h > 19.9:
+                    logger.info(
+                        f"ALPHAEDGE: Session ended for today. "
+                        f"Next window in {wait_h:.1f}h "
+                        f"({format_dual_time(next_start)})"
+                    )
+                await asyncio.sleep(60.0)
+                continue
+
+            # Before today's session_start
+            wait_s = (session_start - now).total_seconds()
+            if wait_s > 120:
+                logger.info(
+                    f"ALPHAEDGE: Session opens in {wait_s / 60:.0f}min "
+                    f"({format_dual_time(session_start)})"
+                )
+                await asyncio.sleep(min(wait_s - 30.0, 60.0))
+            else:
+                await asyncio.sleep(1.0)
+
+    # ------------------------------------------------------------------
     # Main session loop
     # ------------------------------------------------------------------
     async def run_session(self) -> None:
@@ -1080,9 +1193,8 @@ class SessionLifecycle:
         This is the main entry point for the strategy.
         """
         logger.info(
-            "ALPHAEDGE session starting at %s | mode=%s",
-            format_dual_time(now_utc()),
-            "PAPER" if self._s._config.ib.is_paper else "LIVE",
+            f"ALPHAEDGE session starting at {format_dual_time(now_utc())} "
+            f"| mode={'PAPER' if self._s._config.ib.is_paper else 'LIVE'}"
         )
 
         # Warn when EU and US DST offsets diverge (2nd–last Sunday of March)
@@ -1100,6 +1212,12 @@ class SessionLifecycle:
                 "ALPHAEDGE: Daily loss shutdown was triggered earlier "
                 "today — refusing to start. Wait for next trading day."
             )
+            self._s._shutdown_requested = True
+            return
+
+        # Wait for the session window to open (do NOT connect to IB yet)
+        await self._wait_for_session_open()
+        if self._s._shutdown_requested:
             return
 
         # Connect to IB Gateway

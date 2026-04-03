@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import alphaedge.utils.state_persistence as _state_mod
-from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
+from alphaedge.config.loader import AppConfig
 from alphaedge.engine.strategy import CoreModules, SwingStrategy
 from alphaedge.utils.state_persistence import (
     DailyState,
@@ -32,10 +32,10 @@ from alphaedge.utils.state_persistence import (
 # Helpers
 # ------------------------------------------------------------------
 def _make_config() -> AppConfig:
-    return AppConfig(
-        ib=IBConfig(is_paper=True),
-        trading=TradingConfig(pairs=["EURUSD"]),
-    )
+    cfg = AppConfig()
+    cfg.ib.is_paper = True
+    cfg.trading.pairs = ["EURUSD"]
+    return cfg
 
 
 def _build_strategy() -> SwingStrategy:
@@ -246,10 +246,18 @@ class TestRestoredEquityOnRestart:
             return_value=[],
         )
 
-        # Patch is_session_active to immediately end
-        with patch(
-            "alphaedge.engine.session_lifecycle.is_session_active",
-            return_value=False,
+        # Patch _wait_for_session_open to skip the real-time wait loop,
+        # then patch is_session_active so the monitoring loop exits immediately.
+        with (
+            patch.object(
+                strategy._lifecycle,
+                "_wait_for_session_open",
+                new=AsyncMock(),
+            ),
+            patch(
+                "alphaedge.engine.session_lifecycle.is_session_active",
+                return_value=False,
+            ),
         ):
             await strategy.run_session()
 

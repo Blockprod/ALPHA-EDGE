@@ -124,9 +124,10 @@ class TestVolatilityRegimeGate:
             patch(
                 "alphaedge.engine.session_lifecycle.load_daily_state", return_value=None
             ),
-            patch(
-                "alphaedge.engine.session_lifecycle.get_session_window_utc",
-                return_value=(MagicMock(), MagicMock()),
+            patch.object(
+                strat._lifecycle,
+                "_wait_for_session_open",
+                new=AsyncMock(),
             ),
             patch(
                 "alphaedge.engine.session_lifecycle.check_volatility_regime",
@@ -168,9 +169,10 @@ class TestVolatilityRegimeGate:
             patch(
                 "alphaedge.engine.session_lifecycle.load_daily_state", return_value=None
             ),
-            patch(
-                "alphaedge.engine.session_lifecycle.get_session_window_utc",
-                return_value=(MagicMock(), MagicMock()),
+            patch.object(
+                strat._lifecycle,
+                "_wait_for_session_open",
+                new=AsyncMock(),
             ),
             patch(
                 "alphaedge.engine.session_lifecycle.check_volatility_regime",
@@ -214,9 +216,10 @@ class TestVolatilityRegimeGate:
             patch(
                 "alphaedge.engine.session_lifecycle.load_daily_state", return_value=None
             ),
-            patch(
-                "alphaedge.engine.session_lifecycle.get_session_window_utc",
-                return_value=(MagicMock(), MagicMock()),
+            patch.object(
+                strat._lifecycle,
+                "_wait_for_session_open",
+                new=AsyncMock(),
             ),
             patch(
                 "alphaedge.engine.session_lifecycle.check_volatility_regime",

@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
+from alphaedge.config.loader import AppConfig
 from alphaedge.engine.strategy import CoreModules, SwingStrategy
 from alphaedge.utils.state_persistence import clear_daily_state, load_daily_state
 
@@ -23,10 +23,10 @@ from alphaedge.utils.state_persistence import clear_daily_state, load_daily_stat
 # Helpers
 # ------------------------------------------------------------------
 def _make_config(pairs: list[str] | None = None) -> AppConfig:
-    return AppConfig(
-        ib=IBConfig(is_paper=True),
-        trading=TradingConfig(pairs=pairs or ["EURUSD"]),
-    )
+    cfg = AppConfig()
+    cfg.ib.is_paper = True
+    cfg.trading.pairs = pairs or ["EURUSD"]
+    return cfg
 
 
 def _build_strategy(pairs: list[str] | None = None) -> SwingStrategy:
@@ -171,9 +171,10 @@ class TestStartupReconcile:
             patch(
                 "alphaedge.engine.session_lifecycle.load_daily_state", return_value=None
             ),
-            patch(
-                "alphaedge.engine.session_lifecycle.get_session_window_utc",
-                return_value=(MagicMock(), MagicMock()),
+            patch.object(
+                strategy._lifecycle,
+                "_wait_for_session_open",
+                new=AsyncMock(),
             ),
             patch(
                 "alphaedge.engine.session_lifecycle.is_session_active",
@@ -211,9 +212,10 @@ class TestStartupReconcile:
             patch(
                 "alphaedge.engine.session_lifecycle.load_daily_state", return_value=None
             ),
-            patch(
-                "alphaedge.engine.session_lifecycle.get_session_window_utc",
-                return_value=(MagicMock(), MagicMock()),
+            patch.object(
+                strategy._lifecycle,
+                "_wait_for_session_open",
+                new=AsyncMock(),
             ),
             patch(
                 "alphaedge.engine.session_lifecycle.is_session_active",

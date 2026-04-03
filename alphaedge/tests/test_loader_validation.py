@@ -93,6 +93,21 @@ class TestLoaderValidation:
         with pytest.raises(ValueError, match="min_volume_ratio"):
             _validate_trading_config(cfg)
 
+    def test_gbpusd_long_adx_min_negative_raises(self) -> None:
+        cfg = TradingConfig(gbpusd_long_adx_min=-0.1)
+        with pytest.raises(ValueError, match="gbpusd_long_adx_min"):
+            _validate_trading_config(cfg)
+
+    def test_pair_min_pf_threshold_unknown_pair_raises(self) -> None:
+        cfg = TradingConfig(pair_min_pf_threshold={"FOOBAR": 1.2})
+        with pytest.raises(ValueError, match="unknown pair"):
+            _validate_trading_config(cfg)
+
+    def test_pair_min_pf_threshold_non_positive_raises(self) -> None:
+        cfg = TradingConfig(pair_min_pf_threshold={"GBPUSD": 0.0})
+        with pytest.raises(ValueError, match="must be > 0"):
+            _validate_trading_config(cfg)
+
 
 class TestPairValidation:
     """Tests for pair validation in _validate_trading_config."""
