@@ -544,9 +544,11 @@ if __name__ == "__main__":
     _TransportClass = getattr(_pev, "_ProactorBaseWritePipeTransport")
     _original_loop_writing = getattr(_TransportClass, "_loop_writing")
 
-    def _patched_loop_writing(self: object, f: object = None) -> None:
+    def _patched_loop_writing(
+        self: object, f: object = None, data: object = None
+    ) -> None:
         try:
-            _original_loop_writing(self, f)
+            _original_loop_writing(self, f, data)
         except AssertionError:
             # Harmless: two futures overlapped on the same pipe transport.
             # The write still succeeds — the assertion is a stale-future check.
