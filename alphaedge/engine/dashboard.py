@@ -355,5 +355,5 @@ async def _demo_state() -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    print(f"{PROJECT_TITLE} — Dashboard standalone test")
+    logger.info(f"{PROJECT_TITLE} — Dashboard standalone test")
     asyncio.run(run_dashboard(_demo_state, refresh_rate=2.0))

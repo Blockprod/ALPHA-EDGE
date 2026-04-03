@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -240,6 +241,10 @@ class TradingConfig:
     cost_slippage_multipliers: dict[str, float] = field(
         default_factory=lambda: {"normal": 1.0, "nyse_open": 1.0, "news": 1.0}
     )
+    # C-ST-06: Optional pair-level optimization gates used in backtest diagnostics.
+    # 0.0 disables the GBPUSD LONG ADX gate.
+    gbpusd_long_adx_min: float = 0.0
+    pair_min_pf_threshold: dict[str, float] = field(default_factory=dict)
 
 
 # ------------------------------------------------------------------
@@ -255,6 +260,7 @@ class AppConfig:
     mode: str = "paper"
     news_filter_raw: dict[str, Any] = field(default_factory=dict)
     alerting_raw: dict[str, Any] = field(default_factory=dict)
+    dashboard_raw: dict[str, Any] = field(default_factory=dict)
     regime_gate_enabled: bool = DEFAULT_REGIME_GATE_ENABLED
     regime_block_on: str = DEFAULT_REGIME_BLOCK_ON
 
@@ -500,6 +506,10 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         "nyse_open": float(slippage_mult.get("nyse_open", 1.0)),
         "news": float(slippage_mult.get("news", 1.0)),
     }
+    cfg.gbpusd_long_adx_min = float(section.get("gbpusd_long_adx_min", 0.0))
+    cfg.pair_min_pf_threshold = {
+        k: float(v) for k, v in section.get("pair_min_pf_threshold", {}).items()
+    }
     _validate_trading_config(cfg)
     return cfg
 
@@ -533,6 +543,18 @@ def _validate_trading_config(cfg: TradingConfig) -> None:
     for _k, _v in cfg.cost_slippage_multipliers.items():
         if _v <= 0.0:
             raise ValueError(f"cost_slippage_multipliers[{_k!r}] = {_v} — must be > 0")
+    if cfg.gbpusd_long_adx_min < 0.0:
+        raise ValueError(
+            f"gbpusd_long_adx_min must be >= 0, got {cfg.gbpusd_long_adx_min}"
+        )
+    for _pair, _pf in cfg.pair_min_pf_threshold.items():
+        if _pair not in PIP_SIZES:
+            raise ValueError(
+                f"pair_min_pf_threshold has unknown pair '{_pair}'. "
+                f"Supported: {sorted(PIP_SIZES.keys())}"
+            )
+        if _pf <= 0.0:
+            raise ValueError(f"pair_min_pf_threshold[{_pair!r}] = {_pf} — must be > 0")
     if cfg.rr_ratio <= 0.0:
         raise ValueError(f"rr_ratio must be > 0, got {cfg.rr_ratio}")
     if cfg.max_daily_loss_pct <= 0.0:
@@ -595,6 +617,7 @@ def load_config(
         mode="paper" if ib_cfg.is_paper else "live",
         news_filter_raw=raw.get("news_filter", {}),
         alerting_raw=raw.get("alerting", {}),
+        dashboard_raw=raw.get("dashboard", {}),
         regime_gate_enabled=bool(
             regime_section.get("enabled", DEFAULT_REGIME_GATE_ENABLED)
         ),
@@ -605,8 +628,8 @@ def load_config(
 if __name__ == "__main__":
     try:
         cfg = load_config()
-        print(f"ALPHAEDGE config loaded: mode={cfg.mode}")
-        print(f"  IB: {cfg.ib.host}:{cfg.ib.port}")
-        print(f"  Pairs: {cfg.trading.pairs}")
+        sys.stdout.write(f"ALPHAEDGE config loaded: mode={cfg.mode}\n")
+        sys.stdout.write(f"  IB: {cfg.ib.host}:{cfg.ib.port}\n")
+        sys.stdout.write(f"  Pairs: {cfg.trading.pairs}\n")
     except FileNotFoundError as exc:
-        print(f"Config error: {exc}")
+        sys.stderr.write(f"Config error: {exc}\n")

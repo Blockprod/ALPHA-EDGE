@@ -21,6 +21,13 @@ from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
 from alphaedge.engine.strategy import CoreModules, StrategyState, SwingStrategy
 
 
+def _make_config() -> AppConfig:
+    cfg = AppConfig()
+    cfg.ib = IBConfig()
+    cfg.trading = TradingConfig()
+    return cfg
+
+
 def _mock_modules() -> CoreModules:
     """Build a CoreModules with all MagicMock modules."""
     return CoreModules(
@@ -47,7 +54,7 @@ class TestDependencyInjection:
 
     def test_accepts_injected_broker(self) -> None:
         """SwingStrategy should use injected broker instead of creating one."""
-        cfg = AppConfig(ib=IBConfig(), trading=TradingConfig())
+        cfg = _make_config()
         broker = _mock_broker()
         modules = _mock_modules()
 
@@ -61,7 +68,7 @@ class TestDependencyInjection:
 
     def test_accepts_injected_feeds(self) -> None:
         """SwingStrategy should use injected feeds."""
-        cfg = AppConfig(ib=IBConfig(), trading=TradingConfig())
+        cfg = _make_config()
         broker = _mock_broker()
         modules = _mock_modules()
         hist = MagicMock()
@@ -80,7 +87,7 @@ class TestDependencyInjection:
 
     def test_accepts_injected_core_modules(self) -> None:
         """SwingStrategy should use injected CoreModules."""
-        cfg = AppConfig(ib=IBConfig(), trading=TradingConfig())
+        cfg = _make_config()
         broker = _mock_broker()
         modules = _mock_modules()
 
@@ -97,7 +104,7 @@ class TestDependencyInjection:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Full signal execution should work with all injected mocks."""
-        cfg = AppConfig(ib=IBConfig(), trading=TradingConfig())
+        cfg = _make_config()
         broker = _mock_broker()
         modules = _mock_modules()
         rt_feed = MagicMock()

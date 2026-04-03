@@ -17,7 +17,9 @@ from alphaedge.engine.strategy import CoreModules, StrategyState, SwingStrategy
 
 
 def _build_strategy() -> SwingStrategy:
-    cfg = AppConfig(ib=IBConfig(is_paper=True), trading=TradingConfig())
+    cfg = AppConfig()
+    cfg.ib = IBConfig(is_paper=True)
+    cfg.trading = TradingConfig()
     with (
         patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,
         patch("alphaedge.engine.strategy.OrderExecutor"),

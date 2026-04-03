@@ -54,7 +54,10 @@ def _alphaedge_format(record: Record) -> str:
     level = record["level"].name
     location = f"{record['name']}:{record['function']}:{record['line']}"
     message = record["message"]
-    return f"[{PROJECT_NAME}] {dual} | {level:<8} | {location} | {message}\n"
+    base = f"[{PROJECT_NAME}] {dual} | {level:<8} | {location} | {message}\n"
+    if record["exception"] is not None:
+        return base + "{exception}\n"
+    return base
 
 
 # ------------------------------------------------------------------
@@ -122,4 +125,4 @@ if __name__ == "__main__":
     log.debug("Debug message test")
     log.warning("Warning message test")
     log.error("Error message test")
-    print("ALPHAEDGE — Logger test complete. Check alphaedge/logs/")
+    log.info("ALPHAEDGE — Logger test complete. Check alphaedge/logs/")

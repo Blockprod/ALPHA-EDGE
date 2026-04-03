@@ -25,13 +25,12 @@ from alphaedge.engine.strategy import CoreModules, StrategyState, SwingStrategy
 # ------------------------------------------------------------------
 def _make_config(pairs: list[str] | None = None) -> AppConfig:
     """Build a minimal AppConfig for tests."""
-    return AppConfig(
-        ib=IBConfig(is_paper=True),
-        trading=TradingConfig(
-            pairs=pairs or ["EURUSD", "GBPUSD"],
-            max_trades_per_session=5,
-        ),
-    )
+    cfg = AppConfig()
+    cfg.ib = IBConfig(is_paper=True)
+    cfg.trading = TradingConfig()
+    cfg.trading.pairs = pairs or ["EURUSD", "GBPUSD"]
+    cfg.trading.max_trades_per_session = 5
+    return cfg
 
 
 def _build_strategy(config: AppConfig | None = None) -> SwingStrategy:

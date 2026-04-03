@@ -41,6 +41,16 @@ from alphaedge.utils.news_filter import EconomicNewsFilter, build_news_filter
 logger = get_logger()
 
 
+def _stdout(message: str) -> None:
+    """Emit user-facing CLI messages without using print()."""
+    sys.stdout.write(f"{message}\n")
+
+
+def _stderr(message: str) -> None:
+    """Emit user-facing CLI error messages without using print()."""
+    sys.stderr.write(f"{message}\n")
+
+
 # ------------------------------------------------------------------
 # Strategy state container
 # ------------------------------------------------------------------
@@ -393,11 +403,10 @@ def _apply_cli_mode(config: AppConfig, mode: str) -> None:
     # This prevents switching to live mode when the ENV guard is active.
     env_paper = os.getenv("ALPHAEDGE_PAPER", "true").strip().lower()
     if env_paper == "true":
-        print(
+        _stderr(
             "ERROR: ALPHAEDGE_PAPER=true is set in environment. "
             "Cannot switch to live mode via --mode live. "
-            "Unset ALPHAEDGE_PAPER (or set it to 'false') to enable live trading.",
-            file=sys.stderr,
+            "Unset ALPHAEDGE_PAPER (or set it to 'false') to enable live trading."
         )
         raise SystemExit(1)
 
@@ -412,17 +421,17 @@ async def _main() -> None:
 
     # ⚠️ WARNING: Live trading involves real money risk
     if args.mode == "live":
-        print("=" * 60)
-        print("⚠️  WARNING: LIVE TRADING MODE")
-        print("⚠️  Real money is at risk. Proceed with extreme caution.")
-        print("=" * 60)
+        _stdout("=" * 60)
+        _stdout("⚠️  WARNING: LIVE TRADING MODE")
+        _stdout("⚠️  Real money is at risk. Proceed with extreme caution.")
+        _stdout("=" * 60)
         try:
             confirm = input("Type 'YES' to confirm live trading: ")
         except (EOFError, KeyboardInterrupt):
-            print("\nALPHAEDGE: Live trading cancelled (no interactive input).")
+            _stdout("\nALPHAEDGE: Live trading cancelled (no interactive input).")
             sys.exit(1)
         if confirm != "YES":
-            print("ALPHAEDGE: Live trading cancelled.")
+            _stdout("ALPHAEDGE: Live trading cancelled.")
             sys.exit(0)
 
     setup_logging()
@@ -430,15 +439,15 @@ async def _main() -> None:
     _apply_cli_mode(config, args.mode)
 
     if args.mode == "paper":
-        print("=" * 60)
-        print("📝  ALPHAEDGE — PAPER TRADING MODE")
-        print(f"📝  No real money at risk. IB Gateway port {IB_PAPER_PORT}.")
-        print("=" * 60)
+        _stdout("=" * 60)
+        _stdout("📝  ALPHAEDGE — PAPER TRADING MODE")
+        _stdout(f"📝  No real money at risk. IB Gateway port {IB_PAPER_PORT}.")
+        _stdout("=" * 60)
     else:
-        print("=" * 60)
-        print("⚠️  ALPHAEDGE — LIVE TRADING MODE")
-        print(f"⚠️  IB Gateway live port {IB_LIVE_PORT} selected.")
-        print("=" * 60)
+        _stdout("=" * 60)
+        _stdout("⚠️  ALPHAEDGE — LIVE TRADING MODE")
+        _stdout(f"⚠️  IB Gateway live port {IB_LIVE_PORT} selected.")
+        _stdout("=" * 60)
 
     strategy = SwingStrategy(config)
 

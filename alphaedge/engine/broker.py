@@ -309,10 +309,9 @@ class BrokerConnection:
         """Refresh cached available funds from IB (call from risk-check loop)."""
         await self._throttler.acquire()
         _t0 = time.perf_counter_ns()
-        account_values = self._ib.accountSummary()
+        account_values = await self._ib.accountSummaryAsync()
         logger.debug(
-            "LATENCE accountSummary=%.2fms",
-            (time.perf_counter_ns() - _t0) / 1e6,
+            f"LATENCE accountSummary={(time.perf_counter_ns() - _t0) / 1e6:.2f}ms"
         )
         for av in account_values:
             if av.tag == "AvailableFunds":
@@ -525,40 +524,54 @@ class OrderExecutor:
         Raises
         ------
         ValueError
-            If NetLiquidation tag is not found in account summary.
+            If NetLiquidation tag is not found in account summary after retries.
         """
         self._broker._ensure_connected()
         await self._throttler.acquire()
 
-        try:
-            account_values = self._broker.ib.accountSummary()
-            for av in account_values:
-                if av.tag == "NetLiquidation":
-                    return float(av.value)
-            raise ValueError("ALPHAEDGE: NetLiquidation not found in account summary")
-        except ValueError as exc:
-            if "NetLiquidation not found" in str(exc):
+        # Retry up to 3 times with 2s delay — accountSummaryAsync() cache may be
+        # empty right after connectAsync() before IB sends account data.
+        _max_retries = 3
+        for _attempt in range(_max_retries):
+            try:
+                account_values = await self._broker.ib.accountSummaryAsync()
+                for av in account_values:
+                    if av.tag == "NetLiquidation":
+                        return float(av.value)
+                if _attempt < _max_retries - 1:
+                    logger.debug(
+                        f"ALPHAEDGE get_account_equity: NetLiquidation not in cache "
+                        f"(attempt {_attempt + 1}/{_max_retries}) — retrying in 2s"
+                    )
+                    await asyncio.sleep(2.0)
+                    continue
+                raise ValueError(
+                    "ALPHAEDGE: NetLiquidation not found in account summary"
+                )
+            except ValueError as exc:
+                if "NetLiquidation not found" in str(exc):
+                    raise
+                logger.exception(
+                    "ALPHAEDGE get_account_equity invalid NetLiquidation value"
+                )
                 raise
-            logger.exception(
-                "ALPHAEDGE get_account_equity invalid NetLiquidation value"
-            )
-            raise
-        except RuntimeError:
-            logger.exception("ALPHAEDGE get_account_equity IB runtime failure")
-            raise
-        except Exception:
-            logger.exception("ALPHAEDGE get_account_equity failed unexpectedly")
-            raise
+            except RuntimeError:
+                logger.exception("ALPHAEDGE get_account_equity IB runtime failure")
+                raise
+            except Exception:
+                logger.exception("ALPHAEDGE get_account_equity failed unexpectedly")
+                raise
+        raise ValueError("ALPHAEDGE: NetLiquidation not found in account summary")
 
 
 if __name__ == "__main__":
-    print("ALPHAEDGE — Broker module loaded (standalone test)")
-    print("  Requires IB Gateway running for full test.")
+    logger.info("ALPHAEDGE — Broker module loaded (standalone test)")
+    logger.info("  Requires IB Gateway running for full test.")
 
     # Test contract builder
     contract = build_forex_contract("EURUSD")
-    print(f"  Contract: {contract}")
+    logger.info(f"  Contract: {contract}")
 
     # Test throttler
     throttler = RequestThrottler()
-    print(f"  Throttler rate: {throttler._rate} req/s, burst: {throttler._burst}")
+    logger.info(f"  Throttler rate: {throttler._rate} req/s, burst: {throttler._burst}")

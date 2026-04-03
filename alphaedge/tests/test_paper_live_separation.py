@@ -84,11 +84,10 @@ class TestPaperLiveConfig:
     ) -> None:
         """ALPHAEDGE_PAPER=true must prevent --mode live from applying."""
         monkeypatch.setenv("ALPHAEDGE_PAPER", "true")
-        config = AppConfig(
-            ib=IBConfig(is_paper=True, port=IB_PAPER_PORT),
-            trading=TradingConfig(),
-            mode="paper",
-        )
+        config = AppConfig()
+        config.ib = IBConfig(is_paper=True, port=IB_PAPER_PORT)
+        config.trading = TradingConfig()
+        config.mode = "paper"
 
         with pytest.raises(SystemExit):
             _apply_cli_mode(config, "live")
@@ -104,11 +103,10 @@ class TestPaperLiveConfig:
         """Paper trading env var disables CLI guard for live mode
         (uses 'FALSE' to avoid forbidden string)."""
         monkeypatch.setenv("ALPHAEDGE_PAPER", "FALSE")
-        config = AppConfig(
-            ib=IBConfig(is_paper=True, port=IB_PAPER_PORT),
-            trading=TradingConfig(),
-            mode="paper",
-        )
+        config = AppConfig()
+        config.ib = IBConfig(is_paper=True, port=IB_PAPER_PORT)
+        config.trading = TradingConfig()
+        config.mode = "paper"
 
         _apply_cli_mode(config, "live")
 

@@ -25,7 +25,9 @@ from alphaedge.engine.strategy import CoreModules, StrategyState, SwingStrategy
 # ------------------------------------------------------------------
 def _make_strategy() -> SwingStrategy:
     """Build a strategy with all externals mocked."""
-    cfg = AppConfig(ib=IBConfig(is_paper=True), trading=TradingConfig())
+    cfg = AppConfig()
+    cfg.ib = IBConfig(is_paper=True)
+    cfg.trading = TradingConfig()
 
     with (
         patch("alphaedge.engine.strategy.BrokerConnection") as mock_broker_cls,

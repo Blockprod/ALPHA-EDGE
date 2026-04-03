@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -284,12 +285,12 @@ def get_pre_session_window_utc(
 
 
 if __name__ == "__main__":
-    print("ALPHAEDGE — Timezone Utilities Test")
-    print(f"  UTC now:   {now_utc()}")
-    print(f"  Paris now: {now_paris()}")
-    print(f"  NY now:    {now_ny()}")
+    sys.stdout.write("ALPHAEDGE — Timezone Utilities Test\n")
+    sys.stdout.write(f"  UTC now:   {now_utc()}\n")
+    sys.stdout.write(f"  Paris now: {now_paris()}\n")
+    sys.stdout.write(f"  NY now:    {now_ny()}\n")
 
     start, end = get_session_window_utc()
-    print(f"  Session:   {start} → {end}")
-    print(f"  Active:    {is_session_active()}")
-    print(f"  Dual:      {format_dual_time(now_utc())}")
+    sys.stdout.write(f"  Session:   {start} → {end}\n")
+    sys.stdout.write(f"  Active:    {is_session_active()}\n")
+    sys.stdout.write(f"  Dual:      {format_dual_time(now_utc())}\n")

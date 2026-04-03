@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
+from alphaedge.config.loader import AppConfig
 from alphaedge.engine.strategy import CoreModules, SwingStrategy
 from alphaedge.utils.state_persistence import (
     DailyState,
@@ -30,10 +30,10 @@ from alphaedge.utils.state_persistence import (
 # Helpers
 # ------------------------------------------------------------------
 def _make_config() -> AppConfig:
-    return AppConfig(
-        ib=IBConfig(is_paper=True),
-        trading=TradingConfig(pairs=["EURUSD"]),
-    )
+    cfg = AppConfig()
+    cfg.ib.is_paper = True
+    cfg.trading.pairs = ["EURUSD"]
+    return cfg
 
 
 def _build_strategy() -> tuple[SwingStrategy, MagicMock]:
@@ -101,13 +101,10 @@ class TestSessionRestartBlocked:
         strategy, mock_broker = _build_strategy()
         save_daily_state(_today_state(shutdown_triggered=False))
 
-        # connect() returns True but everything after is mocked — session will
-        # proceed normally until it hits the first awaitable that isn't set up.
-        # We intercept _init_session_pairs to stop early without error.
         import types
 
         async def _stop_early(
-            self,
+            _self,
             _starting_equity: float,
             _live_equity: float,
             _persisted: object,
@@ -119,17 +116,18 @@ class TestSessionRestartBlocked:
             _stop_early, strategy._lifecycle
         )
         strategy._executor.get_account_equity = AsyncMock(return_value=10_000.0)
+        strategy._broker.refresh_account_funds = AsyncMock()
 
-        # Patch get_session_window_utc to avoid timezone dependency
-        from datetime import UTC, datetime
-
-        mock_window = (
-            datetime(2026, 3, 25, 14, 30, tzinfo=UTC),
-            datetime(2026, 3, 25, 15, 30, tzinfo=UTC),
-        )
-        with patch(
-            "alphaedge.engine.session_lifecycle.get_session_window_utc",
-            return_value=mock_window,
+        with (
+            patch.object(
+                strategy._lifecycle,
+                "_wait_for_session_open",
+                new=AsyncMock(),
+            ),
+            patch(
+                "alphaedge.engine.session_lifecycle.is_session_active",
+                return_value=False,
+            ),
         ):
             asyncio.run(strategy._lifecycle.run_session())
 

@@ -801,7 +801,7 @@ class RealtimeDataFeed:
 
 
 if __name__ == "__main__":
-    print("ALPHAEDGE — Data Feed module loaded (standalone test)")
-    print("  Requires IB Gateway running for full test.")
-    print("  Supported timeframes: M1, M5")
-    print("  Data type: MIDPOINT (Forex)")
+    logger.info("ALPHAEDGE — Data Feed module loaded (standalone test)")
+    logger.info("  Requires IB Gateway running for full test.")
+    logger.info("  Supported timeframes: M1, M5")
+    logger.info("  Data type: MIDPOINT (Forex)")

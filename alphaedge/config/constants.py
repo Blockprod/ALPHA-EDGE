@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import sys
+
 # ------------------------------------------------------------------
 # Project identity
 # ------------------------------------------------------------------
@@ -232,7 +234,7 @@ LOG_ROTATION: str = "1 day"
 LOG_RETENTION: str = "30 days"
 
 if __name__ == "__main__":
-    print(f"{PROJECT_TITLE} — Constants loaded successfully")
-    print(f"  Pairs with pip sizes: {list(PIP_SIZES.keys())}")
-    print(f"  Default RR: {DEFAULT_RR_RATIO}:1")
-    print(f"  Default risk: {DEFAULT_RISK_PCT}%")
+    sys.stdout.write(f"{PROJECT_TITLE} — Constants loaded successfully\n")
+    sys.stdout.write(f"  Pairs with pip sizes: {list(PIP_SIZES.keys())}\n")
+    sys.stdout.write(f"  Default RR: {DEFAULT_RR_RATIO}:1\n")
+    sys.stdout.write(f"  Default risk: {DEFAULT_RISK_PCT}%\n")

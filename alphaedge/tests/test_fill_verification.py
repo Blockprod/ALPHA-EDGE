@@ -65,10 +65,11 @@ class _MockTrade:
 # Helpers
 # ------------------------------------------------------------------
 def _make_config() -> AppConfig:
-    return AppConfig(
-        ib=IBConfig(is_paper=True),
-        trading=TradingConfig(pairs=["EURUSD"]),
-    )
+    cfg = AppConfig()
+    cfg.ib = IBConfig(is_paper=True)
+    cfg.trading = TradingConfig()
+    cfg.trading.pairs = ["EURUSD"]
+    return cfg
 
 
 def _build_strategy() -> SwingStrategy:
