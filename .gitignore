@@ -60,15 +60,21 @@ pylint_output*.txt
 ruff_output*.txt
 
 # --- Output Files ---
-reports/ALPHAEDGE_backtest_results.csv
-reports/ALPHAEDGE_equity_curve.png
+reports/*.csv
+reports/*.txt
+reports/*.png
+reports/*.log
 reports/ALPHAEDGE_coverage_report*/
 reports/ALPHAEDGE_coverage_report.html
 htmlcov/
-reports/backtest_result.txt
-reports/backtest_run.log
-reports/live_trades_*.csv
 .coverage
+
+# --- Root-level temp/debug outputs ---
+cov_out.txt
+final_test.txt
+pytest_out.txt
+qa_run.log
+test_logger.txt
 
 # --- OS ---
 Thumbs.db

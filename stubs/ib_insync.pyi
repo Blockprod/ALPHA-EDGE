@@ -176,6 +176,7 @@ class IB:
 
     # Account data
     def accountSummary(self, account: str = ...) -> list[AccountValue]: ...
+    async def accountSummaryAsync(self, account: str = ...) -> list[AccountValue]: ...
 
     # Historical data (async — called with await asyncio.wait_for)
     async def reqHistoricalDataAsync(
