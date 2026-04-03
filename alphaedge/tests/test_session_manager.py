@@ -32,7 +32,7 @@ class TestSessionWindowContains:
         assert NYSE_SESSION.contains(dt) is True
 
     def test_nyse_at_start(self) -> None:
-        dt = datetime(2024, 1, 2, 9, 30, tzinfo=ET)
+        dt = datetime(2024, 1, 2, 9, 40, tzinfo=ET)
         assert NYSE_SESSION.contains(dt) is True
 
     def test_nyse_at_end(self) -> None:

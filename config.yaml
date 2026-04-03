@@ -22,12 +22,12 @@ ib:
 # --- Trading Parameters ---
 trading:
   # Currency pairs to monitor
-  # EUR+GBP+JPY: testing with risk_pct scaled to 1%/3 = 0.67% to keep global risk constant
-  # Without scaling: OOS DD=73.6% (compound sizing blowup from high IS equity peak)
-  # With scaling: expected OOS DD ≈ same as 2-pair baseline (~22%)
+  # C-ST-06 (2026-04-02): GBPUSD excluded — comparative backtest (Option A vs Option B) shows
+  # Option B (exclude GBPUSD) dominates: PF 1.5988 vs 1.3001, Sharpe 3.74 vs 2.38.
+  # GBPUSD PF=1.09 at gate ADX≥32; structural noise, not edge. See reports/report_gbpusd_optimization_2026-04-02.csv
   pairs:
     - "EURUSD"
-    - "GBPUSD"
+    # - "GBPUSD"  # Excluded 2026-04-02: PF=1.09, Sharpe drag. Option B wins: +22.9% PF, +57.5% Sharpe
     - "USDJPY"   # WR=49.5%, PF=1.64 — best signal
     # - "USDCHF"  # WR=47%, PF=1.70 — IS/OOS gap 33.3% — excluded 2026-04-01
     # - "GBPJPY"  # 0 trades — carry filter blocks all signals 2026-04-01
@@ -35,16 +35,16 @@ trading:
     # - "NZDUSD"  # 0 trades LONG-only — untested bidirectional
 
   # Risk per trade as % of account equity
-  # 0.67% = 2% global risk / 3 pairs — keeps total exposure constant
-  risk_pct: 0.67
+  # 1.0% = 2% global risk / 2 pairs (EURUSD + USDJPY) — fallback for pairs not in risk_pct_by_pair
+  risk_pct: 1.0
 
   # Per-pair risk override (empty = use global risk_pct for all pairs)
-  # GBPUSD reduced to 0.50%: PF=1.25, 2.4× less efficient — primary MaxDD driver
-  # EURUSD raised to 0.80%: PF=1.80, $46.3/trade — best efficiency
-  # Total global risk: 0.80+0.50+0.70 = 2.00% (unchanged vs 3×0.67%)
+  # EURUSD: 0.80% — PF=1.84, $46.3/trade — best efficiency
+  # USDJPY: 0.70% — PF=1.44, WR=49.5%
+  # Total global risk: 0.80+0.70 = 1.50% (2-pair portfolio, measured Option B)
   risk_pct_by_pair:
     EURUSD: 0.80
-    GBPUSD: 0.50
+    # GBPUSD: 0.50  # Excluded 2026-04-02 — C-ST-06 Option B
     USDJPY: 0.70
 
   # ATR-scaling reference pips by pair (empty dict = ATR-scaling disabled)
@@ -91,6 +91,17 @@ trading:
   ml_filter_enabled: false   # OFF — set to true to enable walk-forward ML gating
   ml_filter_min_samples: 30  # Minimum trades before model starts filtering
 
+  # C-ST-06 GBPUSD optimization gate.
+  # 0.0 = gate disabled. GBPUSD excluded from portfolio (Option B) — gate is irrelevant.
+  # Was 32.0 when testing Option A; set to 0.0 since GBPUSD not in pairs (2026-04-02).
+  gbpusd_long_adx_min: 0.0
+
+  # Pair-level profitability references used for audit tracking and future sweeps.
+  pair_min_pf_threshold:
+    EURUSD: 1.5
+    # GBPUSD: 1.2  # Excluded 2026-04-02 — C-ST-06 Option B
+    USDJPY: 1.5
+
   # Maximum acceptable spread in pips (skip trade if exceeded)
   max_spread_pips: 2.0
 
@@ -106,7 +117,7 @@ trading:
   lot_type: "micro"
 
   # NYSE session window (Eastern Time — DST auto-handled)
-  session_start: "09:30"
+  session_start: "09:40"
   session_end: "10:30"
 
   # Action at session end if position still open: "hold" or "close"
@@ -170,7 +181,7 @@ news_filter:
 
 # --- Risk Management ---
 risk:
-  reward_ratio: 2.0         # R:R — tested 1.7 (2026-04-01): WR rose 40→44% but avg_win dropped +30→+22 pips, Sharpe 0.90→0.37 → RR=2.0 is optimal for this momentum signal
+  reward_ratio: 1.7         # C-ST-09 alignment (2026-04-02): realized RR=1.6989 from backtest export, configured RR aligned to observed execution profile
   partial_exit: false       # tested: WR 63.8% but Sharpe 2.31 vs 3.37 full exit — inferior
   trailing_partial_exit: false  # tested: USDJPY PF 0.84, Sharpe 0.63 — worst result
   slippage_buffer_pips: 0.5 # Added to SL for slippage protection

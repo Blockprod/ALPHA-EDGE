@@ -37,8 +37,8 @@ class TestComputeVariableSlippage:
         assert cost == pytest.approx(BASE_SLIPPAGE_PIPS + BASE_SPREAD_BY_PAIR["EURUSD"])
 
     def test_nyse_open_window(self) -> None:
-        """9:30 ET → elevated slippage and spread."""
-        bar_time = datetime(2024, 1, 2, 9, 30, tzinfo=ET)
+        """9:40 ET → elevated slippage and spread (new session start)."""
+        bar_time = datetime(2024, 1, 2, 9, 40, tzinfo=ET)
         cost = compute_variable_slippage(bar_time)
         expected = (
             BASE_SLIPPAGE_PIPS * NYSE_OPEN_SLIPPAGE_MULTIPLIER + NYSE_OPEN_SPREAD_PIPS
@@ -46,8 +46,8 @@ class TestComputeVariableSlippage:
         assert cost == pytest.approx(expected)
 
     def test_nyse_open_minute_31(self) -> None:
-        """9:31 ET → still in NYSE open window (first 5 min)."""
-        bar_time = datetime(2024, 1, 2, 9, 31, tzinfo=ET)
+        """9:41 ET → still in NYSE open window (first 5 min)."""
+        bar_time = datetime(2024, 1, 2, 9, 41, tzinfo=ET)
         cost = compute_variable_slippage(bar_time)
         expected = (
             BASE_SLIPPAGE_PIPS * NYSE_OPEN_SLIPPAGE_MULTIPLIER + NYSE_OPEN_SPREAD_PIPS
@@ -55,8 +55,8 @@ class TestComputeVariableSlippage:
         assert cost == pytest.approx(expected)
 
     def test_nyse_open_minute_34(self) -> None:
-        """9:34 ET → still in NYSE open window (last minute)."""
-        bar_time = datetime(2024, 1, 2, 9, 34, tzinfo=ET)
+        """9:44 ET → still in NYSE open window (last minute)."""
+        bar_time = datetime(2024, 1, 2, 9, 44, tzinfo=ET)
         cost = compute_variable_slippage(bar_time)
         expected = (
             BASE_SLIPPAGE_PIPS * NYSE_OPEN_SLIPPAGE_MULTIPLIER + NYSE_OPEN_SPREAD_PIPS
@@ -64,8 +64,8 @@ class TestComputeVariableSlippage:
         assert cost == pytest.approx(expected)
 
     def test_after_nyse_open_window(self) -> None:
-        """9:35 ET → back to normal conditions (EURUSD default pair)."""
-        bar_time = datetime(2024, 1, 2, 9, 35, tzinfo=ET)
+        """9:45 ET → back to normal conditions (EURUSD default pair)."""
+        bar_time = datetime(2024, 1, 2, 9, 45, tzinfo=ET)
         cost = compute_variable_slippage(bar_time)
         assert cost == pytest.approx(BASE_SLIPPAGE_PIPS + BASE_SPREAD_BY_PAIR["EURUSD"])
 
@@ -78,7 +78,7 @@ class TestComputeVariableSlippage:
 
     def test_news_overrides_nyse_open(self) -> None:
         """News during NYSE open → news cost takes priority."""
-        bar_time = datetime(2024, 1, 2, 9, 30, tzinfo=ET)
+        bar_time = datetime(2024, 1, 2, 9, 40, tzinfo=ET)
         cost_news = compute_variable_slippage(bar_time, is_news=True)
         cost_nyse = compute_variable_slippage(bar_time, is_news=False)
         assert cost_news > cost_nyse
@@ -90,7 +90,7 @@ class TestComputeVariableSlippage:
 
     def test_variable_higher_than_fixed(self) -> None:
         """NYSE open slippage should exceed the old fixed 0.8 total."""
-        bar_time = datetime(2024, 1, 2, 9, 30, tzinfo=ET)
+        bar_time = datetime(2024, 1, 2, 9, 40, tzinfo=ET)
         cost = compute_variable_slippage(bar_time)
         old_fixed = 0.5 + 0.3  # DEFAULT_SLIPPAGE_PIPS + DEFAULT_MARKET_SLIPPAGE_PIPS
         assert cost > old_fixed

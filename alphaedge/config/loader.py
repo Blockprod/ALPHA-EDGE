@@ -178,7 +178,7 @@ class TradingConfig:
     max_spread_pips: float = DEFAULT_MAX_SPREAD_PIPS
     spread_spike_multiplier: float = 3.0
     lot_type: str = "micro"
-    session_start: str = "09:30"
+    session_start: str = "09:40"
     session_end: str = "10:30"
     session_end_action: str = "hold"
     london_open_enabled: bool = False
@@ -401,7 +401,7 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         max_spread_pips=float(section.get("max_spread_pips", DEFAULT_MAX_SPREAD_PIPS)),
         spread_spike_multiplier=float(section.get("spread_spike_multiplier", 3.0)),
         lot_type=section.get("lot_type", "micro"),
-        session_start=section.get("session_start", "09:30"),
+        session_start=section.get("session_start", "09:40"),
         session_end=section.get("session_end", "10:30"),
         session_end_action=section.get("session_end_action", "hold"),
         london_open_enabled=bool(section.get("london_open_enabled", False)),

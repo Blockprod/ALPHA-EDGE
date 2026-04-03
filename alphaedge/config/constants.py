@@ -31,7 +31,7 @@ TZ_PARIS: str = "Europe/Paris"
 # Session window (NYSE open, in local EST/EDT)
 # ------------------------------------------------------------------
 SESSION_START_HOUR: int = 9
-SESSION_START_MINUTE: int = 30
+SESSION_START_MINUTE: int = 40
 SESSION_END_HOUR: int = 10
 SESSION_END_MINUTE: int = 30
 
