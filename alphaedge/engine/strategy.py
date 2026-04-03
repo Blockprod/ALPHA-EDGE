@@ -454,6 +454,26 @@ async def _main() -> None:
     # Install signal handlers for graceful shutdown
     # add_signal_handler is not supported on Windows — use try/except for all signals
     loop = asyncio.get_running_loop()
+
+    # Route asyncio callback exceptions through loguru instead of raw stderr writes.
+    # This prevents _ProactorBaseWritePipeTransport._loop_writing AssertionError
+    # caused by asyncio writing exception tracebacks directly to sys.stderr while
+    # the ProactorEventLoop pipe transport is busy with another write (Windows race).
+    def _asyncio_exception_handler(
+        lp: asyncio.AbstractEventLoop, context: dict
+    ) -> None:
+        exc = context.get("exception")
+        # Suppress the known Windows ProactorEventLoop pipe-write race — harmless.
+        if isinstance(exc, AssertionError) and "_write_fut" in str(exc):
+            return
+        msg = context.get("message", "Unknown asyncio error")
+        if exc is not None:
+            logger.error(f"Asyncio callback exception: {msg}", exc_info=exc)
+        else:
+            logger.error(f"Asyncio error: {msg} | {context}")
+
+    loop.set_exception_handler(_asyncio_exception_handler)
+
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(
