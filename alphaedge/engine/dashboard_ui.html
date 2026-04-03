@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ALPHAEDGE — Live Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg2:       #161b22;
+      --bg3:       #21262d;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --green-dim: #1a4226;
+      --red:       #f85149;
+      --red-dim:   #3d1a19;
+      --yellow:    #d29922;
+      --cyan:      #79c0ff;
+      --accent:    #f0883e;
+      --radius:    8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--cyan);
+      white-space: nowrap;
+    }
+
+    .header-title span.bolt { color: var(--accent); font-size: 20px; }
+
+    .header-badges {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+
+    .badge.connected    { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+    .badge.disconnected { background: var(--red-dim);   border-color: var(--red);   color: var(--red); }
+    .badge.session-on   { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+    .badge.session-off  { background: var(--bg3);       border-color: var(--border); color: var(--muted); }
+    .badge.mode-paper   { background: #1e2d40;           border-color: var(--cyan);  color: var(--cyan); }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .dot.pulse {
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    .header-time {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: monospace;
+      white-space: nowrap;
+    }
+
+    /* ── Main grid ── */
+    main {
+      padding: 20px 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto auto;
+      gap: 16px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title::before {
+      content: '';
+      display: inline-block;
+      width: 3px; height: 14px;
+      border-radius: 2px;
+      background: var(--accent);
+    }
+
+    /* ── Stat grid ── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .stat {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stat-value {
+      font-size: 22px;
+      font-weight: 700;
+      font-family: monospace;
+      color: var(--text);
+    }
+
+    .stat-value.green  { color: var(--green); }
+    .stat-value.red    { color: var(--red); }
+    .stat-value.yellow { color: var(--yellow); }
+    .stat-value.muted  { color: var(--muted); }
+
+    /* ── Table ── */
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th {
+      text-align: left;
+      padding: 8px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 10px 10px;
+      border-bottom: 1px solid #21262d;
+      font-family: monospace;
+      vertical-align: middle;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg3); }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .pill.buy    { background: var(--green-dim); color: var(--green); }
+    .pill.sell   { background: var(--red-dim);   color: var(--red); }
+    .pill.waiting { background: var(--bg3); color: var(--muted); }
+    .pill.open   { background: #1e2d40; color: var(--cyan); }
+    .pill.paper  { background: #1e2d40; color: var(--cyan); }
+
+    /* ── Full width card ── */
+    .col-span-2 { grid-column: span 2; }
+
+    /* ── Position card ── */
+    .pos-empty {
+      text-align: center;
+      padding: 24px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 16px;
+      color: var(--muted);
+      font-size: 11px;
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+    }
+
+    footer a { color: var(--cyan); text-decoration: none; }
+
+    /* ── Connection banner ── */
+    #conn-banner {
+      display: none;
+      background: var(--red-dim);
+      border: 1px solid var(--red);
+      color: var(--red);
+      text-align: center;
+      padding: 8px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 700px) {
+      main { grid-template-columns: 1fr; }
+      .col-span-2 { grid-column: span 1; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="conn-banner">⚠ WebSocket disconnected — reconnecting…</div>
+
+<header>
+  <div class="header-title">
+    <span class="bolt">⚡</span>
+    ALPHAEDGE
+    <span style="font-weight:400; color: var(--muted); font-size:13px;">Momentum+Carry Forex</span>
+  </div>
+  <div class="header-badges">
+    <div id="badge-ib" class="badge disconnected">
+      <div class="dot"></div> IB Gateway
+    </div>
+    <div id="badge-session" class="badge session-off">
+      <div class="dot"></div> Session
+    </div>
+    <div class="badge mode-paper">
+      <div class="dot"></div> PAPER
+    </div>
+  </div>
+  <div id="next-session-badge" style="display:none; font-size:12px; color:var(--yellow); font-family:monospace; white-space:nowrap;"></div>
+  <div class="header-time" id="clock">—</div>
+</header>
+
+<main>
+
+  <!-- Daily Stats -->
+  <div class="card">
+    <div class="card-title">Daily Performance</div>
+    <div class="stat-grid">
+      <div class="stat">
+        <div class="stat-label">Total P&amp;L</div>
+        <div class="stat-value muted" id="stat-pnl">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Trades Today</div>
+        <div class="stat-value muted" id="stat-trades">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Open Position -->
+  <div class="card">
+    <div class="card-title">Open Position</div>
+    <div id="position-content" class="pos-empty">No open position</div>
+  </div>
+
+  <!-- Pairs / Signals -->
+  <div class="card col-span-2">
+    <div class="card-title">Pairs — Status</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Pair</th>
+            <th>Position</th>
+            <th>Trades</th>
+            <th>P&amp;L (USD)</th>
+          </tr>
+        </thead>
+        <tbody id="pairs-body">
+          <tr><td colspan="4" style="color:var(--muted); text-align:center;">Waiting for data…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  ALPHAEDGE v1.0.0 &nbsp;·&nbsp; <a href="/docs" target="_blank">API docs</a>
+  &nbsp;·&nbsp; <span id="last-update">Never updated</span>
+</footer>
+
+<script>
+  // ── Config ──────────────────────────────────────────────────────
+  const WS_URL   = `ws://${location.host}/ws`;
+  const API_BASE = `${location.protocol}//${location.host}`;
+  let ws = null;
+  let reconnectTimer = null;
+  let pollTimer = null;
+  let pingTimer = null;
+
+  // ── Clock ────────────────────────────────────────────────────────
+  function updateClock() {
+    const now = new Date();
+    const utc  = now.toUTCString().replace('GMT', 'UTC');
+    document.getElementById('clock').textContent = utc;
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ── Render state ─────────────────────────────────────────────────
+  function render(state) {
+    // IB badge
+    const ibBadge = document.getElementById('badge-ib');
+    if (state.ib_connected) {
+      ibBadge.className = 'badge connected';
+      ibBadge.querySelector('.dot').classList.add('pulse');
+    } else {
+      ibBadge.className = 'badge disconnected';
+      ibBadge.querySelector('.dot').classList.remove('pulse');
+    }
+
+    // Session badge
+    const sessBadge = document.getElementById('badge-session');
+    if (state.session_active) {
+      sessBadge.className = 'badge session-on';
+      sessBadge.querySelector('.dot').classList.add('pulse');
+    } else {
+      sessBadge.className = 'badge session-off';
+      sessBadge.querySelector('.dot').classList.remove('pulse');
+    }
+
+    // Next session countdown
+    const nextEl = document.getElementById('next-session-badge');
+    if (state.next_session_utc && !state.session_active) {
+      const next = new Date(state.next_session_utc);
+      const diffMs = next - new Date();
+      if (diffMs > 0) {
+        const h = Math.floor(diffMs / 3600000);
+        const m = Math.floor((diffMs % 3600000) / 60000);
+        nextEl.textContent = `⏳ Next session in ${h}h ${m}m`;
+        nextEl.style.display = 'block';
+      } else {
+        nextEl.style.display = 'none';
+      }
+    } else {
+      nextEl.style.display = 'none';
+    }
+
+    // Daily stats
+    const daily = state.daily || {};
+    const pnl   = daily.total_pnl_usd ?? daily.pnl_usd_today ?? 0;
+    const trades = daily.total_trades  ?? daily.trades_today  ?? 0;
+
+    const pnlEl = document.getElementById('stat-pnl');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' $';
+    pnlEl.className   = 'stat-value ' + (pnl > 0 ? 'green' : pnl < 0 ? 'red' : 'muted');
+
+    const trdEl = document.getElementById('stat-trades');
+    trdEl.textContent = trades;
+    trdEl.className   = 'stat-value ' + (trades > 0 ? 'yellow' : 'muted');
+
+    // Open position
+    const pos = state.position || {};
+    const posEl = document.getElementById('position-content');
+    const openPairs = (state.pairs || []).filter(p => p.is_position_open);
+
+    if (openPairs.length === 0) {
+      posEl.innerHTML = '<div class="pos-empty">No open position</div>';
+    } else {
+      posEl.innerHTML = openPairs.map(p => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border);">
+          <div>
+            <span style="font-size:16px; font-weight:700; color:var(--cyan); font-family:monospace;">${p.pair}</span>
+            <span class="pill open" style="margin-left:8px;">OPEN</span>
+          </div>
+          <div style="text-align:right; font-family:monospace;">
+            <div style="font-size:12px; color:var(--muted);">P&amp;L (USD)</div>
+            <div style="font-size:18px; font-weight:700; color:${(p.pnl_usd_today||0) >= 0 ? 'var(--green)' : 'var(--red)'}">
+              ${((p.pnl_usd_today||0) >= 0 ? '+' : '') + (p.pnl_usd_today||0).toFixed(2)} $
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Pairs table
+    const pairs = state.pairs || [];
+    const tbody = document.getElementById('pairs-body');
+    if (pairs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted); text-align:center;">No pairs configured</td></tr>';
+    } else {
+      tbody.innerHTML = pairs.map(p => {
+        const pnlV = p.pnl_usd_today || 0;
+        const pnlStr = (pnlV >= 0 ? '+' : '') + pnlV.toFixed(2) + ' $';
+        const pnlCls = pnlV > 0 ? 'color:var(--green)' : pnlV < 0 ? 'color:var(--red)' : 'color:var(--muted)';
+        const posPill = p.is_position_open
+          ? '<span class="pill open">OPEN</span>'
+          : '<span class="pill waiting">—</span>';
+        return `
+          <tr>
+            <td style="font-weight:700; color:var(--cyan);">${p.pair}</td>
+            <td>${posPill}</td>
+            <td style="color:var(--text);">${p.trades_today || 0}</td>
+            <td style="${pnlCls}; font-weight:600;">${pnlStr}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    // Last update
+    document.getElementById('last-update').textContent =
+      'Updated ' + new Date().toLocaleTimeString();
+  }
+
+  // ── Fallback polling ─────────────────────────────────────────────
+  async function poll() {
+    try {
+      const r = await fetch(`${API_BASE}/api/state`);
+      if (r.ok) render(await r.json());
+    } catch (_) {}
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    poll();
+    pollTimer = setInterval(poll, 3000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  // ── WebSocket ────────────────────────────────────────────────────
+  function connect() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      document.getElementById('conn-banner').style.display = 'none';
+      stopPolling();
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      // Single ping timer — clear previous one if reconnecting
+      if (pingTimer) { clearInterval(pingTimer); }
+      pingTimer = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); }, 20000);
+    };
+
+    ws.onmessage = (evt) => {
+      try { render(JSON.parse(evt.data)); } catch (_) {}
+    };
+
+    ws.onclose = () => {
+      document.getElementById('conn-banner').style.display = 'block';
+      startPolling();
+      reconnectTimer = setTimeout(connect, 5000);
+    };
+
+    ws.onerror = () => { ws.close(); };
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────
+  connect();
+  startPolling(); // Start polling immediately, WS will stop it when ready
+</script>
+</body>
+</html>

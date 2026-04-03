@@ -300,7 +300,7 @@ async def run_dashboard(
     """
     logger.info("ALPHAEDGE dashboard starting")
 
-    with Live(console=console, refresh_per_second=int(1 / refresh_rate)) as live:
+    with Live(console=console, refresh_per_second=max(1.0, 1.0 / refresh_rate)) as live:
         try:
             while True:
                 state = await state_provider()

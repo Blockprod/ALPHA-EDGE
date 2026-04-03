@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import os
 import signal
 import sys
@@ -53,6 +54,8 @@ class StrategyState:
     wins_today: int = 0
     losses_today: int = 0
     pnl_usd_today: float = 0.0
+    consecutive_losses_count: int = 0
+    loss_streak_pnl_usd: float = 0.0
     starting_equity: float = 0.0
     current_equity: float = 0.0
     is_position_open: bool = False
@@ -105,12 +108,11 @@ def _import_core_modules() -> CoreModules:
         fallback_modules = get_fallback_modules()
         if fallback_modules:
             logger.warning(
-                "ALPHAEDGE: core backend=%s with fallback on %s",
-                backend_name,
-                ", ".join(fallback_modules),
+                f"ALPHAEDGE: core backend={backend_name} with fallback on "
+                f"{', '.join(fallback_modules)}"
             )
         else:
-            logger.info("ALPHAEDGE: core backend=%s", backend_name)
+            logger.info(f"ALPHAEDGE: core backend={backend_name}")
         return CoreModules(
             momentum_detector=momentum_detector,
             order_manager=order_manager,
@@ -219,16 +221,10 @@ class SwingStrategy:
             regime = regime_filter.predict(_date.today(), state.daily_bars[-20:])
         if self._config.regime_gate_enabled and regime == self._config.regime_block_on:
             logger.info(
-                "ALPHAEDGE: regime gate BLOCK pair=%s regime=%s",
-                state.pair,
-                regime,
+                f"ALPHAEDGE: regime gate BLOCK pair={state.pair} regime={regime}"
             )
             return None
-        logger.info(
-            "ALPHAEDGE: regime=%s pair=%s",
-            regime,
-            state.pair,
-        )
+        logger.info(f"ALPHAEDGE: regime={regime} pair={state.pair}")
         result = self._signal_pipeline.detect_momentum(
             state, self._modules, self._config
         )
@@ -301,6 +297,64 @@ class SwingStrategy:
         return self._position_manager.build_validated_order(
             signal, lot_size, pip_size, spread_pips, self._modules, self._config
         )
+
+    def get_live_state(self) -> dict[str, Any]:
+        """Return a snapshot of current live state for the web dashboard."""
+        from datetime import timedelta
+
+        from alphaedge.utils.timezone import (
+            get_session_window_utc,
+            is_session_active,
+            now_utc,
+        )
+
+        # If session not yet started, show configured pairs with zero values
+        if self._states:
+            pairs_info = [
+                {
+                    "pair": s.pair,
+                    "is_position_open": s.is_position_open,
+                    "trades_today": s.trades_today,
+                    "pnl_usd_today": s.pnl_usd_today,
+                }
+                for s in self._states.values()
+            ]
+        else:
+            pairs_info = [
+                {
+                    "pair": p,
+                    "is_position_open": False,
+                    "trades_today": 0,
+                    "pnl_usd_today": 0.0,
+                }
+                for p in self._config.trading.pairs
+            ]
+        total_pnl = sum(s.pnl_usd_today for s in self._states.values())
+        total_trades = sum(s.trades_today for s in self._states.values())
+
+        # Compute next session start time
+        now = now_utc()
+        session_start, session_end = get_session_window_utc(now)
+        if now >= session_end:
+            next_day = now + timedelta(days=1)
+            while next_day.weekday() >= 5:
+                next_day += timedelta(days=1)
+            session_start, _ = get_session_window_utc(next_day)
+        next_session_utc = (
+            session_start.strftime("%Y-%m-%dT%H:%M:%SZ") if session_start > now else ""
+        )
+
+        return {
+            "ib_connected": self._broker.is_connected,
+            "session_active": is_session_active() and not self._shutdown_requested,
+            "next_session_utc": next_session_utc,
+            "pairs": pairs_info,
+            "position": {},
+            "daily": {
+                "total_pnl_usd": total_pnl,
+                "total_trades": total_trades,
+            },
+        }
 
     async def run_session(self) -> None:
         """Run a single trading session (delegates to SessionLifecycle)."""
@@ -389,22 +443,63 @@ async def _main() -> None:
     strategy = SwingStrategy(config)
 
     # Install signal handlers for graceful shutdown
+    # add_signal_handler is not supported on Windows — use try/except for all signals
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT,):
-        loop.add_signal_handler(
-            sig,
-            lambda: asyncio.ensure_future(strategy.graceful_shutdown()),
-        )
-    # SIGTERM not supported on Windows
-    try:
-        loop.add_signal_handler(
-            signal.SIGTERM,
-            lambda: asyncio.ensure_future(strategy.graceful_shutdown()),
-        )
-    except NotImplementedError:
-        pass  # Windows — SIGTERM not available
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(
+                sig,
+                lambda: asyncio.ensure_future(strategy.graceful_shutdown()),
+            )
+        except NotImplementedError:
+            pass  # Windows — signal handlers not supported via asyncio loop
 
-    await strategy.run_session()
+    # Optional web dashboard (FastAPI REST + WebSocket)
+    _dashboard_task: asyncio.Task[None] | None = None
+    if config.dashboard_raw.get("enabled", False):
+        import threading
+
+        from alphaedge.engine.web_dashboard import (
+            configure_auth,
+            run_web_dashboard,
+            start_server,
+        )
+
+        dash_host: str = str(config.dashboard_raw.get("host", "127.0.0.1"))
+        dash_port: int = int(config.dashboard_raw.get("port", 8080))
+        dash_token: str = str(config.dashboard_raw.get("api_token", ""))
+        if dash_token:
+            configure_auth(dash_token)
+
+        threading.Thread(
+            target=start_server,
+            args=(dash_host, dash_port),
+            daemon=True,
+            name="alphaedge-web-dashboard",
+        ).start()
+        logger.info(f"Web dashboard: http://{dash_host}:{dash_port}/docs")
+
+        async def _get_dashboard_state() -> dict[str, Any]:
+            return strategy.get_live_state()
+
+        _dashboard_task = asyncio.create_task(
+            run_web_dashboard(_get_dashboard_state, refresh_rate=2.0),
+            name="web-dashboard-loop",
+        )
+
+    try:
+        while not strategy._shutdown_requested:
+            await strategy.run_session()
+            if strategy._shutdown_requested:
+                break
+            # Brief pause between sessions (daily loss shutdown resets next day)
+            logger.info("ALPHAEDGE: Session complete — waiting for next session window")
+            await asyncio.sleep(60.0)
+    finally:
+        if _dashboard_task is not None:
+            _dashboard_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await _dashboard_task
 
 
 if __name__ == "__main__":

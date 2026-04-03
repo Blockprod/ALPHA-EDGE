@@ -15,9 +15,11 @@ import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol
 
 from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, status
+from fastapi.responses import FileResponse
 
 from alphaedge.config.constants import PROJECT_TITLE, PROJECT_VERSION
 from alphaedge.utils.logger import get_logger
@@ -222,6 +224,17 @@ def create_app(store: DashboardStore | None = None) -> FastAPI:
 
     def _get_store() -> DashboardStore:
         return store if store is not None else get_store()
+
+    # ---- Live dashboard UI ----
+    _ui_path = Path(__file__).parent / "dashboard_ui.html"
+
+    @app.get("/dashboard", include_in_schema=False)
+    async def dashboard_ui() -> FileResponse:
+        return FileResponse(_ui_path, media_type="text/html")
+
+    @app.get("/", include_in_schema=False)
+    async def root_redirect() -> FileResponse:
+        return FileResponse(_ui_path, media_type="text/html")
 
     # ---- Health check ----
     @app.get("/health")

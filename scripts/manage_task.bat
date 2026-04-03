@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul 2>&1
 setlocal
 
@@ -33,8 +33,9 @@ echo   6. Suivre le log en temps réel (Ctrl+C pour sortir)
 echo   7. Lancer le bot en mode console (paper)
 echo   8. Ouvrir le Planificateur de tâches Windows
 echo   9. Quitter
+echo  10. Ouvrir le dashboard web (navigateur — port 8080)
 echo.
-set /p CHOICE=Votre choix [1-9] :
+set /p CHOICE=Votre choix [1-10] :
 
 if "%CHOICE%"=="1" goto OPT_STATUS
 if "%CHOICE%"=="2" goto OPT_START
@@ -45,6 +46,7 @@ if "%CHOICE%"=="6" goto OPT_TAIL
 if "%CHOICE%"=="7" goto OPT_CONSOLE
 if "%CHOICE%"=="8" goto OPT_TASKSCHD
 if "%CHOICE%"=="9" goto END
+if "%CHOICE%"=="10" goto OPT_DASHBOARD
 goto MENU
 
 :OPT_STATUS
@@ -61,13 +63,18 @@ goto MENU
 
 :OPT_START
 echo.
-echo [*] Démarrage IB Gateway...
-schtasks /run /tn "%TASK_IB%"
-if %errorlevel% neq 0 (
-    echo [ERREUR] Impossible de démarrer la tâche %TASK_IB%.
-    echo          Avez-vous exécuté install_task.bat ^(en admin^) ?
+echo [*] Vérification IB Gateway...
+tasklist /fi "ImageName eq ibgateway.exe" 2>nul | find /i "ibgateway.exe" >nul
+if %errorlevel% equ 0 (
+    echo [OK] IB Gateway déjà en cours d'exécution — démarrage ignoré.
 ) else (
-    echo [OK] IB Gateway démarré.
+    schtasks /run /tn "%TASK_IB%"
+    if %errorlevel% neq 0 (
+        echo [ERREUR] Impossible de démarrer la tâche %TASK_IB%.
+        echo          Avez-vous exécuté install_task.bat ^(en admin^) ?
+    ) else (
+        echo [OK] IB Gateway démarré.
+    )
 )
 timeout /t 5 >nul
 echo [*] Démarrage Bot...
@@ -131,19 +138,23 @@ pause
 goto MENU
 
 :OPT_CONSOLE
-cls
-echo [*] Lancement du bot en mode console (paper)...
-echo     Ctrl+C pour arrêter.
 echo.
-cd /d "%PROJECT_DIR%"
-"%PYTHON_EXE%" -m alphaedge.engine.strategy --mode paper
-echo.
-echo [*] Bot arrêté.
-pause
+echo [*] Lancement du bot dans une nouvelle fenetre (paper)...
+echo     Fermez la fenetre "ALPHAEDGE Bot" pour arreter le bot.
+start "ALPHAEDGE Bot" cmd /k "cd /d "%PROJECT_DIR%" && "%PYTHON_EXE%" -m alphaedge.engine.strategy --mode paper"
+echo [OK] Bot demarre. Vous pouvez maintenant lancer l'option 10.
+timeout /t 2 >nul
 goto MENU
 
 :OPT_TASKSCHD
 start taskschd.msc
+goto MENU
+
+:OPT_DASHBOARD
+echo.
+echo [*] Ouverture du dashboard web (http://127.0.0.1:8080/dashboard)...
+echo     Le bot doit etre deja demarre (option 2 ou 7).
+start "" "http://127.0.0.1:8080/dashboard"
 goto MENU
 
 :STATUS_INLINE
@@ -153,7 +164,7 @@ if %errorlevel% neq 0 (
     set "%~2=[NON INSTALLÉE]"
     goto :eof
 )
-for /f "tokens=4 delims=," %%S in ('schtasks /query /tn "%~1" /fo csv ^| findstr /v "TaskName"') do (
+for /f "tokens=3 delims=," %%S in ('schtasks /query /tn "%~1" /fo csv ^| findstr /v "TaskName"') do (
     set "%~2=%%~S"
     goto :eof
 )
