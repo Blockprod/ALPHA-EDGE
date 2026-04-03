@@ -83,12 +83,15 @@ def setup_logging(
     # Ensure log directory exists
     Path(log_dir).mkdir(parents=True, exist_ok=True)
 
-    # Console handler
+    # Console handler — enqueue=True serialises writes via a background thread,
+    # preventing concurrent pipe writes that trigger the Windows asyncio
+    # _ProactorBaseWritePipeTransport assertion error.
     logger.add(
         sys.stderr,
         format=_alphaedge_format,
         level=log_level,
         colorize=True,
+        enqueue=True,
     )
 
     # File handler with daily rotation

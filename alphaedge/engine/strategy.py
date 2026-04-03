@@ -512,8 +512,4 @@ async def _main() -> None:
 
 
 if __name__ == "__main__":
-    # Windows ProactorEventLoop has a race condition in _ProactorBaseWritePipeTransport
-    # when concurrent log writes hit stdout/stderr pipes. SelectorEventLoop avoids it.
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(_main())
