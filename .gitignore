@@ -74,6 +74,7 @@ cov_out.txt
 final_test.txt
 pytest_out.txt
 qa_run.log
+tasks_dump.txt
 test_logger.txt
 
 # --- OS ---
