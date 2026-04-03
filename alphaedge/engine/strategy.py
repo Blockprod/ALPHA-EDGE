@@ -532,4 +532,26 @@ async def _main() -> None:
 
 
 if __name__ == "__main__":
+    # ── Windows ProactorEventLoop pipe-write race condition fix ──
+    # On Windows, asyncio uses ProactorEventLoop which can trigger a harmless
+    # AssertionError in _loop_writing when two concurrent writes hit the same
+    # stderr pipe transport (e.g. loguru + uvicorn + asyncio's own error logger).
+    # This monkey-patch catches the assertion at the source — before asyncio
+    # formats a traceback and tries to write it to stderr (which would trigger
+    # the same race again). Affects ALL event loops in ALL threads.
+    import asyncio.proactor_events as _pev
+
+    _TransportClass = getattr(_pev, "_ProactorBaseWritePipeTransport")
+    _original_loop_writing = getattr(_TransportClass, "_loop_writing")
+
+    def _patched_loop_writing(self: object, f: object = None) -> None:
+        try:
+            _original_loop_writing(self, f)
+        except AssertionError:
+            # Harmless: two futures overlapped on the same pipe transport.
+            # The write still succeeds — the assertion is a stale-future check.
+            pass
+
+    setattr(_TransportClass, "_loop_writing", _patched_loop_writing)
+
     asyncio.run(_main())
