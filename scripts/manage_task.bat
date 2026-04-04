@@ -1,5 +1,6 @@
 @echo off
 chcp 65001 >nul 2>&1
+title ALPHAEDGE — Gestion des tâches
 setlocal
 
 set "TASK_IB=ALPHAEDGE_IBGateway"
