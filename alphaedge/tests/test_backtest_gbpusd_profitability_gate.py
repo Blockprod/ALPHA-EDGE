@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from alphaedge.config.loader import AppConfig, TradingConfig
+from alphaedge.core.types import MomentumSignal
 from alphaedge.engine.backtest import (
     _backtest_pair,
     _get_pair_profitability_gate_rejection,
@@ -47,7 +48,7 @@ class TestGbpusdProfitabilityGate:
 
         rejection = _get_pair_profitability_gate_rejection(
             "GBPUSD",
-            {"direction": 1, "adx": 29.5},
+            cast(MomentumSignal, {"direction": 1, "adx": 29.5}),
             cfg,
         )
 
