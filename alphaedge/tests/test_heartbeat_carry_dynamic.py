@@ -68,8 +68,12 @@ class TestHeartbeatLoop:
         broker._heartbeat_misses = 0
         broker.reconnect = AsyncMock(return_value=True)
 
-        task = asyncio.ensure_future(broker._heartbeat_loop(interval=0, max_misses=5))
-        # Allow 1 probe cycle
+        # max_misses=10000 prevents the counter reset (which occurs at max_misses)
+        # from racing with the assertion in the 0.02s window.
+        task = asyncio.ensure_future(
+            broker._heartbeat_loop(interval=0, max_misses=10000)
+        )
+        # Allow a few probe cycles
         await asyncio.sleep(0.02)
         task.cancel()
         try:
