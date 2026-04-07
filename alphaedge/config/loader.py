@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from dataclasses import dataclass, field
@@ -46,6 +47,7 @@ from alphaedge.config.constants import (
     LONDON_START_HOUR,
     LONDON_START_MINUTE,
     LONDON_TZ,
+    MAX_ENTRY_SLIPPAGE_PIPS,
     PIP_SIZES,
     SESSION_END_HOUR,
     SESSION_END_MINUTE,
@@ -222,7 +224,12 @@ class TradingConfig:
     carry_enabled: bool = True
     carry_min_differential_pct: float = DEFAULT_CARRY_MIN_DIFFERENTIAL
     carry_rates: dict[str, float] = field(default_factory=dict)
+    # "static" = use rates from config.yaml; "file" = reload from data/carry_rates.json
+    carry_rates_source: str = "static"
     slippage_buffer_pips: float = DEFAULT_MARKET_SLIPPAGE_PIPS
+    max_entry_slippage_pips: float = (
+        MAX_ENTRY_SLIPPAGE_PIPS  # P0-02: fill vs expected entry warning threshold
+    )
     # 0 = use fixed min_range_pips; >0 = SL = multiplier × ATR(14)
     sl_atr_multiplier: float = 0.0
     # ML filter — walk-forward logistic regression gate (default OFF)
@@ -368,6 +375,55 @@ def _check_ib_port(port: int) -> None:
 
 
 # ------------------------------------------------------------------
+# Dynamic carry rate file loader
+# ------------------------------------------------------------------
+def load_carry_rates_from_file(
+    path: str | Path = "data/carry_rates.json",
+) -> dict[str, float]:
+    """Load carry rates from a JSON file.
+
+    The file must be a flat JSON object mapping currency codes (str) to
+    annualised interest rates (float), e.g.::
+
+        {"EUR": 3.65, "USD": 5.25, "JPY": 0.10}
+
+    Parameters
+    ----------
+    path:
+        Path to the JSON file.  Relative paths are resolved from the
+        current working directory (project root when using ``make``).
+
+    Returns
+    -------
+    dict[str, float]
+        Parsed rates dict.  Keys are uppercased.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist.
+    ValueError
+        If the file cannot be decoded or contains invalid rate values.
+    """
+    resolved = Path(path)
+    if not resolved.exists():
+        raise FileNotFoundError(f"ALPHAEDGE: carry rates file not found: {resolved}")
+    with resolved.open(encoding="utf-8") as fh:
+        raw: Any = json.load(fh)
+    if not isinstance(raw, dict):
+        raise ValueError(
+            "ALPHAEDGE: carry_rates.json must be a JSON object, "
+            f"got {type(raw).__name__}"
+        )
+    try:
+        return {str(k).upper(): float(v) for k, v in raw.items()}
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"ALPHAEDGE: invalid carry rate value in {resolved}: {exc}"
+        ) from exc
+
+
+# ------------------------------------------------------------------
 # Build TradingConfig from raw YAML data
 # ------------------------------------------------------------------
 def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
@@ -482,8 +538,12 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
         carry_section.get("min_differential_pct", DEFAULT_CARRY_MIN_DIFFERENTIAL)
     )
     cfg.carry_rates = {k: float(v) for k, v in carry_section.get("rates", {}).items()}
+    cfg.carry_rates_source = str(carry_section.get("carry_rates_source", "static"))
     cfg.slippage_buffer_pips = float(
         risk_section.get("slippage_buffer_pips", DEFAULT_MARKET_SLIPPAGE_PIPS)
+    )
+    cfg.max_entry_slippage_pips = float(
+        risk_section.get("max_entry_slippage_pips", MAX_ENTRY_SLIPPAGE_PIPS)
     )
     cfg.sl_atr_multiplier = float(risk_section.get("sl_atr_multiplier", 0.0))
     cfg.ml_filter_enabled = bool(section.get("ml_filter_enabled", False))

@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from ib_insync import BarData, Contract
+from ib_insync import BarData, Contract, RealTimeBar
 
 from alphaedge.config.constants import (
     IB_HIST_TIMEOUT_SECONDS,
@@ -88,22 +88,28 @@ class BarDiskCache:
 # ------------------------------------------------------------------
 # Convert IB BarData to a candle dict
 # ------------------------------------------------------------------
-def _bar_to_dict(bar: BarData) -> dict[str, Any]:
+def _bar_to_dict(bar: BarData | RealTimeBar) -> dict[str, Any]:
     """
-    Convert an IB BarData object to a standardized candle dict.
+    Convert an IB BarData or RealTimeBar object to a standardized candle dict.
 
     Parameters
     ----------
-    bar : BarData
-        IB bar data object.
+    bar : BarData | RealTimeBar
+        IB bar data object (historical or real-time 5s).
 
     Returns
     -------
     dict
         Candle dict with keys: open, high, low, close, volume, timestamp.
     """
-    # Convert bar date to UTC epoch
-    raw_date = bar.date
+    # Convert bar date/time to UTC epoch
+    # BarData (historical) uses .date; RealTimeBar (5s) uses .time
+    if isinstance(bar, RealTimeBar):
+        raw_date: datetime | object = bar.time
+        open_price: float = bar.open_
+    else:
+        raw_date = bar.date
+        open_price = bar.open
     if isinstance(raw_date, datetime):
         dt = raw_date if raw_date.tzinfo else raw_date.replace(tzinfo=get_tz_utc())
     else:
@@ -112,7 +118,7 @@ def _bar_to_dict(bar: BarData) -> dict[str, Any]:
     epoch = int(dt.timestamp())
 
     return {
-        "open": float(bar.open),
+        "open": float(open_price),
         "high": float(bar.high),
         "low": float(bar.low),
         "close": float(bar.close),

@@ -9,6 +9,11 @@ from types import ModuleType
 from alphaedge.core._stubs import momentum_detector as momentum_detector
 from alphaedge.core._stubs import order_manager as order_manager
 from alphaedge.core._stubs import risk_manager as risk_manager
+from alphaedge.core.types import BracketOrderResult as BracketOrderResult
+from alphaedge.core.types import DailyLimitResult as DailyLimitResult
+from alphaedge.core.types import MomentumSignal as MomentumSignal
+from alphaedge.core.types import PairLimitResult as PairLimitResult
+from alphaedge.core.types import PositionSizeResult as PositionSizeResult
 
 def get_backend_name() -> str: ...
 def get_fallback_modules() -> tuple[str, ...]: ...

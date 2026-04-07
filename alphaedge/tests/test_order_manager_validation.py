@@ -94,7 +94,11 @@ class TestOrderManagerValidation:
         # For SELL direction, spread-adjusted SL should be higher
         assert result_adj["is_valid"] is True
         assert result_no_adj["is_valid"] is True
-        assert result_adj["stop_loss"] > result_no_adj["stop_loss"]
+        adj_sl = result_adj.get("stop_loss")
+        no_adj_sl = result_no_adj.get("stop_loss")
+        assert adj_sl is not None
+        assert no_adj_sl is not None
+        assert adj_sl > no_adj_sl
 
 
 if __name__ == "__main__":

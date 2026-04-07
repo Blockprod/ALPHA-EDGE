@@ -31,6 +31,8 @@ from ib_insync import (
 from alphaedge.config.constants import (
     IB_CIRCUIT_BREAKER_MAX_FAILURES,
     IB_CIRCUIT_BREAKER_RESET_SECONDS,
+    IB_HEARTBEAT_INTERVAL_SECONDS,
+    IB_HEARTBEAT_MAX_MISSES,
     IB_TIMEOUT_SECONDS,
     IB_TOKEN_BUCKET_BURST,
     IB_TOKEN_BUCKET_RATE,
@@ -117,6 +119,9 @@ class BrokerConnection:
         self._circuit_breaker_opened_at: float = 0.0
         self._disconnect_handlers: list[DisconnectHandler] = []
         self._ib = self._build_ib_client()
+        # Heartbeat state
+        self._heartbeat_task: asyncio.Task[None] | None = None
+        self._heartbeat_misses: int = 0
 
     @property
     def is_connected(self) -> bool:
@@ -323,6 +328,80 @@ class BrokerConnection:
         """Raise if not currently connected."""
         if not self._ib.isConnected():
             raise ConnectionError("ALPHAEDGE: Not connected to IB Gateway")
+
+    # ------------------------------------------------------------------
+    # Heartbeat
+    # ------------------------------------------------------------------
+    def start_heartbeat(
+        self,
+        interval: int = IB_HEARTBEAT_INTERVAL_SECONDS,
+        max_misses: int = IB_HEARTBEAT_MAX_MISSES,
+    ) -> None:
+        """Start the background heartbeat task if not already running."""
+        if self._heartbeat_task is not None and not self._heartbeat_task.done():
+            return
+        self._heartbeat_misses = 0
+        self._heartbeat_task = asyncio.ensure_future(
+            self._heartbeat_loop(interval=interval, max_misses=max_misses)
+        )
+        logger.info(
+            "ALPHAEDGE heartbeat started (interval=%ds, max_misses=%d)",
+            interval,
+            max_misses,
+        )
+
+    async def stop_heartbeat(self) -> None:
+        """Cancel the background heartbeat task and wait for it to finish."""
+        if self._heartbeat_task is not None and not self._heartbeat_task.done():
+            self._heartbeat_task.cancel()
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(self._heartbeat_task), timeout=5.0
+                )
+            except (asyncio.CancelledError, TimeoutError):
+                pass
+        self._heartbeat_task = None
+        logger.info("ALPHAEDGE heartbeat stopped")
+
+    async def _heartbeat_loop(
+        self,
+        interval: int = IB_HEARTBEAT_INTERVAL_SECONDS,
+        max_misses: int = IB_HEARTBEAT_MAX_MISSES,
+    ) -> None:
+        """Probe connection health every ``interval`` seconds.
+
+        A probe succeeds if ``ib.isConnected()`` returns True.  After
+        ``max_misses`` consecutive failed probes the loop triggers
+        ``reconnect()``.  The loop runs until cancelled.
+        """
+        while True:
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                return
+
+            if self._ib.isConnected():
+                self._heartbeat_misses = 0
+            else:
+                self._heartbeat_misses += 1
+                logger.warning(
+                    "ALPHAEDGE heartbeat miss %d/%d — connection appears down",
+                    self._heartbeat_misses,
+                    max_misses,
+                )
+                if self._heartbeat_misses >= max_misses:
+                    logger.error(
+                        "ALPHAEDGE heartbeat: %d consecutive misses — "
+                        "triggering reconnect",
+                        self._heartbeat_misses,
+                    )
+                    self._heartbeat_misses = 0
+                    reconnected = await self.reconnect()
+                    if not reconnected:
+                        logger.critical(
+                            "ALPHAEDGE heartbeat: reconnect failed — "
+                            "heartbeat loop will keep retrying"
+                        )
 
 
 # ------------------------------------------------------------------

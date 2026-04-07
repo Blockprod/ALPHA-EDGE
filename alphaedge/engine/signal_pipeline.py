@@ -23,11 +23,12 @@ logger = get_logger()
 if TYPE_CHECKING:
     # NOTE: import cycle with strategy.py mitigated by TYPE_CHECKING
     from alphaedge.config.loader import AppConfig
+    from alphaedge.core.types import MomentumSignal
     from alphaedge.engine.strategy import CoreModules, StrategyState
 
 
 def _is_carry_conflict(
-    momentum_result: dict[str, Any],
+    momentum_result: MomentumSignal,
     carry: CarrySignal,
 ) -> bool:
     """Return True when carry direction contradicts momentum direction.
@@ -69,7 +70,7 @@ class SignalPipeline:
         state: StrategyState,
         modules: CoreModules,
         config: AppConfig,
-    ) -> dict[str, Any] | None:
+    ) -> MomentumSignal | None:
         """
         Run momentum detection on the Daily bars stored in *state*.
 
@@ -88,7 +89,7 @@ class SignalPipeline:
 
         daily_bars: list[dict[str, Any]] = getattr(state, "daily_bars", [])
 
-        result: dict[str, Any] | None = modules.momentum_detector.detect_momentum(
+        result: MomentumSignal | None = modules.momentum_detector.detect_momentum(
             bars=daily_bars,
             fast_period=fast,
             slow_period=slow,
@@ -135,7 +136,7 @@ class SignalPipeline:
     # ------------------------------------------------------------------
     @staticmethod
     def is_carry_conflict(
-        momentum_result: dict[str, Any],
+        momentum_result: MomentumSignal,
         carry: CarrySignal,
     ) -> bool:
         """Return True when carry direction contradicts momentum direction."""

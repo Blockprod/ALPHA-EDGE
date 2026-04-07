@@ -57,6 +57,9 @@ asyncio_mode = "auto"
 norecursedirs = ["build", ".venv", "__pycache__", "*.egg-info", ".git"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+markers = [
+    "compiled: tests that require compiled Cython .pyd/.so modules (skipped if unavailable)",
+]
 
 # --- Coverage Configuration ---
 # Coverage should represent the deterministic contract exercised in CI:

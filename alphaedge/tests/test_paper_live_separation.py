@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
+from alphaedge.__main__ import _apply_cli_mode
 from alphaedge.config.constants import IB_LIVE_PORT, IB_PAPER_PORT
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig, load_config
-from alphaedge.engine.strategy import _apply_cli_mode
 
 
 @pytest.fixture()

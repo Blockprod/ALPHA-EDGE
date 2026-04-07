@@ -15,7 +15,11 @@ import asyncio
 import random
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from alphaedge.core.types import MomentumSignal
+    from alphaedge.engine.strategy import StrategyState
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -24,7 +28,6 @@ from alphaedge.config.constants import (
     DEFAULT_ADX_THRESHOLD,
     DEFAULT_PIP_SIZE,
     DEFAULT_RR_RATIO,
-    MIN_LOTS,
     PIP_SIZES,
     PROJECT_TITLE,
     REFERENCE_FX_RATE,
@@ -81,9 +84,21 @@ from alphaedge.utils.news_filter import EconomicNewsFilter
 logger = get_logger()
 
 
+@dataclass
+class _BacktestProxy:
+    """Minimal duck-type proxy satisfying the StrategyState interface."""
+
+    pair: str = ""
+    daily_bars: list[dict[str, Any]] = field(default_factory=list)
+    carry_rates: dict[str, float] = field(default_factory=dict)
+    current_equity: float = 0.0
+    starting_equity: float = 0.0
+    signal_result: dict[str, Any] | None = None
+
+
 def _get_pair_profitability_gate_rejection(
     pair: str,
-    signal: dict[str, Any],
+    signal: MomentumSignal,
     config: AppConfig,
 ) -> RejectionLog | None:
     """Return a rejection log when a pair-level profitability gate blocks a signal."""
@@ -397,65 +412,50 @@ def _build_trade_record(
 
 
 def _validate_backtest_signal(
-    pair: str,
+    proxy: _BacktestProxy,
     signal: dict[str, Any],
     config: AppConfig,
     pip_size: float,
     spread_pips: float,
-    risk_mod: Any,
-    order_mod: Any,
+    pos_manager: Any,
+    modules_obj: Any,
 ) -> dict[str, Any] | None:
     """Apply live-like sizing and bracket validation before simulating a trade."""
-    # C-02: use REFERENCE_FX_RATE instead of 0.0 so USDJPY pip_value is correct.
-    # This is a gate-only check — P&L is always overridden by _apply_equity_sizing.
-    # C-03: starting_equity is fixed (not the running equity). Diverges from live
-    # (position_manager uses current_equity). Dormant: equity never falls below
-    # starting_equity in observed runs. Full fix deferred — requires equity tracker
-    # threaded through _collect_daily_trades.
-    pos_result: dict[str, Any] = risk_mod.calculate_position_size(
-        account_equity=config.trading.starting_equity,
-        risk_pct=config.trading.risk_pct,
-        sl_pips=signal["risk_pips"],
-        pair=pair,
-        pip_size=pip_size,
-        lot_type=config.trading.lot_type,
-        min_lots=MIN_LOTS,
-        max_lots=config.trading.max_lot_size,
-        exchange_rate=REFERENCE_FX_RATE.get(pair, 1.0),
+    # Delegate to PositionManager — mirrors the live sizing path exactly.
+    # current_atr_pips=0.0 disables ATR scaling (backtest uses fixed risk_pct).
+    pos_result = pos_manager.size_position(
+        proxy,
+        modules_obj,
+        config,
+        signal,
+        pip_size,
+        exchange_rate=REFERENCE_FX_RATE.get(proxy.pair, 1.0),
     )
-    if not pos_result.get("is_valid", False):
+    if pos_result is None:
         logger.debug(
             "ALPHAEDGE BACKTEST: %s sizing rejected (is_valid=false)",
-            pair,
+            proxy.pair,
         )
         return None
 
-    bracket: dict[str, Any] = order_mod.create_bracket_order(
-        direction=signal["direction"],
-        entry_price=signal["entry_price"],
-        stop_loss=signal["stop_loss"],
-        take_profit=signal["take_profit"],
-        lot_size=pos_result["lot_size"],
-        pip_size=pip_size,
-        spread_pips=spread_pips,
-        max_spread_pips=config.trading.max_spread_pips,
-        min_rr=config.trading.rr_ratio * 0.9,
-        min_lots=MIN_LOTS,
-        max_lots=config.trading.max_lot_size,
-        adjust_for_spread=True,
+    bracket = pos_manager.build_validated_order(
+        signal,
+        pos_result["lot_size"],
+        pip_size,
+        spread_pips,
+        modules_obj,
+        config,
     )
-    if not bracket.get("is_valid", False):
+    if bracket is None:
         logger.debug(
-            "ALPHAEDGE BACKTEST: %s bracket rejected (%s)",
-            pair,
-            bracket.get("rejection_reason", "unknown"),
+            "ALPHAEDGE BACKTEST: %s bracket rejected",
+            proxy.pair,
         )
         return None
 
     # C-04: lot_size is returned for API consistency but is not stored in TradeRecord
     # and is not used in _simulate_trade_exit (which uses 1 micro lot implicitly).
-    # P&L is driven entirely by _apply_equity_sizing. If a USD P&L variant or
-    # ATR-scaling (Piste 3.3) is implemented, store lot_size in TradeRecord then.
+    # P&L is driven entirely by _apply_equity_sizing.
     return {
         "signal": {
             **signal,
@@ -501,7 +501,7 @@ def _compute_regime_label(
 
 
 def _extract_signal_features(
-    signal: dict[str, Any],
+    signal: MomentumSignal,
     bar_dt: Any,
     all_atrs: np.ndarray,
     bar_index: int,
@@ -554,11 +554,12 @@ def _collect_daily_trades(
     pair: str,
     daily_bars: list[dict[str, Any]],
     bar_index: int,
-    signal: dict[str, Any],
+    signal: MomentumSignal,
     pip_size: float,
     config: AppConfig,
-    risk_manager: Any,
-    order_manager: Any,
+    pos_manager: Any,
+    modules_obj: Any,
+    proxy: _BacktestProxy,
     _all_highs: np.ndarray,
     _all_lows: np.ndarray,
     *,
@@ -627,7 +628,7 @@ def _collect_daily_trades(
         slippage_multipliers=config.trading.cost_slippage_multipliers,
     )
     validated = _validate_backtest_signal(
-        pair, trade_signal, config, pip_size, spread_pips, risk_manager, order_manager
+        proxy, trade_signal, config, pip_size, spread_pips, pos_manager, modules_obj
     )
     if validated is None:
         return trades
@@ -673,16 +674,21 @@ def _backtest_pair(
         logger.warning(f"ALPHAEDGE: Cython not compiled — skipping backtest for {pair}")
         return trades, {}, []
 
-    from alphaedge.engine.carry_signal import get_carry_bias
+    from alphaedge.engine.position_manager import PositionManager
+    from alphaedge.engine.signal_pipeline import SignalPipeline
+    from alphaedge.engine.strategy import CoreModules
+
+    modules_obj = CoreModules(
+        momentum_detector=momentum_detector,
+        order_manager=order_manager,
+        risk_manager=risk_manager,
+    )
+    _pipeline = SignalPipeline()
+    _pos_manager = PositionManager()
 
     lookback = config.trading.momentum_lookback_days
-    fast = config.trading.momentum_fast_period
-    slow = config.trading.momentum_slow_period
-    adx_p = config.trading.momentum_adx_period
-    adx_t = config.trading.momentum_adx_threshold
     carry_enabled = config.trading.carry_enabled
     carry_rates = config.trading.carry_rates
-    carry_min_differential = config.trading.carry_min_differential_pct
 
     # Pre-build bar arrays once
     _all_highs = np.array([b["high"] for b in daily_bars], dtype=np.float64)
@@ -696,6 +702,16 @@ def _backtest_pair(
     max_trades_per_day = config.trading.max_trades_per_day
     max_daily_loss_pct = config.trading.max_daily_loss_pct
     starting_equity = config.trading.starting_equity
+
+    # Proxy satisfies the StrategyState duck-type expected by SignalPipeline
+    # and PositionManager. daily_bars is updated per bar in the loop below.
+    _proxy = _BacktestProxy(
+        pair=pair,
+        carry_rates=carry_rates or {},
+        current_equity=starting_equity,
+        starting_equity=starting_equity,
+    )
+
     _adx_rejections: int = 0
     _carry_rejections: int = 0
     _regime_rejections: int = 0
@@ -731,12 +747,9 @@ def _backtest_pair(
             lookback,
             end_index=bar_index,
         )
-        signal = momentum_detector.detect_momentum(
-            bars=window,
-            fast_period=fast,
-            slow_period=slow,
-            adx_period=adx_p,
-            adx_threshold=adx_t,
+        _proxy.daily_bars = window
+        signal = _pipeline.detect_momentum(
+            cast("StrategyState", _proxy), modules_obj, config
         )
         if signal is None or not signal.get("detected"):
             _adx_rejections += 1
@@ -771,37 +784,28 @@ def _backtest_pair(
 
         # Carry filter (optional)
         if carry_enabled and carry_rates:
-            carry = get_carry_bias(
-                pair=pair,
-                rates=carry_rates,
-                min_differential=carry_min_differential,
-            )
-            if carry.is_valid and carry.direction != "NEUTRAL":
+            carry = _pipeline.get_carry(cast("StrategyState", _proxy), config)
+            if _pipeline.is_carry_conflict(signal, carry):
                 mom_dir: int = int(signal.get("direction", 0))
-                if (mom_dir == 1 and carry.direction == "SHORT") or (
-                    mom_dir == -1 and carry.direction == "LONG"
-                ):
-                    _carry_rejections += 1
-                    if bar_dt is not None and isinstance(bar_dt, datetime):
-                        _rejection_logs.append(
-                            RejectionLog(
-                                date=bar_dt,
-                                pair=pair,
-                                direction=mom_dir,
-                                rejection_reason="carry_conflict",
-                                rejection_value=float(
-                                    getattr(carry, "differential_pct", 0.0) or 0.0
-                                ),
-                                primary_filter="carry_filter",
-                                alternative_carries=[
-                                    f"{pair[0:3]}/{carry.direction[-3:]}"
-                                ],
-                                signal_strength=float(signal.get("adx", 0.0))
-                                if signal
-                                else 0.0,
-                            )
+                _carry_rejections += 1
+                if bar_dt is not None and isinstance(bar_dt, datetime):
+                    _rejection_logs.append(
+                        RejectionLog(
+                            date=bar_dt,
+                            pair=pair,
+                            direction=mom_dir,
+                            rejection_reason="carry_conflict",
+                            rejection_value=float(
+                                getattr(carry, "differential_pct", 0.0) or 0.0
+                            ),
+                            primary_filter="carry_filter",
+                            alternative_carries=[f"{pair[0:3]}/{carry.direction[-3:]}"],
+                            signal_strength=float(signal.get("adx", 0.0))
+                            if signal
+                            else 0.0,
                         )
-                    continue
+                    )
+                continue
 
         # Regime gate: block ranging/choppy sessions (low_vol) for momentum signals
         if config.regime_gate_enabled:
@@ -859,8 +863,9 @@ def _backtest_pair(
             signal,
             pip_size,
             config,
-            risk_manager,
-            order_manager,
+            _pos_manager,
+            modules_obj,
+            _proxy,
             _all_highs,
             _all_lows,
             news_filter=news_filter,

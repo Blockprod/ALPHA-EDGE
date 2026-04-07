@@ -11,7 +11,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
-from alphaedge.engine.backtest import _validate_backtest_signal
+from alphaedge.engine.backtest import _BacktestProxy, _validate_backtest_signal
 
 
 def _make_config() -> AppConfig:
@@ -41,61 +41,48 @@ def _make_signal() -> dict[str, float | int]:
 class TestValidateBacktestSignal:
     def test_returns_none_when_position_size_invalid(self) -> None:
         cfg = _make_config()
-        risk_mod = MagicMock()
-        order_mod = MagicMock()
-        risk_mod.calculate_position_size.return_value = {
-            "is_valid": False,
-            "lot_size": 0.0,
-        }
+        pos_manager = MagicMock()
+        modules_obj = MagicMock()
+        pos_manager.size_position.return_value = None
 
         result = _validate_backtest_signal(
-            "EURUSD",
+            _BacktestProxy(pair="EURUSD"),
             _make_signal(),
             cfg,
             0.0001,
             1.0,
-            risk_mod,
-            order_mod,
+            pos_manager,
+            modules_obj,
         )
 
         assert result is None
-        order_mod.create_bracket_order.assert_not_called()
+        pos_manager.build_validated_order.assert_not_called()
 
     def test_returns_none_when_bracket_order_invalid(self) -> None:
         cfg = _make_config()
-        risk_mod = MagicMock()
-        order_mod = MagicMock()
-        risk_mod.calculate_position_size.return_value = {
-            "is_valid": True,
-            "lot_size": 0.10,
-        }
-        order_mod.create_bracket_order.return_value = {
-            "is_valid": False,
-            "rejection_reason": "spread_too_wide",
-        }
+        pos_manager = MagicMock()
+        modules_obj = MagicMock()
+        pos_manager.size_position.return_value = {"lot_size": 0.10}
+        pos_manager.build_validated_order.return_value = None
 
         result = _validate_backtest_signal(
-            "EURUSD",
+            _BacktestProxy(pair="EURUSD"),
             _make_signal(),
             cfg,
             0.0001,
             2.5,
-            risk_mod,
-            order_mod,
+            pos_manager,
+            modules_obj,
         )
 
         assert result is None
 
     def test_returns_adjusted_signal_when_valid(self) -> None:
         cfg = _make_config()
-        risk_mod = MagicMock()
-        order_mod = MagicMock()
-        risk_mod.calculate_position_size.return_value = {
-            "is_valid": True,
-            "lot_size": 0.10,
-        }
-        order_mod.create_bracket_order.return_value = {
-            "is_valid": True,
+        pos_manager = MagicMock()
+        modules_obj = MagicMock()
+        pos_manager.size_position.return_value = {"lot_size": 0.10}
+        pos_manager.build_validated_order.return_value = {
             "stop_loss": 1.0978,
             "take_profit": 1.1040,
             "risk_pips": 22.0,
@@ -103,13 +90,13 @@ class TestValidateBacktestSignal:
         }
 
         result = _validate_backtest_signal(
-            "EURUSD",
+            _BacktestProxy(pair="EURUSD"),
             _make_signal(),
             cfg,
             0.0001,
             1.2,
-            risk_mod,
-            order_mod,
+            pos_manager,
+            modules_obj,
         )
 
         assert result is not None

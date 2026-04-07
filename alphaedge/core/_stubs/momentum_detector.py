@@ -10,7 +10,30 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
+
+from alphaedge.core.types import MomentumSignal
+
+
+def _validate_bar(bar: dict[str, Any]) -> bool:
+    """Return True iff bar has finite, positive OHLC values."""
+    for key in ("open", "high", "low", "close"):
+        v = bar.get(key)
+        if v is None:
+            return False
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            return False
+        if not math.isfinite(fv) or fv <= 0.0:
+            return False
+    return True
+
+
+def _validate_bars(bars: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return bars with invalid OHLC entries removed."""
+    return [b for b in bars if _validate_bar(b)]
 
 
 def _ema(bars: list[dict[str, Any]], period: int, key: str = "close") -> float:
@@ -98,7 +121,7 @@ def detect_momentum(
     slow_period: int,
     adx_period: int,
     adx_threshold: float,
-) -> dict[str, Any] | None:
+) -> MomentumSignal | None:
     """
     Detect a momentum signal on *bars* (Daily or H4, chronological order).
 
@@ -121,6 +144,10 @@ def detect_momentum(
     min_bars = max(2 * adx_period + 1, slow_period)
     if len(bars) < min_bars:
         return None
+    # Validate bars before Cython-style casts — abort on any invalid bar
+    for _bar in bars:
+        if not _validate_bar(_bar):
+            return None
     ema_f = _ema(bars, fast_period)
     ema_s = _ema(bars, slow_period)
     adx_val = _adx(bars, adx_period)

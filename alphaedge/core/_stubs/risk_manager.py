@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+
+from alphaedge.core.types import DailyLimitResult, PairLimitResult, PositionSizeResult
 
 
 def calculate_position_size(
@@ -16,11 +17,25 @@ def calculate_position_size(
     min_lots: float,
     max_lots: float,
     exchange_rate: float = 0.0,
-) -> dict[str, Any]:
+) -> PositionSizeResult:
     """Calculate optimal position size based on risk parameters."""
     pip_val = _compute_pip_value(pair, pip_size, lot_type, exchange_rate)
 
     risk_amount = account_equity * (risk_pct / 100.0)
+
+    # Guard non-finite inputs — prevents undefined C behaviour on NaN/inf
+    if (
+        not math.isfinite(account_equity)
+        or not math.isfinite(sl_pips)
+        or not math.isfinite(pip_size)
+    ):
+        return {
+            "lot_size": 0.0,
+            "risk_amount": 0.0,
+            "pip_value": 0.0,
+            "sl_pips": sl_pips if math.isfinite(sl_pips) else 0.0,
+            "is_valid": False,
+        }
 
     if sl_pips <= 0.0 or pip_val <= 0.0:
         return {
@@ -50,7 +65,7 @@ def check_daily_limit(
     max_daily_loss_pct: float,
     trades_today: int,
     max_trades: int,
-) -> dict[str, Any]:
+) -> DailyLimitResult:
     """Check if the daily loss limit or trade count is breached."""
     daily_pnl = current_equity - starting_equity
     daily_pnl_pct = (
@@ -75,7 +90,7 @@ def check_pair_limit(
     pair: str,
     open_pairs: list[str],
     max_open_pairs: int = 1,
-) -> dict[str, Any]:
+) -> PairLimitResult:
     """Enforce per-pair risk cap: max N pairs open at a time."""
     if not pair:
         raise ValueError("pair must be a non-empty string")

@@ -166,6 +166,7 @@ REFERENCE_FX_RATE: dict[str, float] = {
 # ------------------------------------------------------------------
 DEFAULT_SLIPPAGE_PIPS: float = 0.5
 DEFAULT_MARKET_SLIPPAGE_PIPS: float = 0.3
+MAX_ENTRY_SLIPPAGE_PIPS: float = 3.0  # entry fill vs expected price warning threshold
 
 # Variable slippage model
 BASE_SLIPPAGE_PIPS: float = 0.3
@@ -211,12 +212,18 @@ IB_TOKEN_BUCKET_RATE: float = 45.0  # sustained tokens/second
 IB_TOKEN_BUCKET_BURST: int = 10  # max burst before rate kicks in
 IB_TIMEOUT_SECONDS: float = 15.0  # connection / order timeouts
 IB_HIST_TIMEOUT_SECONDS: float = 60.0  # historical data requests (IB can be slow)
+IB_FILL_TIMEOUT_SECONDS: int = 30  # max wait for parent order fill confirmation
 IB_MAX_CONCURRENT_HIST_REQUESTS: int = 3  # IB cancels >~3 simultaneous hist requests
 
 # Circuit breaker: open after this many consecutive connection failures
 IB_CIRCUIT_BREAKER_MAX_FAILURES: int = 5
 # Auto-reset cooldown: seconds to wait before retrying after circuit breaker opens
 IB_CIRCUIT_BREAKER_RESET_SECONDS: int = 300
+
+# Heartbeat: interval between connection-health probes (seconds)
+IB_HEARTBEAT_INTERVAL_SECONDS: int = 30
+# Heartbeat: consider connection dead after this many consecutive missed probes
+IB_HEARTBEAT_MAX_MISSES: int = 3
 
 # Kept for backward-compat (no longer driving the throttler)
 IB_MAX_REQUESTS_PER_10S: int = 50

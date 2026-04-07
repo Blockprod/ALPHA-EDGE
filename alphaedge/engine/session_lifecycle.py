@@ -24,10 +24,16 @@ from typing import TYPE_CHECKING, Any
 
 from alphaedge.config.constants import (
     DEFAULT_PIP_SIZE,
+    IB_FILL_TIMEOUT_SECONDS,
     MAX_BAR_STALENESS_SECONDS,
     PIP_SIZES,
     RISK_CHECK_INTERVAL_IDLE,
     RISK_CHECK_INTERVAL_POSITION,
+)
+from alphaedge.config.loader import load_carry_rates_from_file
+from alphaedge.engine.broker_reconciler import (
+    RECONCILE_INTERVAL_SECONDS,
+    BrokerReconciler,
 )
 from alphaedge.engine.live_journal import append_live_trade_csv
 from alphaedge.engine.live_types import LiveTradeRecord
@@ -101,6 +107,9 @@ class SessionLifecycle:
 
     def __init__(self, strategy: SwingStrategy) -> None:
         self._s = strategy
+        self._reconciler = BrokerReconciler(self._s._executor)
+        self._session_starting_equity: float = 0.0
+        self._reconcile_counter: int = 0
 
     # ------------------------------------------------------------------
     # Graceful shutdown
@@ -131,27 +140,35 @@ class SessionLifecycle:
         if bracket is None:
             return None
 
+        # Cast to mutable dict for slippage/units augmentation
+        bracket_dict: dict[str, Any] = dict(bracket)
+
         risk_mod = self._s._modules.risk_manager
-        bracket["stop_loss"] = risk_mod.apply_slippage_buffer(
-            stop_loss=bracket["stop_loss"],
-            direction=bracket["direction"],
+        bracket_dict["stop_loss"] = risk_mod.apply_slippage_buffer(
+            stop_loss=bracket_dict["stop_loss"],
+            direction=bracket_dict["direction"],
             slippage_pips=self._s._config.trading.slippage_buffer_pips,
             pip_size=pip_size,
         )
 
         order_mod = self._s._modules.order_manager
-        bracket["units"] = order_mod.lots_to_units(
-            bracket["lot_size"],
+        bracket_dict["units"] = order_mod.lots_to_units(
+            bracket_dict["lot_size"],
             self._s._config.trading.lot_type,
         )
-        return bracket
+        return bracket_dict
 
     async def _submit_and_await_fill(
         self,
         state: StrategyState,
         bracket: dict[str, Any],
-    ) -> list | None:
-        """Place bracket order and wait for parent fill (10 s timeout)."""
+    ) -> tuple[list, str] | None:
+        """Place bracket order and poll IB for parent fill confirmation.
+
+        Returns (trades_placed, fill_status) where fill_status is "full" or
+        "partial", or None if the order was rejected / timed out.
+        Polls orderStatus every 0.3 s up to IB_FILL_TIMEOUT_SECONDS.
+        """
         trades_placed = await self._s._executor.place_bracket_order(
             pair=state.pair,
             direction=bracket["direction"],
@@ -161,29 +178,45 @@ class SessionLifecycle:
             take_profit=bracket["take_profit"],
         )
         if not trades_placed:
-            logger.error(f"ALPHAEDGE: Bracket order returned empty — {state.pair}")
+            logger.error("ALPHAEDGE: Bracket order returned empty — {}", state.pair)
             return None
 
         parent_trade = trades_placed[0]
-        fill_event = getattr(parent_trade, "filledEvent", None)
-        if fill_event is not None:
-            try:
-                await asyncio.wait_for(fill_event.wait(), timeout=10.0)
-            except TimeoutError:
-                logger.error(
-                    f"ALPHAEDGE: Parent order not filled "
-                    f"within 10s — {state.pair} — "
-                    f"cancelling bracket"
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + IB_FILL_TIMEOUT_SECONDS
+        # Yield once so other coroutines can observe _executing_pairs before we
+        # monopolise the event loop through a synchronous-looking fast fill.
+        await asyncio.sleep(0)
+
+        while loop.time() < deadline:
+            order_status = getattr(parent_trade, "orderStatus", None)
+            status: str = getattr(order_status, "status", "") if order_status else ""
+
+            if status == "Filled":
+                remaining = float(getattr(order_status, "remaining", 0.0))
+                fill_type = "partial" if remaining > 0 else "full"
+                if fill_type == "partial":
+                    logger.warning(
+                        "ALPHAEDGE: Partial fill — {} — remaining={} units",
+                        state.pair,
+                        remaining,
+                    )
+                return (trades_placed, fill_type)
+
+            if status in ("Cancelled", "Inactive", "ApiCancelled"):
+                logger.critical(
+                    "ALPHAEDGE: Parent order {} — {} — no position opened",
+                    status,
+                    state.pair,
                 )
                 asyncio.ensure_future(
                     self._s._alert_manager.send_async(
                         Alert(
                             event=AlertEvent.TRADE_EXECUTED,
-                            level=AlertLevel.WARNING,
-                            title=f"⏱️ Fill timeout — {state.pair} — NO POSITION OPENED",
+                            level=AlertLevel.CRITICAL,
+                            title=f"❌ Order {status} — {state.pair} — NO POSITION",
                             message=(
-                                "Order not filled within 10s."
-                                " Bracket cancelled. No open position."
+                                f"Bracket order {status} by IB. No position opened."
                             ),
                         )
                     )
@@ -191,7 +224,29 @@ class SessionLifecycle:
                 await self._s._executor.cancel_all_orders()
                 return None
 
-        return trades_placed
+            await asyncio.sleep(0.3)
+
+        # Timeout — IB did not confirm fill within the deadline
+        logger.error(
+            "ALPHAEDGE: Fill timeout ({}s) — {} — cancelling bracket",
+            IB_FILL_TIMEOUT_SECONDS,
+            state.pair,
+        )
+        asyncio.ensure_future(
+            self._s._alert_manager.send_async(
+                Alert(
+                    event=AlertEvent.TRADE_EXECUTED,
+                    level=AlertLevel.WARNING,
+                    title=f"⏱️ Fill timeout — {state.pair} — NO POSITION OPENED",
+                    message=(
+                        f"Order not filled within {IB_FILL_TIMEOUT_SECONDS}s."
+                        " Bracket cancelled. No open position."
+                    ),
+                )
+            )
+        ).add_done_callback(self._on_task_done)
+        await self._s._executor.cancel_all_orders()
+        return None
 
     def _record_fill(
         self,
@@ -202,6 +257,7 @@ class SessionLifecycle:
         spread_pips: float,
         pip_size: float,
         exchange_rate: float,
+        fill_status: str,
     ) -> None:
         """Register fill callbacks and update in-memory position state."""
         entry_time = now_utc()
@@ -209,6 +265,19 @@ class SessionLifecycle:
         raw_fill = getattr(getattr(parent, "orderStatus", None), "avgFillPrice", None)
         fill_price = float(raw_fill) if raw_fill else bracket["entry_price"]
         slippage = abs(fill_price - bracket["entry_price"]) / pip_size
+
+        # P0-02: log a warning if fill deviated beyond the configured threshold
+        max_slip = self._s._config.trading.max_entry_slippage_pips
+        if slippage > max_slip:
+            logger.warning(
+                "ALPHAEDGE: High entry slippage — pair={} fill={} expected={}"
+                " slip={:.1f} pips (max={:.1f})",
+                state.pair,
+                fill_price,
+                bracket["entry_price"],
+                slippage,
+                max_slip,
+            )
 
         state.live_record = LiveTradeRecord(
             pair=state.pair,
@@ -225,6 +294,7 @@ class SessionLifecycle:
             slippage_pips=slippage,
             adx_at_entry=float(signal.get("adx", 0.0)),
             strength_at_entry=float(signal.get("strength", 0.0)),
+            fill_status=fill_status,
         )
         logger.info(
             "TRADE_ENTRY | pair={} | dir={} | entry={} | fill={} | sl={} | tp={}"
@@ -330,15 +400,17 @@ class SessionLifecycle:
             trades_placed = await self._submit_and_await_fill(state, bracket)
             if trades_placed is None:
                 return False
+            ib_trades, fill_status = trades_placed
 
             self._record_fill(
                 state,
-                trades_placed,
+                ib_trades,
                 bracket,
                 signal,
                 spread_pips,
                 pip_size,
                 exchange_rate,
+                fill_status,
             )
             asyncio.ensure_future(
                 self._s._alert_manager.send_async(
@@ -560,8 +632,7 @@ class SessionLifecycle:
             success = await self._s._broker.reconnect(max_retries=3)
             if success:
                 logger.info("ALPHAEDGE: Reconnected to IB Gateway")
-                await self._reconcile_positions()
-                await self._check_orphan_orders()
+                await self._run_reconcile(self._session_starting_equity)
                 # Re-subscribe to real-time feeds
                 for pair in self._s._config.trading.pairs:
                     await self._s._rt_feed.subscribe(pair)
@@ -572,8 +643,7 @@ class SessionLifecycle:
             else:
                 # Last-resort orphan check if a partial reconnect occurred
                 try:
-                    await self._reconcile_positions()
-                    await self._check_orphan_orders()
+                    await self._run_reconcile(self._session_starting_equity)
                 except Exception:
                     logger.exception("ALPHAEDGE: Post-reconnect reconciliation failed")
                 logger.critical(
@@ -596,87 +666,42 @@ class SessionLifecycle:
         finally:
             self._s._reconnecting = False
 
-    async def _reconcile_positions(self) -> None:
-        """Sync StrategyState with actual IB positions after reconnect."""
-        try:
-            positions = await self._s._executor.get_open_positions()
-            traded_pairs = set(self._s._config.trading.pairs)
-
-            # Build set of pairs that actually have open positions
-            ib_open_pairs: set[str] = set()
-            for pos in positions:
-                contract = pos.contract
-                pair_sym: str = getattr(
-                    contract, "pair", getattr(contract, "symbol", "")
-                )
-                if pair_sym in traded_pairs and pos.position != 0:
-                    ib_open_pairs.add(pair_sym)
-                    logger.info(
-                        f"ALPHAEDGE RECONCILE: {pair_sym} has open "
-                        f"position qty={pos.position}"
+    async def _run_reconcile(self, starting_equity: float = 0.0) -> None:
+        """Run BrokerReconciler and dispatch alerts from the report."""
+        report = await self._reconciler.reconcile(
+            self._s._states,
+            traded_pairs=set(self._s._config.trading.pairs),
+            starting_equity=starting_equity,
+        )
+        for pair in report.pairs_corrected:
+            asyncio.ensure_future(
+                self._s._alert_manager.send_async(
+                    Alert(
+                        event=AlertEvent.TRADE_EXECUTED,
+                        level=AlertLevel.WARNING,
+                        title=f"⚠️ Position discordance — {pair}",
+                        message=(
+                            f"State corrected after reconcile: "
+                            f"is_position_open updated for {pair}. "
+                            "Review open positions manually."
+                        ),
                     )
-
-            # Sync strategy state
-            for pair, state in self._s._states.items():
-                was_open = state.is_position_open
-                state.is_position_open = pair in ib_open_pairs
-                if was_open != state.is_position_open:
-                    logger.warning(
-                        f"ALPHAEDGE RECONCILE: {pair} position state "
-                        f"corrected: {was_open} -> {state.is_position_open}"
-                    )
-                    asyncio.ensure_future(
-                        self._s._alert_manager.send_async(
-                            Alert(
-                                event=AlertEvent.TRADE_EXECUTED,
-                                level=AlertLevel.WARNING,
-                                title=f"⚠️ Position discordance — {pair}",
-                                message=(
-                                    f"State corrected after reconnect: "
-                                    f"local={was_open} → IB={state.is_position_open}. "
-                                    "Review open positions manually."
-                                ),
-                            )
-                        )
-                    ).add_done_callback(self._on_task_done)
-        except Exception:
-            logger.exception("ALPHAEDGE _reconcile_positions failed")
-
-    async def _check_orphan_orders(self) -> None:
-        """Detect orphan bracket orders after reconnection."""
-        try:
-            open_orders = await self._s._executor.get_open_orders()
-            if not open_orders:
-                logger.info("ALPHAEDGE ORPHAN CHECK: No open orders")
-                return
-
-            traded_pairs = set(self._s._config.trading.pairs)
-            orphan_count = 0
-            for order in open_orders:
-                contract = getattr(order, "contract", None)
-                if contract is None:
-                    continue
-                pair_sym: str = getattr(
-                    contract, "pair", getattr(contract, "symbol", "")
                 )
-                if pair_sym in traded_pairs:
-                    orphan_count += 1
-                    logger.warning(
-                        f"ALPHAEDGE ORPHAN: Open order on {pair_sym} — "
-                        f"orderId={getattr(order, 'orderId', '?')} "
-                        f"action={getattr(order, 'action', '?')} "
-                        f"type={getattr(order, 'orderType', '?')}"
+            ).add_done_callback(self._on_task_done)
+        for pair in report.orphan_pairs:
+            asyncio.ensure_future(
+                self._s._alert_manager.send_async(
+                    Alert(
+                        event=AlertEvent.IB_DISCONNECTED,
+                        level=AlertLevel.CRITICAL,
+                        title=f"🚨 Orphan position — {pair}",
+                        message=(
+                            f"IB has an open position on {pair} "
+                            "not tracked by the bot. Manual review required."
+                        ),
                     )
-
-            if orphan_count > 0:
-                logger.warning(
-                    f"ALPHAEDGE ORPHAN CHECK: {orphan_count} open order(s) "
-                    f"detected — review manually"
                 )
-            else:
-                logger.info("ALPHAEDGE ORPHAN CHECK: No orphan orders")
-        except Exception:
-            logger.exception("ALPHAEDGE _check_orphan_orders failed")
+            ).add_done_callback(self._on_task_done)
 
     @staticmethod
     def _on_task_done(task: asyncio.Task[Any]) -> None:
@@ -1229,6 +1254,43 @@ class SessionLifecycle:
             # Prime margin cache — must run before any order check
             await self._s._broker.refresh_account_funds()
 
+            # Reload carry rates from file if configured (dynamic hot-reload)
+            if self._s._config.trading.carry_rates_source == "file":
+                try:
+                    new_rates = load_carry_rates_from_file()
+                    old_rates = self._s._config.trading.carry_rates
+                    changed = {
+                        k: (old_rates.get(k), v)
+                        for k, v in new_rates.items()
+                        if old_rates.get(k) != v
+                    }
+                    self._s._config.trading.carry_rates = new_rates
+                    if changed:
+                        changes_str = ", ".join(
+                            f"{k}: {old:.2f}→{new:.2f}"
+                            for k, (old, new) in changed.items()
+                            if old is not None
+                        )
+                        additions_str = ", ".join(
+                            f"{k}: +{new:.2f}"
+                            for k, (old, new) in changed.items()
+                            if old is None
+                        )
+                        detail = " | ".join(filter(None, [changes_str, additions_str]))
+                        logger.warning(
+                            "ALPHAEDGE carry rates reloaded from file — changes: %s",
+                            detail,
+                        )
+                    else:
+                        logger.info(
+                            "ALPHAEDGE carry rates reloaded from file — no changes"
+                        )
+                except (FileNotFoundError, ValueError):
+                    logger.exception(
+                        "ALPHAEDGE: Failed to reload carry rates from file "
+                        "— using config.yaml rates"
+                    )
+
             # Get starting equity (use persisted value if restarting same day)
             live_equity = await self._s._executor.get_account_equity()
             if persisted and persisted.starting_equity > 0:
@@ -1240,6 +1302,7 @@ class SessionLifecycle:
                 )
             else:
                 starting_equity = live_equity
+            self._session_starting_equity = starting_equity
             session_start, _session_end = get_session_window_utc()
 
             # Process each pair — regime gate, signal init
@@ -1251,7 +1314,7 @@ class SessionLifecycle:
             )
 
             # Reconcile position state with IB at startup
-            await self._reconcile_positions()
+            await self._run_reconcile(starting_equity)
 
             # Subscribe to real-time M1 data (only pairs that passed regime gate)
             self._s._rt_feed.on_bar(self._on_new_m1_bar)
@@ -1261,9 +1324,11 @@ class SessionLifecycle:
             # Wait for session to end, with adaptive risk check interval
             logger.info("ALPHAEDGE: Monitoring session...")
             risk_check_counter = 0
+            self._reconcile_counter = 0
             while is_session_active() and not self._s._shutdown_requested:
                 await asyncio.sleep(1.0)
                 risk_check_counter += 1
+                self._reconcile_counter += 1
 
                 # Adaptive interval: 5s with open position, 30s idle
                 interval = (
@@ -1275,6 +1340,11 @@ class SessionLifecycle:
                     risk_check_counter = 0
                     await self._s._broker.refresh_account_funds()
                     await self._check_daily_loss_shutdown()
+
+                # Periodic reconciliation every RECONCILE_INTERVAL_SECONDS
+                if self._reconcile_counter >= RECONCILE_INTERVAL_SECONDS:
+                    self._reconcile_counter = 0
+                    await self._run_reconcile(self._session_starting_equity)
         except Exception:
             logger.exception("ALPHAEDGE run_session error")
         finally:

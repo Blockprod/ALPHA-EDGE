@@ -152,6 +152,10 @@ momentum:
 carry:
   min_differential_pct: 0.5  # Minimum rate differential to declare a bias (%)
   enabled: true               # Active: carry filter aligns momentum direction with interest-rate differential bias
+  # carry_rates_source controls where live carry rates are loaded from at runtime.
+  # "static"  — use rates defined in this file (default; no hot-reload)
+  # "file"    — reload from data/carry_rates.json on every session start
+  carry_rates_source: "static"
   # Update central-bank rates periodically before each trading quarter.
   rates:
     EUR: 3.65   # ECB deposit facility rate (2026-Q1)
@@ -185,6 +189,7 @@ risk:
   partial_exit: false       # tested: WR 63.8% but Sharpe 2.31 vs 3.37 full exit — inferior
   trailing_partial_exit: false  # tested: USDJPY PF 0.84, Sharpe 0.63 — worst result
   slippage_buffer_pips: 0.5 # Added to SL for slippage protection
+  max_entry_slippage_pips: 3.0  # P0-02: log WARNING if fill deviates from entry by more than N pips
   # ATR-adaptive SL: SL = sl_atr_multiplier × ATR(14 daily bars) in pips
   # 0 = disabled (uses fixed rr_ratio × min_range_pips = 16 pips)
   # Tested 2026-04-01 at 0.5×: avg_loss=-43 pips, WR=36% (unchanged), Sharpe 0.24 vs 0.90 — INFERIOR

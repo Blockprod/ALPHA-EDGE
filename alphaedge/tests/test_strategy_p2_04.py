@@ -7,11 +7,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from alphaedge.core.types import MomentumSignal
 from alphaedge.engine.position_manager import PositionManager
 from alphaedge.engine.session_lifecycle import SessionLifecycle
 from alphaedge.engine.signal_pipeline import SignalPipeline
@@ -367,7 +368,9 @@ class TestCorrelationCheckInBar:
         strat = self._make_strat_with_state("GBPUSD")
         strat._config.trading.usd_correlation_filter = True
         gbp_state = strat._states["GBPUSD"]
-        gbp_state.signal_result = {"detected": True, "direction": 1, "adx": 28.0}
+        gbp_state.signal_result = cast(
+            MomentumSignal, {"detected": True, "direction": 1, "adx": 28.0}
+        )
         eur_state = StrategyState(pair="EURUSD")
         eur_state.is_position_open = True
         eur_state.live_record = MagicMock(direction=1)
@@ -382,7 +385,9 @@ class TestCorrelationCheckInBar:
         strat = self._make_strat_with_state("USDJPY")
         strat._config.trading.usd_correlation_filter = True
         jpy_state = strat._states["USDJPY"]
-        jpy_state.signal_result = {"detected": True, "direction": 1, "adx": 28.0}
+        jpy_state.signal_result = cast(
+            MomentumSignal, {"detected": True, "direction": 1, "adx": 28.0}
+        )
         eur_state = StrategyState(pair="EURUSD")
         eur_state.is_position_open = True
         eur_state.live_record = MagicMock(direction=1)

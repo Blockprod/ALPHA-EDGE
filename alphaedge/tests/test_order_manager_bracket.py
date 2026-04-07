@@ -37,9 +37,15 @@ class TestOrderManagerBracket:
         )
 
         assert result["is_valid"] is True
-        assert result["direction"] == -1
-        assert result["risk_pips"] > 0
-        assert result["reward_pips"] > 0
+        direction = result.get("direction")
+        risk_pips = result.get("risk_pips")
+        reward_pips = result.get("reward_pips")
+        assert direction is not None
+        assert risk_pips is not None
+        assert reward_pips is not None
+        assert direction == -1
+        assert risk_pips > 0
+        assert reward_pips > 0
 
     def test_valid_buy_bracket_order(self) -> None:
         """Valid BUY bracket order should pass all validations."""
@@ -59,7 +65,9 @@ class TestOrderManagerBracket:
         )
 
         assert result["is_valid"] is True
-        assert result["direction"] == 1
+        direction = result.get("direction")
+        assert direction is not None
+        assert direction == 1
 
     def test_rejected_on_wide_spread(self) -> None:
         """Order should be rejected when spread exceeds max."""

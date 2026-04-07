@@ -40,3 +40,4 @@ class LiveTradeRecord:
     strength_at_entry: float = 0.0  # momentum strength score at entry
     duration_s: float = 0.0  # trade duration in seconds (exit_time - entry_time)
     pnl_eur: float = 0.0  # pnl_usd converted to EUR for accounting
+    fill_status: str = "unknown"  # "full" | "partial" | "rejected"

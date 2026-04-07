@@ -144,11 +144,11 @@ class TestPersistOnTradeClosed:
 # Tests — startup reconcile call in run_session
 # ==================================================================
 class TestStartupReconcile:
-    """Verify run_session calls _reconcile_positions at startup."""
+    """Verify run_session calls _run_reconcile at startup."""
 
     @pytest.mark.asyncio()
     async def test_reconcile_called_at_startup(self) -> None:
-        """_reconcile_positions is awaited once during run_session startup."""
+        """_run_reconcile is awaited once during run_session startup."""
         strategy = _build_strategy(["EURUSD"])
 
         strategy._broker.connect = AsyncMock(return_value=True)
@@ -164,7 +164,7 @@ class TestStartupReconcile:
 
         reconcile_calls: list[int] = []
 
-        async def _mock_reconcile() -> None:
+        async def _mock_reconcile(starting_equity: float = 0.0) -> None:  # noqa: ARG001
             reconcile_calls.append(1)
 
         with (
@@ -181,10 +181,10 @@ class TestStartupReconcile:
                 return_value=False,
             ),
         ):
-            strategy._lifecycle._reconcile_positions = _mock_reconcile
+            strategy._lifecycle._run_reconcile = _mock_reconcile
             await strategy.run_session()
 
-        # _reconcile_positions must have been called exactly once
+        # _run_reconcile must have been called exactly once
         assert len(reconcile_calls) == 1
 
     @pytest.mark.asyncio()

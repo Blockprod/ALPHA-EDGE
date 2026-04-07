@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+import math
+
+from alphaedge.core.types import BracketOrderResult
 
 
 def create_bracket_order(
@@ -18,14 +20,22 @@ def create_bracket_order(
     min_lots: float,
     max_lots: float,
     adjust_for_spread: bool,
-) -> dict[str, Any]:
+) -> BracketOrderResult:
     """Create and validate a bracket order for IB submission."""
     if spread_pips > max_spread_pips:
-        return {
-            "is_valid": False,
-            "rejection_reason": "spread_too_wide",
-            "rejection_value": spread_pips,
-        }
+        return BracketOrderResult(
+            is_valid=False,
+            rejection_reason="spread_too_wide",
+            rejection_value=spread_pips,
+        )
+
+    # Guard pip_size > 0 — division by zero produces inf/NaN silently
+    if pip_size <= 0.0 or not math.isfinite(pip_size):
+        return BracketOrderResult(
+            is_valid=False,
+            rejection_reason="invalid_pip_size",
+            rejection_value=pip_size,
+        )
 
     adj_sl = stop_loss
     if adjust_for_spread:
@@ -39,51 +49,51 @@ def create_bracket_order(
     # Validate SL/TP placement
     if direction == 1:
         if not adj_sl < entry_price < take_profit:
-            return {
-                "is_valid": False,
-                "rejection_reason": "invalid_sl_tp_placement",
-                "rejection_value": 0.0,
-            }
+            return BracketOrderResult(
+                is_valid=False,
+                rejection_reason="invalid_sl_tp_placement",
+                rejection_value=0.0,
+            )
     elif direction == -1:
         if not take_profit < entry_price < adj_sl:
-            return {
-                "is_valid": False,
-                "rejection_reason": "invalid_sl_tp_placement",
-                "rejection_value": 0.0,
-            }
+            return BracketOrderResult(
+                is_valid=False,
+                rejection_reason="invalid_sl_tp_placement",
+                rejection_value=0.0,
+            )
     else:
-        return {
-            "is_valid": False,
-            "rejection_reason": "invalid_sl_tp_placement",
-            "rejection_value": 0.0,
-        }
+        return BracketOrderResult(
+            is_valid=False,
+            rejection_reason="invalid_sl_tp_placement",
+            rejection_value=0.0,
+        )
 
     if rr_ratio < min_rr:
-        return {
-            "is_valid": False,
-            "rejection_reason": "rr_below_minimum",
-            "rejection_value": rr_ratio,
-        }
+        return BracketOrderResult(
+            is_valid=False,
+            rejection_reason="rr_below_minimum",
+            rejection_value=rr_ratio,
+        )
 
     if not min_lots <= lot_size <= max_lots:
-        return {
-            "is_valid": False,
-            "rejection_reason": "invalid_lot_size",
-            "rejection_value": lot_size,
-        }
+        return BracketOrderResult(
+            is_valid=False,
+            rejection_reason="invalid_lot_size",
+            rejection_value=lot_size,
+        )
 
-    return {
-        "is_valid": True,
-        "direction": direction,
-        "entry_price": entry_price,
-        "stop_loss": adj_sl,
-        "take_profit": take_profit,
-        "lot_size": lot_size,
-        "risk_pips": risk_pips,
-        "reward_pips": reward_pips,
-        "rr_ratio": rr_ratio,
-        "rejection_reason": None,
-    }
+    return BracketOrderResult(
+        is_valid=True,
+        direction=direction,
+        entry_price=entry_price,
+        stop_loss=adj_sl,
+        take_profit=take_profit,
+        lot_size=lot_size,
+        risk_pips=risk_pips,
+        reward_pips=reward_pips,
+        rr_ratio=rr_ratio,
+        rejection_reason=None,
+    )
 
 
 def lots_to_units(lot_size: float, lot_type: str) -> int:

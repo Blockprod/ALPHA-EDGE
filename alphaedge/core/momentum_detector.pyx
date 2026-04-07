@@ -10,6 +10,8 @@
 
 """ALPHAEDGE — Momentum detector: EMA crossover + ADX strength gate."""
 
+import math as _math
+
 from libc.math cimport fabs
 
 
@@ -236,6 +238,21 @@ def detect_momentum(
 
     if len(bars) < min_bars:
         return None
+
+    # Validate bars before Cython casts — prevents crash on None/NaN/negative IB data
+    for _bar in bars:
+        if _bar is None:
+            return None
+        for _key in ("open", "high", "low", "close"):
+            _v = _bar.get(_key)
+            if _v is None:
+                return None
+            try:
+                _fv = float(_v)
+            except (TypeError, ValueError):
+                return None
+            if not _math.isfinite(_fv) or _fv <= 0.0:
+                return None
 
     ema_f = _ema(bars, fast_period, "close")
     ema_s = _ema(bars, slow_period, "close")

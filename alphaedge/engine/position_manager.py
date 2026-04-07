@@ -19,6 +19,7 @@ from alphaedge.utils.logger import get_logger
 if TYPE_CHECKING:
     # NOTE: import cycle with strategy.py mitigated by TYPE_CHECKING
     from alphaedge.config.loader import AppConfig
+    from alphaedge.core.types import BracketOrderResult, PositionSizeResult
     from alphaedge.engine.strategy import CoreModules, StrategyState
 
 logger = get_logger()
@@ -69,7 +70,7 @@ class PositionManager:
         pip_size: float,
         exchange_rate: float = 0.0,
         current_atr_pips: float = 0.0,
-    ) -> dict[str, Any] | None:
+    ) -> PositionSizeResult | None:
         """
         Calculate and validate position size.
 
@@ -88,7 +89,7 @@ class PositionManager:
             effective_risk_pct = base_risk_pct * atr_scale
 
         max_cap: float = getattr(config.trading, "max_lot_size", MAX_LOTS)
-        pos_result: dict[str, Any] = modules.risk_manager.calculate_position_size(
+        pos_result: PositionSizeResult = modules.risk_manager.calculate_position_size(
             account_equity=equity,
             risk_pct=effective_risk_pct,
             sl_pips=signal["risk_pips"],
@@ -107,7 +108,6 @@ class PositionManager:
                 f"ALPHAEDGE: {state.pair} lot_size {pos_result['lot_size']:.2f} "
                 f"capped to max_lot_size={max_cap:.2f}"
             )
-            pos_result = dict(pos_result)
             pos_result["lot_size"] = max_cap
         return pos_result
 
@@ -131,14 +131,14 @@ class PositionManager:
         spread_pips: float,
         modules: CoreModules,
         config: AppConfig,
-    ) -> dict[str, Any] | None:
+    ) -> BracketOrderResult | None:
         """
         Build a bracket order and validate it.
 
         Returns ``None`` when the order is rejected (spread too wide,
         R:R too low, lot size out of range, etc.).
         """
-        bracket: dict[str, Any] = modules.order_manager.create_bracket_order(
+        bracket: BracketOrderResult = modules.order_manager.create_bracket_order(
             direction=signal["direction"],
             entry_price=signal["entry_price"],
             stop_loss=signal["stop_loss"],

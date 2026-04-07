@@ -11,6 +11,8 @@
 
 """ALPHAEDGE — Momentum+Carry Forex Trading Bot: risk management and position sizing."""
 
+import math as _math
+
 from libc.math cimport fabs, floor
 
 
@@ -170,6 +172,20 @@ def calculate_position_size(
     cdef double pip_val = _compute_pip_value(
         pair, pip_size, lot_type, exchange_rate,
     )
+
+    # Guard non-finite inputs — NaN/inf in Cython cdivision is silent UB
+    if (
+        not _math.isfinite(account_equity)
+        or not _math.isfinite(sl_pips)
+        or not _math.isfinite(pip_size)
+    ):
+        return {
+            "lot_size": 0.0,
+            "risk_amount": 0.0,
+            "pip_value": pip_val,
+            "sl_pips": 0.0,
+            "is_valid": False,
+        }
 
     # Compute position size
     cdef PositionSize result = _compute_position_size(

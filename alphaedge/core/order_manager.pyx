@@ -11,6 +11,8 @@
 
 """ALPHAEDGE — Momentum+Carry Forex Trading Bot: bracket order builder and validator."""
 
+import math as _math
+
 from libc.math cimport fabs
 
 
@@ -160,6 +162,10 @@ def create_bracket_order(
     # Check spread first — cheapest filter
     if not _validate_spread(spread_pips, max_spread_pips):
         return _rejection("spread_too_wide", spread_pips)
+
+    # Guard pip_size > 0 — division by zero gives silent inf/NaN in cdivision mode
+    if pip_size <= 0.0 or not _math.isfinite(pip_size):
+        return _rejection("invalid_pip_size", pip_size)
 
     # Adjust SL for spread if enabled
     cdef double adj_sl = stop_loss

@@ -136,6 +136,8 @@ class TestSlippageBufferInExecuteSignal:
         mock_trade.filledEvent = MagicMock()
         mock_trade.filledEvent.__iadd__ = lambda self, _h: self
         mock_trade.filledEvent.wait = AsyncMock()
+        mock_trade.orderStatus.status = "Filled"
+        mock_trade.orderStatus.remaining = 0.0
         place_mock = AsyncMock(return_value=[mock_trade])
         monkeypatch.setattr(strategy._executor, "place_bracket_order", place_mock)
 
@@ -226,6 +228,8 @@ class TestSlippageBufferInExecuteSignal:
         mock_trade.filledEvent = MagicMock()
         mock_trade.filledEvent.__iadd__ = lambda self, _h: self
         mock_trade.filledEvent.wait = AsyncMock()
+        mock_trade.orderStatus.status = "Filled"
+        mock_trade.orderStatus.remaining = 0.0
         place_mock = AsyncMock(return_value=[mock_trade])
         monkeypatch.setattr(strategy._executor, "place_bracket_order", place_mock)
 

@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,6 +18,7 @@ import pytest
 os.environ.setdefault("ALPHAEDGE_CORE_BACKEND", "stubs")
 
 from alphaedge.config.loader import AppConfig  # noqa: E402
+from alphaedge.core.types import MomentumSignal  # noqa: E402
 from alphaedge.engine.carry_signal import CarrySignal  # noqa: E402
 from alphaedge.engine.signal_pipeline import SignalPipeline  # noqa: E402
 
@@ -39,7 +40,7 @@ def _make_state(
 
 
 def _mock_modules(
-    momentum_result: dict[str, Any] | None,
+    momentum_result: MomentumSignal | None,
 ) -> MagicMock:
     """Return a CoreModules mock with momentum_detector pre-configured."""
     modules = MagicMock()
@@ -47,16 +48,19 @@ def _mock_modules(
     return modules
 
 
-def _momentum_signal(direction: int = 1, adx: float = 28.0) -> dict[str, Any]:
-    return {
-        "detected": True,
-        "direction": direction,
-        "strength": adx / 100.0,
-        "ema_fast": 1.10,
-        "ema_slow": 1.09,
-        "adx": adx,
-        "timestamp": 1_700_000_000_000,
-    }
+def _momentum_signal(direction: int = 1, adx: float = 28.0) -> MomentumSignal:
+    return cast(
+        MomentumSignal,
+        {
+            "detected": True,
+            "direction": direction,
+            "strength": adx / 100.0,
+            "ema_fast": 1.10,
+            "ema_slow": 1.09,
+            "adx": adx,
+            "timestamp": 1_700_000_000_000,
+        },
+    )
 
 
 # ------------------------------------------------------------------

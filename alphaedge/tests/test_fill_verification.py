@@ -56,9 +56,15 @@ class _MockTrade:
     would accidentally create an unawaited ``_FilledEvent.wait`` coroutine.
     """
 
-    def __init__(self, fill_event: _FilledEvent) -> None:
+    def __init__(self, fill_event: _FilledEvent, *, filled: bool = True) -> None:
         self.filledEvent = fill_event
-        self.orderStatus: Any | None = None
+        if filled:
+            status_mock = MagicMock()
+            status_mock.status = "Filled"
+            status_mock.remaining = 0.0
+            self.orderStatus: Any | None = status_mock
+        else:
+            self.orderStatus = None  # status never arrives → triggers timeout
 
 
 # ------------------------------------------------------------------
@@ -168,21 +174,16 @@ class TestFillTimeoutCancels:
         strategy._rt_feed.get_live_spread = AsyncMock(return_value=0.00008)
         strategy._rt_feed.get_mid_price = AsyncMock(return_value=1.25)
 
-        mock_trade = _MockTrade(_FilledEvent(preset=False))  # never resolves → timeout
+        mock_trade = _MockTrade(_FilledEvent(preset=False), filled=False)  # never fills
         strategy._executor.place_bracket_order = AsyncMock(
             return_value=[mock_trade],
         )
         strategy._executor.cancel_all_orders = AsyncMock()
 
-        async def _timeout_and_close(coro: Any, *_args: Any, **_kwargs: Any) -> None:
-            # Close the coroutine so CPython does not emit
-            # "coroutine was never awaited" when it is GC'd.
-            coro.close()
-            raise TimeoutError
-
+        # Patch the fill timeout constant to 0.01s so the test completes quickly
         with patch(
-            "alphaedge.engine.session_lifecycle.asyncio.wait_for",
-            _timeout_and_close,
+            "alphaedge.engine.session_lifecycle.IB_FILL_TIMEOUT_SECONDS",
+            0.01,
         ):
             result = await strategy._lifecycle._execute_signal(
                 state, _make_signal(), 0.0001
@@ -230,7 +231,9 @@ class TestSuccessfulFill:
         strategy._rt_feed.get_mid_price = AsyncMock(return_value=1.25)
 
         mock_trade = _MockTrade(_FilledEvent(preset=True))
-        mock_trade.orderStatus = MagicMock(avgFillPrice=1.2502)
+        mock_trade.orderStatus = MagicMock(
+            status="Filled", remaining=0.0, avgFillPrice=1.2502
+        )
         strategy._executor.place_bracket_order = AsyncMock(return_value=[mock_trade])
 
         result = await strategy._lifecycle._execute_signal(

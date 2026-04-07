@@ -11,19 +11,19 @@
 
 from __future__ import annotations
 
-import argparse
 import asyncio
-import contextlib
-import os
-import signal
-import sys
 from dataclasses import dataclass, field
 from datetime import date as _date
 from types import ModuleType
 from typing import Any
 
-from alphaedge.config.constants import IB_LIVE_PORT, IB_PAPER_PORT
-from alphaedge.config.loader import AppConfig, load_config
+from alphaedge.config.loader import AppConfig
+from alphaedge.core.types import (
+    BracketOrderResult,
+    DailyLimitResult,
+    MomentumSignal,
+    PositionSizeResult,
+)
 from alphaedge.engine.broker import BrokerConnection, OrderExecutor
 from alphaedge.engine.data_feed import HistoricalDataFeed, RealtimeDataFeed
 from alphaedge.engine.live_types import LiveTradeRecord
@@ -35,20 +35,10 @@ from alphaedge.engine.regime_filter import DailyRegimeFilter
 from alphaedge.engine.session_lifecycle import SessionLifecycle
 from alphaedge.engine.signal_pipeline import SignalPipeline
 from alphaedge.utils.alerting import AlertManager, build_alert_config
-from alphaedge.utils.logger import get_logger, setup_logging
+from alphaedge.utils.logger import get_logger
 from alphaedge.utils.news_filter import EconomicNewsFilter, build_news_filter
 
 logger = get_logger()
-
-
-def _stdout(message: str) -> None:
-    """Emit user-facing CLI messages without using print()."""
-    sys.stdout.write(f"{message}\n")
-
-
-def _stderr(message: str) -> None:
-    """Emit user-facing CLI error messages without using print()."""
-    sys.stderr.write(f"{message}\n")
 
 
 # ------------------------------------------------------------------
@@ -59,7 +49,7 @@ class StrategyState:
     """Tracks the current state of the swing strategy."""
 
     pair: str = ""
-    signal_result: dict[str, Any] | None = None
+    signal_result: MomentumSignal | None = None
     trades_today: int = 0
     wins_today: int = 0
     losses_today: int = 0
@@ -221,7 +211,7 @@ class SwingStrategy:
         self,
         state: StrategyState,
         pip_size: float,
-    ) -> dict[str, Any] | None:
+    ) -> MomentumSignal | None:
         """Run the momentum+carry signal pipeline for the given pair state."""
         # Observation-only regime log — does NOT block the trade
         state.pip_size = pip_size
@@ -250,7 +240,7 @@ class SwingStrategy:
                 logger.info(
                     "ALPHAEDGE: carry conflict BLOCK pair=%s momentum=%s carry=%s",
                     state.pair,
-                    result.get("direction"),
+                    result["direction"],
                     carry.direction,
                 )
                 state.signal_result = None
@@ -262,13 +252,13 @@ class SwingStrategy:
     async def _check_risk(
         self,
         state: StrategyState,
-    ) -> dict[str, Any]:
+    ) -> DailyLimitResult:
         """Check daily risk limits before placing a trade."""
         risk_mod = self._modules.risk_manager
         equity = await self._executor.get_account_equity()
         state.current_equity = equity
 
-        result: dict[str, Any] = risk_mod.check_daily_limit(
+        result: DailyLimitResult = risk_mod.check_daily_limit(
             starting_equity=state.starting_equity,
             current_equity=equity,
             max_daily_loss_pct=self._config.trading.max_daily_loss_pct,
@@ -284,7 +274,7 @@ class SwingStrategy:
         pip_size: float,
         exchange_rate: float = 0.0,
         current_atr_pips: float = 0.0,
-    ) -> dict[str, Any] | None:
+    ) -> PositionSizeResult | None:
         """Calculate and validate position size. Returns None on failure."""
         return self._position_manager.size_position(
             state,
@@ -302,7 +292,7 @@ class SwingStrategy:
         lot_size: float,
         pip_size: float,
         spread_pips: float,
-    ) -> dict[str, Any] | None:
+    ) -> BracketOrderResult | None:
         """Build bracket order and validate. Returns None on rejection."""
         return self._position_manager.build_validated_order(
             signal, lot_size, pip_size, spread_pips, self._modules, self._config
@@ -369,191 +359,3 @@ class SwingStrategy:
     async def run_session(self) -> None:
         """Run a single trading session (delegates to SessionLifecycle)."""
         await self._lifecycle.run_session()
-
-
-# ------------------------------------------------------------------
-# CLI entry point
-# ------------------------------------------------------------------
-def _parse_args() -> argparse.Namespace:
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="ALPHAEDGE — Momentum+Carry")
-    parser.add_argument(
-        "--mode",
-        choices=["paper", "live"],
-        default="paper",
-        help="Trading mode (default: paper)",
-    )
-    parser.add_argument(
-        "--config",
-        default="config.yaml",
-        help="Path to config.yaml",
-    )
-    return parser.parse_args()
-
-
-def _apply_cli_mode(config: AppConfig, mode: str) -> None:
-    """Apply an explicit CLI trading mode to the loaded config."""
-    if mode == "paper":
-        config.ib.is_paper = True
-        config.ib.port = IB_PAPER_PORT
-        config.mode = "paper"
-        return
-
-    # Guard: ALPHAEDGE_PAPER=true ENV takes precedence over CLI --mode live.
-    # This prevents switching to live mode when the ENV guard is active.
-    env_paper = os.getenv("ALPHAEDGE_PAPER", "true").strip().lower()
-    if env_paper == "true":
-        _stderr(
-            "ERROR: ALPHAEDGE_PAPER=true is set in environment. "
-            "Cannot switch to live mode via --mode live. "
-            "Unset ALPHAEDGE_PAPER (or set it to 'false') to enable live trading."
-        )
-        raise SystemExit(1)
-
-    config.ib.is_paper = False
-    config.ib.port = IB_LIVE_PORT
-    config.mode = "live"
-
-
-async def _main() -> None:
-    """Async main entry point."""
-    args = _parse_args()
-
-    # ⚠️ WARNING: Live trading involves real money risk
-    if args.mode == "live":
-        _stdout("=" * 60)
-        _stdout("⚠️  WARNING: LIVE TRADING MODE")
-        _stdout("⚠️  Real money is at risk. Proceed with extreme caution.")
-        _stdout("=" * 60)
-        try:
-            confirm = input("Type 'YES' to confirm live trading: ")
-        except (EOFError, KeyboardInterrupt):
-            _stdout("\nALPHAEDGE: Live trading cancelled (no interactive input).")
-            sys.exit(1)
-        if confirm != "YES":
-            _stdout("ALPHAEDGE: Live trading cancelled.")
-            sys.exit(0)
-
-    setup_logging()
-    config = load_config(config_path=args.config)
-    _apply_cli_mode(config, args.mode)
-
-    if args.mode == "paper":
-        _stdout("=" * 60)
-        _stdout("📝  ALPHAEDGE — PAPER TRADING MODE")
-        _stdout(f"📝  No real money at risk. IB Gateway port {IB_PAPER_PORT}.")
-        _stdout("=" * 60)
-    else:
-        _stdout("=" * 60)
-        _stdout("⚠️  ALPHAEDGE — LIVE TRADING MODE")
-        _stdout(f"⚠️  IB Gateway live port {IB_LIVE_PORT} selected.")
-        _stdout("=" * 60)
-
-    strategy = SwingStrategy(config)
-
-    # Install signal handlers for graceful shutdown
-    # add_signal_handler is not supported on Windows — use try/except for all signals
-    loop = asyncio.get_running_loop()
-
-    # Route asyncio callback exceptions through loguru instead of raw stderr writes.
-    # This prevents _ProactorBaseWritePipeTransport._loop_writing AssertionError
-    # caused by asyncio writing exception tracebacks directly to sys.stderr while
-    # the ProactorEventLoop pipe transport is busy with another write (Windows race).
-    def _asyncio_exception_handler(
-        lp: asyncio.AbstractEventLoop, context: dict
-    ) -> None:
-        exc = context.get("exception")
-        # Suppress the known Windows ProactorEventLoop pipe-write race — harmless.
-        if isinstance(exc, AssertionError) and "_write_fut" in str(exc):
-            return
-        msg = context.get("message", "Unknown asyncio error")
-        if exc is not None:
-            logger.error(f"Asyncio callback exception: {msg}", exc_info=exc)
-        else:
-            logger.error(f"Asyncio error: {msg} | {context}")
-
-    loop.set_exception_handler(_asyncio_exception_handler)
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(
-                sig,
-                lambda: asyncio.ensure_future(strategy.graceful_shutdown()),
-            )
-        except NotImplementedError:
-            pass  # Windows — signal handlers not supported via asyncio loop
-
-    # Optional web dashboard (FastAPI REST + WebSocket)
-    _dashboard_task: asyncio.Task[None] | None = None
-    if config.dashboard_raw.get("enabled", False):
-        import threading
-
-        from alphaedge.engine.web_dashboard import (
-            configure_auth,
-            run_web_dashboard,
-            start_server,
-        )
-
-        dash_host: str = str(config.dashboard_raw.get("host", "127.0.0.1"))
-        dash_port: int = int(config.dashboard_raw.get("port", 8080))
-        dash_token: str = str(config.dashboard_raw.get("api_token", ""))
-        if dash_token:
-            configure_auth(dash_token)
-
-        threading.Thread(
-            target=start_server,
-            args=(dash_host, dash_port),
-            daemon=True,
-            name="alphaedge-web-dashboard",
-        ).start()
-        logger.info(f"Web dashboard: http://{dash_host}:{dash_port}/docs")
-
-        async def _get_dashboard_state() -> dict[str, Any]:
-            return strategy.get_live_state()
-
-        _dashboard_task = asyncio.create_task(
-            run_web_dashboard(_get_dashboard_state, refresh_rate=2.0),
-            name="web-dashboard-loop",
-        )
-
-    try:
-        while not strategy._shutdown_requested:
-            await strategy.run_session()
-            if strategy._shutdown_requested:
-                break
-            # Brief pause between sessions (daily loss shutdown resets next day)
-            logger.info("ALPHAEDGE: Session complete — waiting for next session window")
-            await asyncio.sleep(60.0)
-    finally:
-        if _dashboard_task is not None:
-            _dashboard_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await _dashboard_task
-
-
-if __name__ == "__main__":
-    # ── Windows ProactorEventLoop pipe-write race condition fix ──
-    # On Windows, asyncio uses ProactorEventLoop which can trigger a harmless
-    # AssertionError in _loop_writing when two concurrent writes hit the same
-    # stderr pipe transport (e.g. loguru + uvicorn + asyncio's own error logger).
-    # This monkey-patch catches the assertion at the source — before asyncio
-    # formats a traceback and tries to write it to stderr (which would trigger
-    # the same race again). Affects ALL event loops in ALL threads.
-    import asyncio.proactor_events as _pev
-
-    _TransportClass = getattr(_pev, "_ProactorBaseWritePipeTransport")
-    _original_loop_writing = getattr(_TransportClass, "_loop_writing")
-
-    def _patched_loop_writing(
-        self: object, f: object = None, data: object = None
-    ) -> None:
-        try:
-            _original_loop_writing(self, f, data)
-        except AssertionError:
-            # Harmless: two futures overlapped on the same pipe transport.
-            # The write still succeeds — the assertion is a stale-future check.
-            pass
-
-    setattr(_TransportClass, "_loop_writing", _patched_loop_writing)
-
-    asyncio.run(_main())
