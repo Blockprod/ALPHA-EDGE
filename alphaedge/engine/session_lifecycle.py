@@ -18,6 +18,7 @@ SwingStrategy becomes a thin orchestrator.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -110,6 +111,13 @@ class SessionLifecycle:
         self._reconciler = BrokerReconciler(self._s._executor)
         self._session_starting_equity: float = 0.0
         self._reconcile_counter: int = 0
+        # Set to True just before broker.disconnect() in the normal session-end
+        # flow, so _on_ib_disconnect can distinguish an expected closure from a
+        # real mid-session network failure.
+        self._session_closing: bool = False
+        # Pairs that passed the regime gate for the current session.
+        # Used by _handle_reconnection to avoid re-subscribing filtered-out pairs.
+        self._active_pairs: list[str] = []
 
     # ------------------------------------------------------------------
     # Graceful shutdown
@@ -613,6 +621,15 @@ class SessionLifecycle:
         """Handle IB Gateway disconnection event."""
         # Log known open positions — gives operator visibility during reconnect
         open_pairs = [p for p, s in self._s._states.items() if s.is_position_open]
+        if self._session_closing:
+            # Expected closure triggered by the normal session-end flow.
+            # Downgrade to DEBUG — this is not an incident.
+            logger.debug(
+                "ALPHAEDGE: IB Gateway disconnected (normal session close) "
+                "— known open positions: {}",
+                open_pairs if open_pairs else "none",
+            )
+            return
         logger.critical(
             "ALPHAEDGE: IB Gateway DISCONNECTED — known open positions: {}",
             open_pairs if open_pairs else "none",
@@ -633,8 +650,10 @@ class SessionLifecycle:
             if success:
                 logger.info("ALPHAEDGE: Reconnected to IB Gateway")
                 await self._run_reconcile(self._session_starting_equity)
-                # Re-subscribe to real-time feeds
-                for pair in self._s._config.trading.pairs:
+                # Re-subscribe only to pairs that passed the regime gate this session.
+                # _active_pairs is populated by run_session — empty list means session
+                # not yet started or already ended (no re-subscribe needed).
+                for pair in self._active_pairs:
                     await self._s._rt_feed.subscribe(pair)
                 logger.info("ALPHAEDGE: Real-time feeds re-subscribed after reconnect")
                 asyncio.ensure_future(
@@ -1172,6 +1191,7 @@ class SessionLifecycle:
     # ------------------------------------------------------------------
     async def _wait_for_session_open(self) -> None:
         """Block until the NYSE session window opens, logging a countdown."""
+        logger.debug("ALPHAEDGE: _wait_for_session_open starting (pid=%d)", os.getpid())
         while not self._s._shutdown_requested:
             now = now_utc()
             session_start, session_end = get_session_window_utc()
@@ -1199,7 +1219,7 @@ class SessionLifecycle:
 
             # Before today's session_start
             wait_s = (session_start - now).total_seconds()
-            if wait_s > 120:
+            if wait_s >= 60:
                 logger.info(
                     f"ALPHAEDGE: Session opens in {wait_s / 60:.0f}min "
                     f"({format_dual_time(session_start)})"
@@ -1317,6 +1337,7 @@ class SessionLifecycle:
             await self._run_reconcile(starting_equity)
 
             # Subscribe to real-time M1 data (only pairs that passed regime gate)
+            self._active_pairs = active_pairs
             self._s._rt_feed.on_bar(self._on_new_m1_bar)
             for pair in active_pairs:
                 await self._s._rt_feed.subscribe(pair)
@@ -1352,5 +1373,9 @@ class SessionLifecycle:
             await self._handle_session_end()
             # Cleanup
             await self._s._rt_feed.unsubscribe_all()
+            # Flag the closing BEFORE disconnect so _on_ib_disconnect
+            # knows this is an expected shutdown, not a network failure.
+            self._session_closing = True
             await self._s._broker.disconnect()
+            self._session_closing = False
             logger.info(f"ALPHAEDGE session ended at {format_dual_time(now_utc())}")

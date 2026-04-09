@@ -224,7 +224,12 @@ class SwingStrategy:
                 f"ALPHAEDGE: regime gate BLOCK pair={state.pair} regime={regime}"
             )
             return None
-        logger.info(f"ALPHAEDGE: regime={regime} pair={state.pair}")
+        if self._config.regime_gate_enabled:
+            logger.info(f"ALPHAEDGE: regime={regime} pair={state.pair}")
+        else:
+            logger.debug(
+                f"ALPHAEDGE: regime={regime} pair={state.pair} [gate disabled]"
+            )
         result = self._signal_pipeline.detect_momentum(
             state, self._modules, self._config
         )
