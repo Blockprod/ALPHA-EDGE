@@ -1194,18 +1194,26 @@ class SessionLifecycle:
         logger.debug("ALPHAEDGE: _wait_for_session_open starting (pid=%d)", os.getpid())
         while not self._s._shutdown_requested:
             now = now_utc()
-            session_start, session_end = get_session_window_utc()
+            # Anchor to UTC noon to avoid the UTC-midnight / NY-prior-evening
+            # timezone crossing (NY = UTC-4 EDT / UTC-5 EST):
+            # midnight UTC ≈ 20:00 NY prior day → get_session_window_utc()
+            # without an anchor returns yesterday's session, triggering a
+            # spurious "session ended" branch and skipping today's session.
+            utc_noon = now.replace(hour=12, minute=0, second=0, microsecond=0)
+            session_start, session_end = get_session_window_utc(utc_noon)
 
             # Already inside the window — proceed immediately
             if session_start <= now < session_end:
                 return
 
             if now >= session_end:
-                # Session ended today — find the next weekday's session start
-                next_day = now + timedelta(days=1)
-                while next_day.weekday() >= 5:  # 5=Sat, 6=Sun
-                    next_day += timedelta(days=1)
-                next_start, _ = get_session_window_utc(next_day)
+                # Session ended today — find the next weekday's session start.
+                # Use utc_noon as anchor so get_session_window_utc receives a
+                # datetime whose NY-converted date matches the UTC calendar date.
+                next_candidate = utc_noon + timedelta(days=1)
+                while next_candidate.weekday() >= 5:  # 5=Sat, 6=Sun
+                    next_candidate += timedelta(days=1)
+                next_start, _ = get_session_window_utc(next_candidate)
                 wait_h = (next_start - now).total_seconds() / 3600
                 # Log at first check and then every ~15 min to avoid flooding
                 if now.minute % 15 == 0 or wait_h > 19.9:
@@ -1237,11 +1245,6 @@ class SessionLifecycle:
 
         This is the main entry point for the strategy.
         """
-        logger.info(
-            f"ALPHAEDGE session starting at {format_dual_time(now_utc())} "
-            f"| mode={'PAPER' if self._s._config.ib.is_paper else 'LIVE'}"
-        )
-
         # Warn when EU and US DST offsets diverge (2nd–last Sunday of March)
         if is_dst_transition_week():
             logger.warning(
@@ -1264,6 +1267,13 @@ class SessionLifecycle:
         await self._wait_for_session_open()
         if self._s._shutdown_requested:
             return
+
+        # Log here — after _wait_for_session_open — so the message only appears
+        # when we are actually inside the trading window, not 60s after session end.
+        logger.info(
+            f"ALPHAEDGE session starting at {format_dual_time(now_utc())} "
+            f"| mode={'PAPER' if self._s._config.ib.is_paper else 'LIVE'}"
+        )
 
         # Connect to IB Gateway
         if not await self._s._broker.connect():

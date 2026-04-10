@@ -243,10 +243,8 @@ class SwingStrategy:
             carry = self._signal_pipeline.get_carry(state, self._config)
             if self._signal_pipeline.is_carry_conflict(result, carry):
                 logger.info(
-                    "ALPHAEDGE: carry conflict BLOCK pair=%s momentum=%s carry=%s",
-                    state.pair,
-                    result["direction"],
-                    carry.direction,
+                    f"ALPHAEDGE: carry conflict BLOCK pair={state.pair} "
+                    f"momentum={result['direction']} carry={carry.direction}"
                 )
                 state.signal_result = None
                 return None

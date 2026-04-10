@@ -118,6 +118,7 @@ class BrokerConnection:
         self._cached_available_funds: float = 0.0
         self._circuit_breaker_opened_at: float = 0.0
         self._disconnect_handlers: list[DisconnectHandler] = []
+        self._session_closing: bool = False
         self._ib = self._build_ib_client()
         # Heartbeat state
         self._heartbeat_task: asyncio.Task[None] | None = None
@@ -237,6 +238,7 @@ class BrokerConnection:
     async def disconnect(self) -> None:
         """Disconnect from IB Gateway gracefully."""
         if self._ib.isConnected():
+            self._session_closing = True
             self._ib.disconnect()
             self._connected = False
             logger.info("ALPHAEDGE disconnected from IB Gateway")
@@ -265,11 +267,13 @@ class BrokerConnection:
 
     def _on_disconnect(self) -> None:
         """Fired by ib_insync when the connection drops unexpectedly."""
-        logger.warning(
-            f"ALPHAEDGE IB disconnected unexpectedly "
-            f"({self._config.host}:{self._config.port}) — "
-            "next _ensure_connected() call will reconnect"
-        )
+        if not self._session_closing:
+            logger.warning(
+                f"ALPHAEDGE IB disconnected unexpectedly "
+                f"({self._config.host}:{self._config.port}) — "
+                "next _ensure_connected() call will reconnect"
+            )
+        self._session_closing = False  # reset for next cycle
         self._connected = False
         self._reset_ib_client()
 
