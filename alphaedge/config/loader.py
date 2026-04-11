@@ -154,6 +154,9 @@ class IBConfig:
     account_id: str = field(default="", repr=False)
     account_type: str = "Individual"
     is_paper: bool = True
+    gateway_path: str = ""
+    username: str = ""
+    password: str = field(default="", repr=False)
 
 
 # ------------------------------------------------------------------
@@ -318,6 +321,12 @@ def _build_ib_config(raw: dict[str, Any]) -> IBConfig:
         account_id=os.getenv("ALPHAEDGE_IB_ACCOUNT", ib_section.get("account_id", "")),
         account_type=ib_section.get("account_type", "Individual"),
         is_paper=is_paper,
+        gateway_path=os.getenv(
+            "ALPHAEDGE_IB_GATEWAY_PATH",
+            ib_section.get("gateway_path", ""),
+        ),
+        username=os.getenv("ALPHAEDGE_IB_USERNAME", ib_section.get("username", "")),
+        password=os.getenv("ALPHAEDGE_IB_PASSWORD", ""),
     )
 
 

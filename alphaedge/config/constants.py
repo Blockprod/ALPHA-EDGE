@@ -215,6 +215,11 @@ IB_HIST_TIMEOUT_SECONDS: float = 60.0  # historical data requests (IB can be slo
 IB_FILL_TIMEOUT_SECONDS: int = 30  # max wait for parent order fill confirmation
 IB_MAX_CONCURRENT_HIST_REQUESTS: int = 3  # IB cancels >~3 simultaneous hist requests
 
+# IB Gateway lifecycle manager (detect + validate before connect)
+IB_GATEWAY_HEALTH_RETRIES: int = 8
+IB_GATEWAY_HEALTH_RETRY_DELAY_SECONDS: int = 10
+IB_GATEWAY_STARTUP_TIMEOUT_SECONDS: int = 120  # max wait after auto-launching gateway
+
 # Circuit breaker: open after this many consecutive connection failures
 IB_CIRCUIT_BREAKER_MAX_FAILURES: int = 5
 # Auto-reset cooldown: seconds to wait before retrying after circuit breaker opens

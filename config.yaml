@@ -18,6 +18,7 @@ ib:
   client_id: 2             # EDGECORE uses 1 — must differ to avoid IB disconnect
   account_id: ""            # Set in .env (ALPHAEDGE_IB_ACCOUNT)
   account_type: "Individual"  # Individual or Financial Advisor
+  gateway_path: ""              # Set in .env (ALPHAEDGE_IB_GATEWAY_PATH) or here
 
 # --- Trading Parameters ---
 trading:

@@ -17,31 +17,10 @@ function Write-Log($msg) {
 }
 
 Write-Log "=== ALPHAEDGE startup script ==="
-Write-Log "Waiting 90s for IB Gateway to finish initialising..."
-Start-Sleep -Seconds 90
+Write-Log "Starting ALPHAEDGE bot (gateway health check handled by Python)..."
 
-# Verify IB Gateway is reachable (TCP port 4002)
-$maxRetries = 10
-$retryDelay = 15
-$connected  = $false
-for ($i = 1; $i -le $maxRetries; $i++) {
-    try {
-        $tcp = New-Object System.Net.Sockets.TcpClient
-        $tcp.Connect("127.0.0.1", 4002)
-        $tcp.Close()
-        Write-Log "IB Gateway port 4002 reachable (attempt $i/$maxRetries)"
-        $connected = $true
-        break
-    } catch {
-        Write-Log "Port 4002 not ready yet (attempt $i/$maxRetries) — waiting ${retryDelay}s"
-        Start-Sleep -Seconds $retryDelay
-    }
-}
-
-if (-not $connected) {
-    Write-Log "ERROR: IB Gateway port 4002 unreachable after $maxRetries attempts — aborting"
-    exit 1
-}
+# Brief pause to let Windows Task Scheduler finish launching IB Gateway
+Start-Sleep -Seconds 15
 
 Write-Log "Starting ALPHAEDGE paper trading bot..."
 Set-Location $ProjectDir

@@ -258,6 +258,11 @@ class TestRestoredEquityOnRestart:
                 "alphaedge.engine.session_lifecycle.is_session_active",
                 return_value=False,
             ),
+            patch(
+                "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
         ):
             await strategy.run_session()
 

@@ -54,6 +54,7 @@ from alphaedge.utils.alerting import (
     alert_trade_closed,
     alert_trade_executed,
 )
+from alphaedge.utils.gw_manager import ensure_gateway_ready
 from alphaedge.utils.logger import get_logger
 from alphaedge.utils.pair_correlation import (
     build_correlation_matrix,
@@ -646,6 +647,9 @@ class SessionLifecycle:
     async def _handle_reconnection(self) -> None:
         """Attempt reconnection and reconcile state if successful."""
         try:
+            # Verify gateway process/API are alive before reconnecting
+            await ensure_gateway_ready(self._s._config.ib)
+
             success = await self._s._broker.reconnect(max_retries=3)
             if success:
                 logger.info("ALPHAEDGE: Reconnected to IB Gateway")
@@ -1261,6 +1265,16 @@ class SessionLifecycle:
                 "today — refusing to start. Wait for next trading day."
             )
             self._s._shutdown_requested = True
+            return
+
+        # Ensure IB Gateway is running early — before waiting for session window.
+        # This detects a missing gateway immediately (and auto-launches it if
+        # gateway_path is configured), instead of discovering the problem only
+        # after the session wait expires.
+        if not await ensure_gateway_ready(self._s._config.ib):
+            logger.critical(
+                "ALPHAEDGE: Cannot start — IB Gateway not reachable after all retries"
+            )
             return
 
         # Wait for the session window to open (do NOT connect to IB yet)
