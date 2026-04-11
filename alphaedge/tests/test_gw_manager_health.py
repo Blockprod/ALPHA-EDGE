@@ -541,17 +541,35 @@ class TestFillGatewayLoginSync:
 
     def test_window_not_found_returns_false(self) -> None:
         """If the login window is not visible, returns False (will retry)."""
-        with patch("alphaedge.utils.gw_manager._do_login_fill", return_value=False):
-            result = _fill_gateway_login_sync("user", "pass")
+        with patch.dict(
+            "sys.modules",
+            {
+                "win32gui": MagicMock(),
+                "pywinauto": MagicMock(),
+                "pywinauto.keyboard": MagicMock(),
+                "pywinauto.mouse": MagicMock(),
+            },
+        ):
+            with patch("alphaedge.utils.gw_manager._do_login_fill", return_value=False):
+                result = _fill_gateway_login_sync("user", "pass")
         assert result is False
 
     def test_fills_credentials_and_clicks_login(self) -> None:
         """Delegates to _do_login_fill once imports succeed."""
-        with patch(
-            "alphaedge.utils.gw_manager._do_login_fill",
-            return_value=True,
-        ) as mock_fill:
-            result = _fill_gateway_login_sync("myuser", "mypass")
+        with patch.dict(
+            "sys.modules",
+            {
+                "win32gui": MagicMock(),
+                "pywinauto": MagicMock(),
+                "pywinauto.keyboard": MagicMock(),
+                "pywinauto.mouse": MagicMock(),
+            },
+        ):
+            with patch(
+                "alphaedge.utils.gw_manager._do_login_fill",
+                return_value=True,
+            ) as mock_fill:
+                result = _fill_gateway_login_sync("myuser", "mypass")
 
         assert result is True
         mock_fill.assert_called_once()
