@@ -73,9 +73,12 @@ htmlcov/
 cov_out.txt
 final_test.txt
 pytest_out.txt
+pytest_results.txt
 qa_run.log
 tasks_dump.txt
 test_logger.txt
+test_results.txt
+tests_output.txt
 
 # --- OS ---
 Thumbs.db
