@@ -210,8 +210,10 @@ async def ensure_gateway_ready(config: IBConfig) -> bool:
 # ------------------------------------------------------------------
 # Gateway launcher (native — no IBC)
 # ------------------------------------------------------------------
-# Windows-only: detach the child process so it survives bot restarts.
-_DETACHED_PROCESS = 0x00000008
+# Windows-only process creation flags — defined as literals so pyright does not
+# flag them on Linux (subprocess.CREATE_NEW_PROCESS_GROUP is Windows-only).
+_DETACHED_PROCESS: int = 0x00000008  # DETACHED_PROCESS
+_CREATE_NEW_PROCESS_GROUP: int = 0x00000200  # CREATE_NEW_PROCESS_GROUP
 
 
 def _start_gateway_process(gateway_path: str) -> bool:
@@ -241,7 +243,7 @@ def _start_gateway_process(gateway_path: str) -> bool:
         subprocess.Popen(
             [str(exe)],
             cwd=str(exe.parent),
-            creationflags=_DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            creationflags=_DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP,
             close_fds=True,
         )
         logger.info(f"ALPHAEDGE GW: Launched IB Gateway from {exe}")
