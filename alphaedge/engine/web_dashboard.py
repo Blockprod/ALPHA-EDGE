@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, status
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 
 from alphaedge.config.constants import PROJECT_TITLE, PROJECT_VERSION
 from alphaedge.utils.logger import get_logger
@@ -67,12 +67,41 @@ class EquityPoint:
 class DashboardState:
     """Complete dashboard state snapshot."""
 
+    # ── Core (original) ──────────────────────────────────────────
     ib_connected: bool = False
     session_active: bool = False
     utc_time: str = ""
     pairs: list[dict[str, Any]] = field(default_factory=list)
     position: dict[str, Any] = field(default_factory=dict)
     daily: dict[str, Any] = field(default_factory=dict)
+
+    # ── Session timing ───────────────────────────────────────────
+    next_session_utc: str = ""
+    paris_time: str = ""
+
+    # ── Equity & risk ────────────────────────────────────────────
+    starting_equity: float = 0.0
+    current_equity: float = 0.0
+    daily_loss_limit_pct: float = 3.0
+    daily_loss_used_pct: float = 0.0
+    consecutive_losses: int = 0
+    max_trades_remaining: int = -1
+
+    # ── Signal pipeline per pair ─────────────────────────────────
+    signal_pipeline: list[dict[str, Any]] = field(default_factory=list)
+
+    # ── System health ────────────────────────────────────────────
+    gateway_status: str = "unknown"
+    gateway_uptime_s: int = 0
+    last_reconcile_utc: str = ""
+    reconcile_drift_usd: float = 0.0
+    reconcile_has_critical: bool = False
+    news_blackout_active: bool = False
+    news_blackout_event: str = ""
+    regime: str = "unknown"
+
+    # ── Carry data ───────────────────────────────────────────────
+    carry_rates: dict[str, Any] = field(default_factory=dict)
 
 
 # ------------------------------------------------------------------
@@ -229,12 +258,20 @@ def create_app(store: DashboardStore | None = None) -> FastAPI:
     _ui_path = Path(__file__).parent / "dashboard_ui.html"
 
     @app.get("/dashboard", include_in_schema=False)
-    async def dashboard_ui() -> FileResponse:
-        return FileResponse(_ui_path, media_type="text/html")
+    async def dashboard_ui() -> HTMLResponse:
+        content = _ui_path.read_text(encoding="utf-8")
+        return HTMLResponse(
+            content=content,
+            headers={"Cache-Control": "no-store, must-revalidate"},
+        )
 
     @app.get("/", include_in_schema=False)
-    async def root_redirect() -> FileResponse:
-        return FileResponse(_ui_path, media_type="text/html")
+    async def root_redirect() -> HTMLResponse:
+        content = _ui_path.read_text(encoding="utf-8")
+        return HTMLResponse(
+            content=content,
+            headers={"Cache-Control": "no-store, must-revalidate"},
+        )
 
     # ---- Health check ----
     @app.get("/health")
@@ -353,12 +390,36 @@ async def run_web_dashboard(
             now_str = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
             new_state = DashboardState(
+                # ── Core ──
                 ib_connected=raw.get("ib_connected", False),
                 session_active=raw.get("session_active", False),
                 utc_time=now_str,
                 pairs=raw.get("pairs", []),
                 position=raw.get("position", {}),
                 daily=raw.get("daily", {}),
+                # ── Session timing ──
+                next_session_utc=raw.get("next_session_utc", ""),
+                paris_time=raw.get("paris_time", ""),
+                # ── Equity & risk ──
+                starting_equity=raw.get("starting_equity", 0.0),
+                current_equity=raw.get("current_equity", 0.0),
+                daily_loss_limit_pct=raw.get("daily_loss_limit_pct", 3.0),
+                daily_loss_used_pct=raw.get("daily_loss_used_pct", 0.0),
+                consecutive_losses=raw.get("consecutive_losses", 0),
+                max_trades_remaining=raw.get("max_trades_remaining", 0),
+                # ── Signal pipeline ──
+                signal_pipeline=raw.get("signal_pipeline", []),
+                # ── System health ──
+                gateway_status=raw.get("gateway_status", "unknown"),
+                gateway_uptime_s=raw.get("gateway_uptime_s", 0),
+                last_reconcile_utc=raw.get("last_reconcile_utc", ""),
+                reconcile_drift_usd=raw.get("reconcile_drift_usd", 0.0),
+                reconcile_has_critical=raw.get("reconcile_has_critical", False),
+                news_blackout_active=raw.get("news_blackout_active", False),
+                news_blackout_event=raw.get("news_blackout_event", ""),
+                regime=raw.get("regime", "unknown"),
+                # ── Carry ──
+                carry_rates=raw.get("carry_rates", {}),
             )
             s.update_state(new_state)
 

@@ -3,514 +3,1278 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ALPHAEDGE — Live Dashboard</title>
+  <title>ALPHAEDGE — Monitor</title>
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <style>
+    /* ================================================================
+       ALPHAEDGE — EDGECORE-style Bloomberg Terminal Theme
+       4-col CSS Grid · 1px gap gridlines · flat panels · dense
+       ================================================================ */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #0d1117;
-      --bg2:       #161b22;
-      --bg3:       #21262d;
-      --border:    #30363d;
-      --text:      #e6edf3;
-      --muted:     #8b949e;
-      --green:     #3fb950;
-      --green-dim: #1a4226;
-      --red:       #f85149;
-      --red-dim:   #3d1a19;
-      --yellow:    #d29922;
-      --cyan:      #79c0ff;
-      --accent:    #f0883e;
-      --radius:    8px;
+      --bg-0: #06080d;
+      --bg-1: #0c1017;
+      --bg-2: #111820;
+      --bg-3: #19212d;
+      --border: #1e2a3a;
+      --border-accent: #2a3a52;
+      --text-0: #e8edf5;
+      --text-1: #a4b1c7;
+      --text-2: #6b7a94;
+      --text-3: #3f4f66;
+      --accent: #3b82f6;
+      --accent-dim: #1e3a5f;
+      --green: #10b981;
+      --green-dim: #064e3b;
+      --red: #ef4444;
+      --red-dim: #4c1414;
+      --yellow: #f59e0b;
+      --yellow-dim: #4a3508;
+      --cyan: #06b6d4;
+      --purple: #8b5cf6;
+      --font-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
     }
 
     body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      font-size: 14px;
+      background: var(--bg-0);
+      color: var(--text-0);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
       min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* ── Header ── */
-    header {
-      background: var(--bg2);
+    /* ================================================================
+       TOPBAR
+       ================================================================ */
+    .topbar {
+      background: var(--bg-1);
       border-bottom: 1px solid var(--border);
-      padding: 12px 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      padding: 0 16px;
+      height: 44px;
       position: sticky;
       top: 0;
       z-index: 100;
     }
 
-    .header-title {
+    .topbar-left {
       display: flex;
       align-items: center;
-      gap: 10px;
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--cyan);
-      white-space: nowrap;
-    }
-
-    .header-title span.bolt { color: var(--accent); font-size: 20px; }
-
-    .header-badges {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .badge {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 600;
-      border: 1px solid transparent;
-    }
-
-    .badge.connected    { background: var(--green-dim); border-color: var(--green); color: var(--green); }
-    .badge.disconnected { background: var(--red-dim);   border-color: var(--red);   color: var(--red); }
-    .badge.session-on   { background: var(--green-dim); border-color: var(--green); color: var(--green); }
-    .badge.session-off  { background: var(--bg3);       border-color: var(--border); color: var(--muted); }
-    .badge.mode-paper   { background: #1e2d40;           border-color: var(--cyan);  color: var(--cyan); }
-
-    .dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: currentColor;
-    }
-
-    .dot.pulse {
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.3; }
-    }
-
-    .header-time {
-      font-size: 12px;
-      color: var(--muted);
-      font-family: monospace;
-      white-space: nowrap;
-    }
-
-    /* ── Main grid ── */
-    main {
-      padding: 20px 24px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto auto auto;
-      gap: 16px;
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    /* ── Card ── */
-    .card {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 16px 20px;
-    }
-
-    .card-title {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
-      margin-bottom: 14px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .card-title::before {
-      content: '';
-      display: inline-block;
-      width: 3px; height: 14px;
-      border-radius: 2px;
-      background: var(--accent);
-    }
-
-    /* ── Stat grid ── */
-    .stat-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
       gap: 12px;
     }
 
-    .stat {
-      background: var(--bg3);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 12px 14px;
-    }
-
-    .stat-label {
-      font-size: 11px;
-      color: var(--muted);
-      margin-bottom: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .stat-value {
-      font-size: 22px;
+    .logo {
+      font-family: var(--font-mono);
       font-weight: 700;
-      font-family: monospace;
-      color: var(--text);
+      font-size: 14px;
+      color: var(--text-0);
+      letter-spacing: 0.5px;
     }
 
-    .stat-value.green  { color: var(--green); }
-    .stat-value.red    { color: var(--red); }
-    .stat-value.yellow { color: var(--yellow); }
-    .stat-value.muted  { color: var(--muted); }
-
-    /* ── Table ── */
-    .table-wrap {
-      overflow-x: auto;
+    .logo span {
+      color: var(--text-2);
+      font-weight: 400;
+      font-size: 11px;
     }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-
-    th {
-      text-align: left;
-      padding: 8px 10px;
+    .mode-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
       font-size: 11px;
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--muted);
-      border-bottom: 1px solid var(--border);
+      border: 1px solid;
     }
 
-    td {
-      padding: 10px 10px;
-      border-bottom: 1px solid #21262d;
-      font-family: monospace;
-      vertical-align: middle;
+    .mode-badge.paper {
+      color: var(--accent);
+      border-color: var(--accent-dim);
+      background: rgba(59,130,246,0.08);
     }
 
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: var(--bg3); }
-
-    .pill {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: 11px;
-      font-weight: 700;
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
     }
 
-    .pill.buy    { background: var(--green-dim); color: var(--green); }
-    .pill.sell   { background: var(--red-dim);   color: var(--red); }
-    .pill.waiting { background: var(--bg3); color: var(--muted); }
-    .pill.open   { background: #1e2d40; color: var(--cyan); }
-    .pill.paper  { background: #1e2d40; color: var(--cyan); }
+    .status-dot.ok  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.err { background: var(--red);   box-shadow: 0 0 6px var(--red); }
 
-    /* ── Full width card ── */
-    .col-span-2 { grid-column: span 2; }
-
-    /* ── Position card ── */
-    .pos-empty {
-      text-align: center;
-      padding: 24px;
-      color: var(--muted);
-      font-size: 13px;
+    .topbar-right {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-2);
+      display: flex;
+      align-items: center;
+      gap: 16px;
     }
 
-    /* ── Footer ── */
-    footer {
-      text-align: center;
-      padding: 16px;
-      color: var(--muted);
-      font-size: 11px;
-      border-top: 1px solid var(--border);
-      margin-top: 8px;
-    }
+    .topbar-right .sep { color: var(--text-3); }
 
-    footer a { color: var(--cyan); text-decoration: none; }
-
-    /* ── Connection banner ── */
+    /* -- Connection banner -- */
     #conn-banner {
       display: none;
       background: var(--red-dim);
-      border: 1px solid var(--red);
+      border-bottom: 1px solid var(--red);
       color: var(--red);
       text-align: center;
-      padding: 8px;
+      padding: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+    }
+
+    /* ================================================================
+       KPI STRIP (7-column, full width, 1px gap gridlines)
+       ================================================================ */
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 1px;
+      background: var(--border);
+    }
+
+    .kpi {
+      background: var(--bg-1);
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .kpi-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-3);
+    }
+
+    .kpi-value {
+      font-family: var(--font-mono);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-0);
+      line-height: 1.2;
+    }
+
+    .kpi-sub {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-2);
+    }
+
+    .kpi-value.positive { color: var(--green); }
+    .kpi-value.negative { color: var(--red); }
+    .kpi-value.warn     { color: var(--yellow); }
+
+    /* -- Risk bar -- */
+    .risk-bar-track {
+      height: 4px;
+      background: var(--bg-3);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    .risk-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width .5s ease, background .5s ease;
+    }
+
+    /* ================================================================
+       DASHBOARD GRID (4-column, 1px gap gridlines)
+       ================================================================ */
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      grid-template-rows: minmax(200px, 1fr) minmax(160px, 1fr) minmax(160px, 1fr);
+      gap: 1px;
+      background: var(--border);
+      flex: 1;
+      padding-top: 1px;
+    }
+
+    .equity-panel    { grid-column: 1 / 4; }
+    .system-panel    { grid-column: 4 / 5; }
+    .positions-panel { grid-column: 1 / 3; }
+    .pipeline-panel  { grid-column: 3 / 5; }
+    .trades-panel    { grid-column: 1 / 3; }
+    .health-panel    { grid-column: 3 / 5; }
+
+    .panel {
+      background: var(--bg-1);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border-accent);
+    }
+
+    .panel-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-3);
+    }
+
+    .panel-body { flex: 1; }
+
+    #equity-chart { width: 100%; height: 100%; min-height: 200px; }
+
+    /* ================================================================
+       DATA TABLE
+       ================================================================ */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .data-table th {
+      text-align: left;
+      padding: 6px 12px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-3);
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--border-accent);
+      white-space: nowrap;
+    }
+
+    .data-table th.right, .data-table td.right { text-align: right; }
+
+    .data-table td {
+      padding: 5px 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-1);
+      border-bottom: 1px solid var(--bg-3);
+      white-space: nowrap;
+    }
+
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: var(--bg-2); }
+
+    .side-long  { color: var(--green); font-weight: 600; }
+    .side-short { color: var(--red); font-weight: 600; }
+    .pnl-pos  { color: var(--green); }
+    .pnl-neg  { color: var(--red); }
+    .pnl-zero { color: var(--text-3); }
+
+    /* -- Status pills -- */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .pill-open  { background: rgba(59,130,246,0.12); color: var(--accent); }
+    .pill-flat  { background: var(--bg-3); color: var(--text-3); }
+    .pill-long  { background: rgba(16,185,129,0.12); color: var(--green); }
+    .pill-short { background: rgba(239,68,68,0.12); color: var(--red); }
+    .pill-win   { background: rgba(16,185,129,0.12); color: var(--green); }
+    .pill-loss  { background: rgba(239,68,68,0.12); color: var(--red); }
+    .pill-be    { background: rgba(245,158,11,0.12); color: var(--yellow); }
+
+    /* ================================================================
+       SYSTEM ROWS
+       ================================================================ */
+    .sys-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 16px;
+      border-bottom: 1px solid var(--bg-3);
       font-size: 12px;
+    }
+
+    .sys-row:last-child { border-bottom: none; }
+
+    .sys-label { color: var(--text-2); font-size: 11px; }
+
+    .sys-value {
+      font-family: var(--font-mono);
+      font-size: 11px;
       font-weight: 600;
     }
 
-    /* ── Responsive ── */
-    @media (max-width: 700px) {
-      main { grid-template-columns: 1fr; }
-      .col-span-2 { grid-column: span 1; }
+    .sys-ok   { color: var(--green); }
+    .sys-warn { color: var(--yellow); }
+    .sys-err  { color: var(--red); }
+    .sys-dim  { color: var(--text-3); }
+
+    /* ================================================================
+       SIGNAL PIPELINE
+       ================================================================ */
+    .pipeline-pair {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--bg-3);
+    }
+
+    .pipeline-pair:last-child { border-bottom: none; }
+
+    .pipeline-pair-name {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--cyan);
+      margin-bottom: 6px;
+    }
+
+    .pipeline-stages {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .pipeline-stage {
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border: 1px solid;
+    }
+
+    .stage-pass { color: var(--green); border-color: var(--green-dim); background: rgba(16,185,129,0.08); }
+    .stage-fail { color: var(--red);   border-color: var(--red-dim);   background: rgba(239,68,68,0.08); }
+    .stage-idle { color: var(--text-3); border-color: var(--bg-3);     background: var(--bg-2); }
+
+    .pipeline-arrow {
+      color: var(--text-3);
+      font-size: 9px;
+      flex-shrink: 0;
+    }
+
+    .pipeline-meta {
+      display: flex;
+      gap: 10px;
+      margin-top: 5px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-2);
+    }
+
+    .pipeline-meta .label { color: var(--text-3); margin-right: 2px; }
+
+    /* ================================================================
+       TRADE FEED (Activity Log style)
+       ================================================================ */
+    .log-container {
+      max-height: 280px;
+      overflow-y: auto;
+    }
+
+    .log-container::-webkit-scrollbar { width: 4px; }
+    .log-container::-webkit-scrollbar-track { background: transparent; }
+    .log-container::-webkit-scrollbar-thumb { background: var(--border-accent); border-radius: 2px; }
+
+    .log-line {
+      display: flex;
+      align-items: center;
+      padding: 4px 16px;
+      border-bottom: 1px solid var(--bg-3);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      gap: 10px;
+    }
+
+    .log-line:last-child { border-bottom: none; }
+    .log-line:hover { background: var(--bg-2); }
+
+    .log-time  { color: var(--text-3); min-width: 50px; flex-shrink: 0; }
+    .log-level { font-weight: 700; text-transform: uppercase; min-width: 36px; flex-shrink: 0; font-size: 10px; }
+    .log-level.ok   { color: var(--green); }
+    .log-level.warn { color: var(--yellow); }
+    .log-level.err  { color: var(--red); }
+    .log-pair  { color: var(--cyan); font-weight: 600; min-width: 56px; flex-shrink: 0; }
+    .log-msg   { color: var(--text-1); }
+    .log-pnl   { margin-left: auto; font-weight: 700; flex-shrink: 0; }
+
+    /* ================================================================
+       METRICS GRID
+       ================================================================ */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+    }
+
+    .metric {
+      background: var(--bg-1);
+      padding: 10px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .metric-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-3);
+    }
+
+    .metric-value {
+      font-family: var(--font-mono);
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-0);
+    }
+
+    .metric-value.positive { color: var(--green); }
+    .metric-value.negative { color: var(--red); }
+
+    .empty-state {
+      text-align: center;
+      padding: 24px 16px;
+      color: var(--text-3);
+      font-size: 11px;
+      font-family: var(--font-mono);
+    }
+
+    /* ================================================================
+       FOOTER
+       ================================================================ */
+    .footer {
+      background: var(--bg-1);
+      border-top: 1px solid var(--border);
+      padding: 6px 16px;
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-3);
+    }
+
+    .footer a { color: var(--accent); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    /* ================================================================
+       RESPONSIVE
+       ================================================================ */
+    @media (max-width: 1200px) {
+      .kpi-strip { grid-template-columns: repeat(4, 1fr); }
+      .dashboard { grid-template-columns: 1fr 1fr; }
+      .equity-panel, .system-panel, .positions-panel,
+      .pipeline-panel, .trades-panel, .health-panel { grid-column: 1 / -1; }
+    }
+
+    @media (max-width: 768px) {
+      .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+      .topbar { flex-direction: column; gap: 8px; height: auto; padding: 8px 16px; }
     }
   </style>
 </head>
 <body>
 
-<div id="conn-banner">⚠ WebSocket disconnected — reconnecting…</div>
+<!-- -- Connection Banner -- -->
+<div id="conn-banner">&#9888; WebSocket disconnected &#8212; reconnecting&#8230;</div>
 
-<header>
-  <div class="header-title">
-    <span class="bolt">⚡</span>
-    ALPHAEDGE
-    <span style="font-weight:400; color: var(--muted); font-size:13px;">Momentum+Carry Forex</span>
-  </div>
-  <div class="header-badges">
-    <div id="badge-ib" class="badge disconnected">
-      <div class="dot"></div> IB Gateway
-    </div>
-    <div id="badge-session" class="badge session-off">
-      <div class="dot"></div> Session
-    </div>
-    <div class="badge mode-paper">
-      <div class="dot"></div> PAPER
+<!-- ================================================================
+     TOPBAR
+     ================================================================ -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo">ALPHAEDGE <span>| MOMENTUM+CARRY MONITOR</span></div>
+    <div class="mode-badge paper" id="mode-badge">
+      <span class="status-dot ok" id="status-dot"></span>
+      <span id="mode-text">PAPER</span>
     </div>
   </div>
-  <div id="next-session-badge" style="display:none; font-size:12px; color:var(--yellow); font-family:monospace; white-space:nowrap;"></div>
-  <div class="header-time" id="clock">—</div>
-</header>
+  <div class="topbar-right">
+    <span id="ib-status">IB --</span>
+    <span class="sep">|</span>
+    <span id="session-status">SESSION --</span>
+    <span class="sep">|</span>
+    <span id="clock">--:--:-- UTC</span>
+  </div>
+</div>
 
-<main>
+<!-- ================================================================
+     KPI STRIP (7 columns)
+     ================================================================ -->
+<div class="kpi-strip">
+  <div class="kpi">
+    <div class="kpi-label">Equity</div>
+    <div class="kpi-value" id="kpi-equity">--</div>
+    <div class="kpi-sub" id="kpi-equity-sub">initial: --</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Daily P&amp;L</div>
+    <div class="kpi-value" id="kpi-pnl">--</div>
+    <div class="kpi-sub" id="kpi-pnl-pct"></div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Risk Budget</div>
+    <div class="kpi-value" id="kpi-risk">--</div>
+    <div class="risk-bar-track">
+      <div class="risk-bar-fill" id="risk-bar" style="width:0%; background:var(--green);"></div>
+    </div>
+    <div class="kpi-sub" id="kpi-risk-sub"></div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Win Rate</div>
+    <div class="kpi-value" id="kpi-winrate">--</div>
+    <div class="kpi-sub" id="kpi-winloss"></div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Trades Today</div>
+    <div class="kpi-value" id="kpi-trades">0</div>
+    <div class="kpi-sub" id="kpi-trades-sub"></div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Loss Streak</div>
+    <div class="kpi-value" id="kpi-streak">0</div>
+    <div class="kpi-sub" id="kpi-streak-sub"></div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Remaining</div>
+    <div class="kpi-value" id="kpi-remaining">--</div>
+    <div class="kpi-sub">max daily trades</div>
+  </div>
+</div>
 
-  <!-- Daily Stats -->
-  <div class="card">
-    <div class="card-title">Daily Performance</div>
-    <div class="stat-grid">
-      <div class="stat">
-        <div class="stat-label">Total P&amp;L</div>
-        <div class="stat-value muted" id="stat-pnl">—</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Trades Today</div>
-        <div class="stat-value muted" id="stat-trades">—</div>
-      </div>
+<!-- ================================================================
+     DASHBOARD GRID (4-column)
+     ================================================================ -->
+<div class="dashboard">
+
+  <!-- Equity Panel (3 cols) -->
+  <div class="panel equity-panel">
+    <div class="panel-header">
+      <div class="panel-title">Equity Curve</div>
+      <div id="equity-delta" style="font-family:var(--font-mono); font-size:11px; font-weight:600;"></div>
+    </div>
+    <div class="panel-body">
+      <div id="equity-chart"></div>
     </div>
   </div>
 
-  <!-- Open Position -->
-  <div class="card">
-    <div class="card-title">Open Position</div>
-    <div id="position-content" class="pos-empty">No open position</div>
+  <!-- System Panel (1 col) -->
+  <div class="panel system-panel">
+    <div class="panel-header">
+      <div class="panel-title">System</div>
+    </div>
+    <div class="panel-body">
+      <div class="sys-row"><span class="sys-label">Gateway</span><span class="sys-value sys-dim" id="h-gateway">--</span></div>
+      <div class="sys-row"><span class="sys-label">Uptime</span><span class="sys-value sys-dim" id="h-uptime">--</span></div>
+      <div class="sys-row"><span class="sys-label">Reconcile</span><span class="sys-value sys-dim" id="h-reconcile">--</span></div>
+      <div class="sys-row"><span class="sys-label">P&amp;L Drift</span><span class="sys-value sys-dim" id="h-drift">--</span></div>
+      <div class="sys-row"><span class="sys-label">News</span><span class="sys-value sys-dim" id="h-news">--</span></div>
+      <div class="sys-row"><span class="sys-label">Regime</span><span class="sys-value sys-dim" id="h-regime">--</span></div>
+      <div class="sys-row"><span class="sys-label">Last Update</span><span class="sys-value sys-dim" id="h-update">--</span></div>
+    </div>
   </div>
 
-  <!-- Pairs / Signals -->
-  <div class="card col-span-2">
-    <div class="card-title">Pairs — Status</div>
-    <div class="table-wrap">
-      <table>
+  <!-- Positions Panel (2 cols) -->
+  <div class="panel positions-panel">
+    <div class="panel-header">
+      <div class="panel-title">Positions &amp; Pairs</div>
+    </div>
+    <div class="panel-body" style="overflow-x:auto;">
+      <table class="data-table">
         <thead>
           <tr>
             <th>Pair</th>
-            <th>Position</th>
-            <th>Trades</th>
-            <th>P&amp;L (USD)</th>
+            <th>Side</th>
+            <th class="right">Entry</th>
+            <th class="right">SL</th>
+            <th class="right">TP</th>
+            <th class="right">Lots</th>
+            <th class="right">P&amp;L</th>
+            <th class="right">P&amp;L $</th>
+            <th class="right">ADX</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody id="pairs-body">
-          <tr><td colspan="4" style="color:var(--muted); text-align:center;">Waiting for data…</td></tr>
+          <tr><td colspan="10" class="empty-state">Waiting for data&#8230;</td></tr>
         </tbody>
       </table>
     </div>
   </div>
 
-</main>
+  <!-- Pipeline Panel (2 cols) -->
+  <div class="panel pipeline-panel">
+    <div class="panel-header">
+      <div class="panel-title">Signal Pipeline</div>
+    </div>
+    <div class="panel-body" id="pipeline-container">
+      <div class="empty-state">Waiting for signal data&#8230;</div>
+    </div>
+  </div>
 
-<footer>
-  ALPHAEDGE v1.0.0 &nbsp;·&nbsp; <a href="/docs" target="_blank">API docs</a>
-  &nbsp;·&nbsp; <span id="last-update">Never updated</span>
-</footer>
+  <!-- Trades Panel (2 cols, activity log style) -->
+  <div class="panel trades-panel">
+    <div class="panel-header">
+      <div class="panel-title">Recent Trades</div>
+      <div id="trades-count" style="font-family:var(--font-mono); font-size:10px; color:var(--text-3);"></div>
+    </div>
+    <div class="panel-body">
+      <div class="log-container" id="trades-feed">
+        <div class="empty-state">No trades yet</div>
+      </div>
+    </div>
+  </div>
 
+  <!-- Performance Panel (2 cols, metrics grid) -->
+  <div class="panel health-panel">
+    <div class="panel-header">
+      <div class="panel-title">Performance</div>
+    </div>
+    <div class="panel-body">
+      <div class="metrics-grid">
+        <div class="metric">
+          <div class="metric-label">Daily Return</div>
+          <div class="metric-value" id="m-return">--</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Max Drawdown</div>
+          <div class="metric-value" id="m-drawdown">--</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Wins</div>
+          <div class="metric-value positive" id="m-wins">0</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Losses</div>
+          <div class="metric-value negative" id="m-losses">0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- -- FOOTER -- -->
+<div class="footer">
+  ALPHAEDGE v1.0.0 &nbsp;&middot;&nbsp; <a href="/docs" target="_blank">API</a>
+  &nbsp;&middot;&nbsp; <span id="ws-status">Connecting&#8230;</span>
+  &nbsp;&middot;&nbsp; <span id="last-update">Never updated</span>
+</div>
+
+<!-- ================================================================
+     JAVASCRIPT
+     ================================================================ -->
 <script>
-  // ── Config ──────────────────────────────────────────────────────
-  const WS_URL   = `ws://${location.host}/ws`;
-  const API_BASE = `${location.protocol}//${location.host}`;
-  let ws = null;
-  let reconnectTimer = null;
-  let pollTimer = null;
-  let pingTimer = null;
+(function () {
+  'use strict';
 
-  // ── Clock ────────────────────────────────────────────────────────
+  // ----------------------------------------------------------------
+  // CONFIG
+  // ----------------------------------------------------------------
+  var WS_URL   = 'ws://' + location.host + '/ws';
+  var API_BASE = location.protocol + '//' + location.host;
+  var RECONNECT_MS = 3000;
+  var EQUITY_POLL_MS = 10000;
+  var TRADES_POLL_MS = 15000;
+
+  var ws = null;
+  var reconnectTimer = null;
+  var pingTimer = null;
+
+  // ----------------------------------------------------------------
+  // CLOCK
+  // ----------------------------------------------------------------
   function updateClock() {
-    const now = new Date();
-    const utc  = now.toUTCString().replace('GMT', 'UTC');
-    document.getElementById('clock').textContent = utc;
+    var now = new Date();
+    document.getElementById('clock').textContent =
+      now.toISOString().substring(11, 19) + ' UTC';
   }
   setInterval(updateClock, 1000);
   updateClock();
 
-  // ── Render state ─────────────────────────────────────────────────
+  // ----------------------------------------------------------------
+  // EQUITY CHART (TradingView Lightweight Charts)
+  // ----------------------------------------------------------------
+  var chart = null;
+  var areaSeries = null;
+
+  function initChart() {
+    var container = document.getElementById('equity-chart');
+    if (!container || typeof LightweightCharts === 'undefined') return;
+
+    chart = LightweightCharts.createChart(container, {
+      width: container.clientWidth,
+      height: container.clientHeight || 240,
+      layout: {
+        background: { type: 'solid', color: '#0c1017' },
+        textColor: '#3f4f66',
+        fontSize: 10,
+        fontFamily: "'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace",
+      },
+      grid: {
+        vertLines: { color: '#1e2a3a' },
+        horzLines: { color: '#1e2a3a' },
+      },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+        borderColor: '#1e2a3a',
+      },
+      rightPriceScale: {
+        borderColor: '#1e2a3a',
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+        vertLine: { color: '#3b82f644', width: 1, style: 0 },
+        horzLine: { color: '#3b82f644', width: 1, style: 0 },
+      },
+    });
+
+    areaSeries = chart.addAreaSeries({
+      topColor: 'rgba(59,130,246,0.28)',
+      bottomColor: 'rgba(59,130,246,0.02)',
+      lineColor: '#3b82f6',
+      lineWidth: 2,
+      crosshairMarkerRadius: 4,
+      priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+    });
+
+    var ro = new ResizeObserver(function () {
+      if (chart) chart.applyOptions({
+        width: container.clientWidth,
+        height: container.clientHeight || 240,
+      });
+    });
+    ro.observe(container);
+  }
+
+  function updateEquityChart(points) {
+    if (!areaSeries || !points || points.length === 0) return;
+
+    var data = [];
+    for (var i = 0; i < points.length; i++) {
+      data.push({
+        time: Math.floor(new Date(points[i].timestamp).getTime() / 1000),
+        value: points[i].equity,
+      });
+    }
+
+    // Deduplicate by time
+    var seen = {};
+    var unique = [];
+    for (var j = 0; j < data.length; j++) {
+      if (!seen[data[j].time]) {
+        seen[data[j].time] = true;
+        unique.push(data[j]);
+      }
+    }
+    unique.sort(function (a, b) { return a.time - b.time; });
+    areaSeries.setData(unique);
+
+    // Color by P&L
+    if (unique.length >= 2) {
+      var first = unique[0].value;
+      var last = unique[unique.length - 1].value;
+      var isProfit = last >= first;
+      areaSeries.applyOptions({
+        topColor: isProfit ? 'rgba(16,185,129,0.28)' : 'rgba(239,68,68,0.28)',
+        bottomColor: isProfit ? 'rgba(16,185,129,0.02)' : 'rgba(239,68,68,0.02)',
+        lineColor: isProfit ? '#10b981' : '#ef4444',
+      });
+
+      var delta = last - first;
+      var el = document.getElementById('equity-delta');
+      el.textContent = (delta >= 0 ? '+' : '') + delta.toFixed(2) + ' $';
+      el.style.color = isProfit ? 'var(--green)' : 'var(--red)';
+    }
+
+    chart.timeScale().fitContent();
+  }
+
+  // ----------------------------------------------------------------
+  // FORMAT HELPERS
+  // ----------------------------------------------------------------
+  function fmtUSD(v) {
+    if (v == null) return '\u2014';
+    return (v >= 0 ? '+' : '') + v.toFixed(2) + ' $';
+  }
+
+  function pnlClass(v) {
+    if (v > 0) return 'pnl-pos';
+    if (v < 0) return 'pnl-neg';
+    return 'pnl-zero';
+  }
+
+  function fmtPrice(v, pair) {
+    if (v == null || v === 0) return '\u2014';
+    var digits = (pair && pair.indexOf('JPY') !== -1) ? 3 : 5;
+    return v.toFixed(digits);
+  }
+
+  function fmtPct(v) {
+    if (v == null) return '\u2014';
+    return v.toFixed(2) + '%';
+  }
+
+  function timeAgo(isoStr) {
+    if (!isoStr) return '\u2014';
+    var diff = Date.now() - new Date(isoStr).getTime();
+    if (diff < 60000) return Math.floor(diff / 1000) + 's ago';
+    if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+    return Math.floor(diff / 3600000) + 'h ago';
+  }
+
+  function shortTime(isoStr) {
+    if (!isoStr) return '';
+    var d = new Date(isoStr);
+    return String(d.getUTCHours()).padStart(2, '0') + ':' +
+           String(d.getUTCMinutes()).padStart(2, '0');
+  }
+
+  // ----------------------------------------------------------------
+  // RENDER STATE
+  // ----------------------------------------------------------------
   function render(state) {
-    // IB badge
-    const ibBadge = document.getElementById('badge-ib');
-    if (state.ib_connected) {
-      ibBadge.className = 'badge connected';
-      ibBadge.querySelector('.dot').classList.add('pulse');
-    } else {
-      ibBadge.className = 'badge disconnected';
-      ibBadge.querySelector('.dot').classList.remove('pulse');
-    }
+    // -- Topbar: IB status --
+    var ibEl = document.getElementById('ib-status');
+    ibEl.textContent = 'IB ' + (state.ib_connected ? 'CONNECTED' : 'DISCONNECTED');
+    ibEl.style.color = state.ib_connected ? 'var(--green)' : 'var(--red)';
 
-    // Session badge
-    const sessBadge = document.getElementById('badge-session');
+    // -- Topbar: Session status --
+    var sessEl = document.getElementById('session-status');
     if (state.session_active) {
-      sessBadge.className = 'badge session-on';
-      sessBadge.querySelector('.dot').classList.add('pulse');
-    } else {
-      sessBadge.className = 'badge session-off';
-      sessBadge.querySelector('.dot').classList.remove('pulse');
-    }
-
-    // Next session countdown
-    const nextEl = document.getElementById('next-session-badge');
-    if (state.next_session_utc && !state.session_active) {
-      const next = new Date(state.next_session_utc);
-      const diffMs = next - new Date();
+      sessEl.textContent = 'SESSION ACTIVE';
+      sessEl.style.color = 'var(--green)';
+    } else if (state.next_session_utc) {
+      var next = new Date(state.next_session_utc);
+      var diffMs = next - new Date();
       if (diffMs > 0) {
-        const h = Math.floor(diffMs / 3600000);
-        const m = Math.floor((diffMs % 3600000) / 60000);
-        nextEl.textContent = `⏳ Next session in ${h}h ${m}m`;
-        nextEl.style.display = 'block';
+        var h = Math.floor(diffMs / 3600000);
+        var m = Math.floor((diffMs % 3600000) / 60000);
+        sessEl.textContent = 'NEXT ' + h + 'h ' + m + 'm';
+        sessEl.style.color = 'var(--text-2)';
       } else {
-        nextEl.style.display = 'none';
+        sessEl.textContent = 'SESSION IDLE';
+        sessEl.style.color = 'var(--text-3)';
       }
     } else {
-      nextEl.style.display = 'none';
+      sessEl.textContent = 'SESSION IDLE';
+      sessEl.style.color = 'var(--text-3)';
     }
 
-    // Daily stats
-    const daily = state.daily || {};
-    const pnl   = daily.total_pnl_usd ?? daily.pnl_usd_today ?? 0;
-    const trades = daily.total_trades  ?? daily.trades_today  ?? 0;
+    // -- Mode badge: status dot --
+    var dot = document.getElementById('status-dot');
+    dot.className = 'status-dot ' + (state.ib_connected ? 'ok' : 'err');
 
-    const pnlEl = document.getElementById('stat-pnl');
-    pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' $';
-    pnlEl.className   = 'stat-value ' + (pnl > 0 ? 'green' : pnl < 0 ? 'red' : 'muted');
-
-    const trdEl = document.getElementById('stat-trades');
-    trdEl.textContent = trades;
-    trdEl.className   = 'stat-value ' + (trades > 0 ? 'yellow' : 'muted');
-
-    // Open position
-    const pos = state.position || {};
-    const posEl = document.getElementById('position-content');
-    const openPairs = (state.pairs || []).filter(p => p.is_position_open);
-
-    if (openPairs.length === 0) {
-      posEl.innerHTML = '<div class="pos-empty">No open position</div>';
+    // -- KPI: Equity --
+    var equity = state.current_equity || (state.daily || {}).equity || 0;
+    var startEq = state.starting_equity || 0;
+    var eqEl = document.getElementById('kpi-equity');
+    if (equity > 0) {
+      eqEl.textContent = '$' + equity.toLocaleString('en-US', {
+        minimumFractionDigits: 0, maximumFractionDigits: 0
+      });
     } else {
-      posEl.innerHTML = openPairs.map(p => `
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border);">
-          <div>
-            <span style="font-size:16px; font-weight:700; color:var(--cyan); font-family:monospace;">${p.pair}</span>
-            <span class="pill open" style="margin-left:8px;">OPEN</span>
-          </div>
-          <div style="text-align:right; font-family:monospace;">
-            <div style="font-size:12px; color:var(--muted);">P&amp;L (USD)</div>
-            <div style="font-size:18px; font-weight:700; color:${(p.pnl_usd_today||0) >= 0 ? 'var(--green)' : 'var(--red)'}">
-              ${((p.pnl_usd_today||0) >= 0 ? '+' : '') + (p.pnl_usd_today||0).toFixed(2)} $
-            </div>
-          </div>
-        </div>
-      `).join('');
+      eqEl.textContent = '--';
     }
+    document.getElementById('kpi-equity-sub').textContent =
+      startEq > 0 ? 'initial: $' + startEq.toLocaleString('en-US', {
+        minimumFractionDigits: 0, maximumFractionDigits: 0
+      }) : 'initial: --';
 
-    // Pairs table
-    const pairs = state.pairs || [];
-    const tbody = document.getElementById('pairs-body');
-    if (pairs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted); text-align:center;">No pairs configured</td></tr>';
+    // -- KPI: Daily P&L --
+    var daily = state.daily || {};
+    var pnl = daily.total_pnl_usd != null ? daily.total_pnl_usd :
+              (daily.pnl_usd_today != null ? daily.pnl_usd_today : 0);
+    var pnlEl = document.getElementById('kpi-pnl');
+    pnlEl.textContent = fmtUSD(pnl);
+    pnlEl.className = 'kpi-value ' + (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '');
+
+    var pnlPct = daily.pnl_pct_today != null ? daily.pnl_pct_today : null;
+    document.getElementById('kpi-pnl-pct').textContent = pnlPct != null ? fmtPct(pnlPct) : '';
+
+    // -- KPI: Risk Budget --
+    var limitPct = state.daily_loss_limit_pct || 3.0;
+    var usedPct = state.daily_loss_used_pct || 0;
+    var remaining = Math.max(0, limitPct - usedPct);
+    var riskEl = document.getElementById('kpi-risk');
+    riskEl.textContent = remaining.toFixed(1) + '%';
+    riskEl.className = 'kpi-value ' + (remaining < 1 ? 'negative' : remaining < 1.5 ? 'warn' : '');
+
+    var barPct = Math.min(100, (usedPct / limitPct) * 100);
+    var barEl = document.getElementById('risk-bar');
+    barEl.style.width = barPct + '%';
+    barEl.style.background = barPct > 80 ? 'var(--red)' : barPct > 50 ? 'var(--yellow)' : 'var(--green)';
+    document.getElementById('kpi-risk-sub').textContent =
+      usedPct.toFixed(1) + '% / ' + limitPct.toFixed(1) + '%';
+
+    // -- KPI: Win Rate --
+    var trades = daily.total_trades != null ? daily.total_trades :
+                 (daily.trades_today != null ? daily.trades_today : 0);
+    var wins = daily.wins_today || 0;
+    var losses = daily.losses_today || 0;
+    var wrEl = document.getElementById('kpi-winrate');
+    wrEl.textContent = trades > 0 ? (wins / trades * 100).toFixed(0) + '%' : '--';
+    wrEl.className = 'kpi-value ' +
+      (trades > 0 && wins / trades >= 0.5 ? 'positive' : trades > 0 ? 'negative' : '');
+    document.getElementById('kpi-winloss').textContent = wins + 'W / ' + losses + 'L';
+
+    // -- KPI: Trades Today --
+    document.getElementById('kpi-trades').textContent = trades;
+
+    // -- KPI: Loss Streak --
+    var streak = state.consecutive_losses || 0;
+    var streakEl = document.getElementById('kpi-streak');
+    streakEl.textContent = streak;
+    streakEl.className = 'kpi-value ' + (streak >= 3 ? 'negative' : streak >= 2 ? 'warn' : '');
+
+    // -- KPI: Remaining --
+    var rem = state.max_trades_remaining;
+    var remEl = document.getElementById('kpi-remaining');
+    if (rem != null && rem > 0) {
+      remEl.textContent = rem;
+      remEl.className = 'kpi-value ' + (rem <= 1 ? 'warn' : '');
+    } else if (rem === 0) {
+      remEl.textContent = '0';
+      remEl.className = 'kpi-value negative';
     } else {
-      tbody.innerHTML = pairs.map(p => {
-        const pnlV = p.pnl_usd_today || 0;
-        const pnlStr = (pnlV >= 0 ? '+' : '') + pnlV.toFixed(2) + ' $';
-        const pnlCls = pnlV > 0 ? 'color:var(--green)' : pnlV < 0 ? 'color:var(--red)' : 'color:var(--muted)';
-        const posPill = p.is_position_open
-          ? '<span class="pill open">OPEN</span>'
-          : '<span class="pill waiting">—</span>';
-        return `
-          <tr>
-            <td style="font-weight:700; color:var(--cyan);">${p.pair}</td>
-            <td>${posPill}</td>
-            <td style="color:var(--text);">${p.trades_today || 0}</td>
-            <td style="${pnlCls}; font-weight:600;">${pnlStr}</td>
-          </tr>`;
-      }).join('');
+      remEl.textContent = '--';
+      remEl.className = 'kpi-value';
     }
 
-    // Last update
+    // -- Signal Pipeline --
+    renderPipeline(state.signal_pipeline || []);
+
+    // -- Pairs Table --
+    renderPairsTable(state.pairs || []);
+
+    // -- System Health --
+    renderSystem(state);
+
+    // -- Performance Metrics --
+    renderMetrics(state);
+
+    // -- Last update --
+    document.getElementById('h-update').textContent =
+      new Date().toLocaleTimeString();
     document.getElementById('last-update').textContent =
       'Updated ' + new Date().toLocaleTimeString();
   }
 
-  // ── Fallback polling ─────────────────────────────────────────────
-  async function poll() {
-    try {
-      const r = await fetch(`${API_BASE}/api/state`);
-      if (r.ok) render(await r.json());
-    } catch (_) {}
+  // ----------------------------------------------------------------
+  // SIGNAL PIPELINE
+  // ----------------------------------------------------------------
+  function renderPipeline(pipeline) {
+    var container = document.getElementById('pipeline-container');
+    if (!pipeline || pipeline.length === 0) {
+      container.innerHTML = '<div class="empty-state">Waiting for signal data\u2026</div>';
+      return;
+    }
+
+    var stages = ['range', 'gap', 'engulf', 'carry', 'risk', 'order'];
+    var labels = ['RNG', 'GAP', 'ENG', 'CAR', 'RSK', 'ORD'];
+
+    var html = '';
+    for (var i = 0; i < pipeline.length; i++) {
+      var p = pipeline[i];
+      html += '<div class="pipeline-pair">';
+      html += '<div class="pipeline-pair-name">' + (p.pair || '???') + '</div>';
+      html += '<div class="pipeline-stages">';
+
+      for (var j = 0; j < stages.length; j++) {
+        if (j > 0) html += '<span class="pipeline-arrow">&#9656;</span>';
+        var key = stages[j] + '_ok';
+        var val = p[key];
+        var cls = val === true ? 'stage-pass' : val === false ? 'stage-fail' : 'stage-idle';
+        html += '<span class="pipeline-stage ' + cls + '">' + labels[j] + '</span>';
+      }
+
+      html += '</div>';
+
+      // Meta: ADX, Spread, ATR, Strength
+      html += '<div class="pipeline-meta">';
+      if (p.adx != null) html += '<span><span class="label">ADX</span>' + p.adx.toFixed(1) + '</span>';
+      if (p.spread != null) html += '<span><span class="label">SPR</span>' + p.spread.toFixed(1) + '</span>';
+      if (p.atr != null) html += '<span><span class="label">ATR</span>' + p.atr.toFixed(1) + '</span>';
+      if (p.strength != null) html += '<span><span class="label">SIG</span>' + (p.strength * 100).toFixed(0) + '%</span>';
+      html += '</div>';
+
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
   }
 
-  function startPolling() {
-    if (pollTimer) return;
-    poll();
-    pollTimer = setInterval(poll, 3000);
+  // ----------------------------------------------------------------
+  // PAIRS TABLE
+  // ----------------------------------------------------------------
+  function renderPairsTable(pairs) {
+    var tbody = document.getElementById('pairs-body');
+    if (!pairs || pairs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No pairs configured</td></tr>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < pairs.length; i++) {
+      var p = pairs[i];
+      var pnlUsd = p.pnl_usd_today || 0;
+      var pnlPips = p.pnl_pips_today || 0;
+      var isOpen = p.is_position_open;
+      var dir = p.direction || '';
+
+      var sideClass = '';
+      var sideText = '\u2014';
+      if (dir === 'LONG' || dir === 'BUY') { sideClass = 'side-long'; sideText = 'LONG'; }
+      else if (dir === 'SHORT' || dir === 'SELL') { sideClass = 'side-short'; sideText = 'SHORT'; }
+
+      var statusPill = isOpen
+        ? '<span class="pill pill-open">OPEN</span>'
+        : '<span class="pill pill-flat">FLAT</span>';
+
+      html += '<tr>';
+      html += '<td style="color:var(--cyan); font-weight:700;">' + (p.pair || '') + '</td>';
+      html += '<td class="' + sideClass + '">' + sideText + '</td>';
+      html += '<td class="right">' + fmtPrice(p.entry_price, p.pair) + '</td>';
+      html += '<td class="right">' + fmtPrice(p.stop_loss, p.pair) + '</td>';
+      html += '<td class="right">' + fmtPrice(p.take_profit, p.pair) + '</td>';
+      html += '<td class="right">' + (p.lot_size != null ? p.lot_size : '\u2014') + '</td>';
+      html += '<td class="right ' + pnlClass(pnlPips) + '">' + (pnlPips !== 0 ? pnlPips.toFixed(1) : '\u2014') + '</td>';
+      html += '<td class="right ' + pnlClass(pnlUsd) + '">' + fmtUSD(pnlUsd) + '</td>';
+      html += '<td class="right">' + (p.adx != null ? p.adx.toFixed(1) : '\u2014') + '</td>';
+      html += '<td>' + statusPill + '</td>';
+      html += '</tr>';
+    }
+
+    tbody.innerHTML = html;
   }
 
-  function stopPolling() {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  // ----------------------------------------------------------------
+  // RECENT TRADES (Activity Log style)
+  // ----------------------------------------------------------------
+  function renderTrades(trades) {
+    var feed = document.getElementById('trades-feed');
+    var countEl = document.getElementById('trades-count');
+
+    if (!trades || trades.length === 0) {
+      feed.innerHTML = '<div class="empty-state">No trades yet</div>';
+      countEl.textContent = '';
+      return;
+    }
+
+    countEl.textContent = trades.length + ' trade' + (trades.length > 1 ? 's' : '');
+    var sorted = trades.slice().reverse();
+    var html = '';
+
+    for (var i = 0; i < sorted.length; i++) {
+      var t = sorted[i];
+      var pnlUsd = t.pnl_usd || 0;
+      var levelClass = t.outcome === 'win' ? 'ok' : t.outcome === 'loss' ? 'err' : 'warn';
+      var levelText = (t.outcome || 'BE').toUpperCase();
+
+      html += '<div class="log-line">';
+      html += '<span class="log-time">' + shortTime(t.exit_time || t.entry_time) + '</span>';
+      html += '<span class="log-level ' + levelClass + '">' + levelText + '</span>';
+      html += '<span class="log-pair">' + (t.pair || '') + '</span>';
+      html += '<span class="log-msg">' + (t.direction || '') + ' @ ' + (t.entry_price || '') + '</span>';
+      html += '<span class="log-pnl ' + pnlClass(pnlUsd) + '">' + fmtUSD(pnlUsd) + '</span>';
+      html += '</div>';
+    }
+
+    feed.innerHTML = html;
   }
 
-  // ── WebSocket ────────────────────────────────────────────────────
-  function connect() {
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  // ----------------------------------------------------------------
+  // SYSTEM HEALTH
+  // ----------------------------------------------------------------
+  function renderSystem(state) {
+    // Gateway
+    var gwEl = document.getElementById('h-gateway');
+    var gwStatus = state.gateway_status || 'unknown';
+    gwEl.textContent = gwStatus.charAt(0).toUpperCase() + gwStatus.slice(1);
+    gwEl.className = 'sys-value ' +
+      (gwStatus === 'healthy' ? 'sys-ok' :
+       gwStatus === 'starting' ? 'sys-warn' :
+       gwStatus === 'down' ? 'sys-err' : 'sys-dim');
+
+    // Uptime
+    var upEl = document.getElementById('h-uptime');
+    if (state.gateway_uptime_s > 0) {
+      var hrs = Math.floor(state.gateway_uptime_s / 3600);
+      var mins = Math.floor((state.gateway_uptime_s % 3600) / 60);
+      upEl.textContent = hrs + 'h ' + mins + 'm';
+      upEl.className = 'sys-value sys-ok';
+    } else {
+      upEl.textContent = '--';
+      upEl.className = 'sys-value sys-dim';
+    }
+
+    // Reconcile
+    var recEl = document.getElementById('h-reconcile');
+    recEl.textContent = state.last_reconcile_utc ? timeAgo(state.last_reconcile_utc) : '--';
+    recEl.className = 'sys-value ' +
+      (state.reconcile_has_critical ? 'sys-err' :
+       state.last_reconcile_utc ? 'sys-ok' : 'sys-dim');
+
+    // Drift
+    var driftEl = document.getElementById('h-drift');
+    var drift = state.reconcile_drift_usd || 0;
+    if (!state.last_reconcile_utc) {
+      driftEl.textContent = '--';
+      driftEl.className = 'sys-value sys-dim';
+    } else {
+      driftEl.textContent = fmtUSD(drift);
+      driftEl.className = 'sys-value ' +
+        (Math.abs(drift) > 50 ? 'sys-err' :
+         Math.abs(drift) > 10 ? 'sys-warn' : 'sys-ok');
+    }
+
+    // News
+    var newsEl = document.getElementById('h-news');
+    if (state.news_blackout_active) {
+      newsEl.textContent = '\u26A0 BLACKOUT' +
+        (state.news_blackout_event ? ': ' + state.news_blackout_event : '');
+      newsEl.className = 'sys-value sys-warn';
+    } else {
+      newsEl.textContent = 'Clear';
+      newsEl.className = 'sys-value sys-ok';
+    }
+
+    // Regime
+    var regEl = document.getElementById('h-regime');
+    var regime = state.regime || 'unknown';
+    regEl.textContent = regime.replace('_', ' ').toUpperCase();
+    regEl.className = 'sys-value ' +
+      (regime === 'high_vol' ? 'sys-warn' :
+       regime === 'low_vol' ? 'sys-ok' : 'sys-dim');
+  }
+
+  // ----------------------------------------------------------------
+  // PERFORMANCE METRICS
+  // ----------------------------------------------------------------
+  function renderMetrics(state) {
+    var daily = state.daily || {};
+    var pnlPct = daily.pnl_pct_today;
+    var retEl = document.getElementById('m-return');
+    if (pnlPct != null) {
+      retEl.textContent = fmtPct(pnlPct);
+      retEl.className = 'metric-value ' + (pnlPct >= 0 ? 'positive' : 'negative');
+    }
+
+    var wins = daily.wins_today || 0;
+    var losses = daily.losses_today || 0;
+    document.getElementById('m-wins').textContent = wins;
+    document.getElementById('m-losses').textContent = losses;
+  }
+
+  // ----------------------------------------------------------------
+  // DATA FETCHING
+  // ----------------------------------------------------------------
+  function fetchState() {
+    fetch(API_BASE + '/api/state')
+      .then(function (res) { return res.json(); })
+      .then(function (data) { render(data); })
+      .catch(function () { /* silent -- WS is primary */ });
+  }
+
+  function fetchEquity() {
+    fetch(API_BASE + '/api/equity?limit=2000')
+      .then(function (res) { return res.json(); })
+      .then(function (data) { updateEquityChart(data); })
+      .catch(function () {});
+  }
+
+  function fetchTrades() {
+    fetch(API_BASE + '/api/trades?limit=50')
+      .then(function (res) { return res.json(); })
+      .then(function (data) { renderTrades(data); })
+      .catch(function () {});
+  }
+
+  // ----------------------------------------------------------------
+  // WEBSOCKET
+  // ----------------------------------------------------------------
+  function connectWS() {
+    if (ws) { try { ws.close(); } catch (e) {} }
 
     ws = new WebSocket(WS_URL);
 
-    ws.onopen = () => {
+    ws.onopen = function () {
       document.getElementById('conn-banner').style.display = 'none';
-      stopPolling();
-      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      // Single ping timer — clear previous one if reconnecting
-      if (pingTimer) { clearInterval(pingTimer); }
-      pingTimer = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); }, 20000);
+      document.getElementById('ws-status').textContent = 'WS connected';
+      document.getElementById('ws-status').style.color = 'var(--green)';
+
+      if (pingTimer) clearInterval(pingTimer);
+      pingTimer = setInterval(function () {
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send('ping');
+      }, 30000);
     };
 
-    ws.onmessage = (evt) => {
-      try { render(JSON.parse(evt.data)); } catch (_) {}
+    ws.onmessage = function (evt) {
+      if (evt.data === 'pong') return;
+      try {
+        var state = JSON.parse(evt.data);
+        render(state);
+      } catch (e) {}
     };
 
-    ws.onclose = () => {
+    ws.onclose = function () {
       document.getElementById('conn-banner').style.display = 'block';
-      startPolling();
-      reconnectTimer = setTimeout(connect, 5000);
+      document.getElementById('ws-status').textContent = 'WS disconnected';
+      document.getElementById('ws-status').style.color = 'var(--red)';
+      if (pingTimer) clearInterval(pingTimer);
+      reconnectTimer = setTimeout(connectWS, RECONNECT_MS);
     };
 
-    ws.onerror = () => { ws.close(); };
+    ws.onerror = function () {
+      ws.close();
+    };
   }
 
-  // ── Init ─────────────────────────────────────────────────────────
-  connect();
-  startPolling(); // Start polling immediately, WS will stop it when ready
+  // ----------------------------------------------------------------
+  // INIT
+  // ----------------------------------------------------------------
+  document.addEventListener('DOMContentLoaded', function () {
+    initChart();
+    connectWS();
+
+    fetchState();
+    fetchEquity();
+    fetchTrades();
+
+    setInterval(fetchEquity, EQUITY_POLL_MS);
+    setInterval(fetchTrades, TRADES_POLL_MS);
+  });
+
+})();
 </script>
 </body>
 </html>
