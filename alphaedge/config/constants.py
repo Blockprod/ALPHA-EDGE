@@ -230,6 +230,10 @@ IB_HEARTBEAT_INTERVAL_SECONDS: int = 30
 # Heartbeat: consider connection dead after this many consecutive missed probes
 IB_HEARTBEAT_MAX_MISSES: int = 3
 
+# Offset applied to client_id for the lightweight API health-probe connection.
+# Must not collide with any other client (EDGECORE uses 1, ALPHAEDGE uses 2).
+IB_PROBE_CLIENT_ID_OFFSET: int = 99
+
 # Kept for backward-compat (no longer driving the throttler)
 IB_MAX_REQUESTS_PER_10S: int = 50
 IB_PACING_WINDOW_SECONDS: float = 10.0

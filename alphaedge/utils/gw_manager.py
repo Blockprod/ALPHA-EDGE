@@ -45,6 +45,7 @@ from alphaedge.config.constants import (
     IB_GATEWAY_HEALTH_RETRIES,
     IB_GATEWAY_HEALTH_RETRY_DELAY_SECONDS,
     IB_GATEWAY_STARTUP_TIMEOUT_SECONDS,
+    IB_PROBE_CLIENT_ID_OFFSET,
     IB_TIMEOUT_SECONDS,
 )
 from alphaedge.config.loader import IBConfig
@@ -489,7 +490,7 @@ async def _validate_api_connection(config: IBConfig) -> bool:
         return False
 
     ib = IB()
-    probe_client_id = config.client_id + 99
+    probe_client_id = config.client_id + IB_PROBE_CLIENT_ID_OFFSET
     try:
         await asyncio.wait_for(
             ib.connectAsync(

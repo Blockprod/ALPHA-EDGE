@@ -69,6 +69,7 @@ def _make_strategy(pairs: list[str] | None = None) -> SwingStrategy:
     strat = SwingStrategy.__new__(SwingStrategy)
     strat._config = config
     strat._broker = broker
+    strat._broker.stop_heartbeat = AsyncMock()
     strat._executor = MagicMock()
     strat._hist_feed = MagicMock()
     strat._rt_feed = MagicMock()

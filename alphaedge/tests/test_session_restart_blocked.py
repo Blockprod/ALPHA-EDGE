@@ -58,6 +58,7 @@ def _build_strategy() -> tuple[SwingStrategy, MagicMock]:
         mock_broker = mock_broker_cls.return_value
 
     mock_broker.connect = AsyncMock(return_value=True)
+    mock_broker.stop_heartbeat = AsyncMock()
     strategy._rt_feed.unsubscribe_all = AsyncMock()
     strategy._broker.disconnect = AsyncMock()
     strategy._executor.get_open_positions = AsyncMock(return_value=[])

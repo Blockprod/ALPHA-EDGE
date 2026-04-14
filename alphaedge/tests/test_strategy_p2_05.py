@@ -159,6 +159,7 @@ class TestStartupReconcile:
         strategy._rt_feed.subscribe = AsyncMock()
         strategy._rt_feed.unsubscribe_all = AsyncMock()
         strategy._broker.disconnect = AsyncMock()
+        strategy._broker.stop_heartbeat = AsyncMock()
         strategy._executor.get_open_positions = AsyncMock(return_value=[])
         strategy._modules.momentum_detector.detect_momentum.return_value = None
 
@@ -205,6 +206,7 @@ class TestStartupReconcile:
         strategy._rt_feed.subscribe = AsyncMock()
         strategy._rt_feed.unsubscribe_all = AsyncMock()
         strategy._broker.disconnect = AsyncMock()
+        strategy._broker.stop_heartbeat = AsyncMock()
         strategy._modules.momentum_detector.detect_momentum.return_value = None
         # Simulate IB position open on EURUSD
         mock_pos = MagicMock()

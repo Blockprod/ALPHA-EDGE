@@ -242,6 +242,7 @@ class TestRestoredEquityOnRestart:
         strategy._rt_feed.subscribe = AsyncMock()
         strategy._rt_feed.unsubscribe_all = AsyncMock()
         strategy._broker.disconnect = AsyncMock()
+        strategy._broker.stop_heartbeat = AsyncMock()
         strategy._executor.get_open_positions = AsyncMock(
             return_value=[],
         )

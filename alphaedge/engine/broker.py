@@ -123,11 +123,20 @@ class BrokerConnection:
         # Heartbeat state
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._heartbeat_misses: int = 0
+        # Connection uptime tracking
+        self._connected_at: float = 0.0
 
     @property
     def is_connected(self) -> bool:
         """Return True if connected to IB Gateway."""
         return bool(self._ib.isConnected())
+
+    @property
+    def uptime_seconds(self) -> int:
+        """Seconds since last successful connection (0 if not connected)."""
+        if not self.is_connected or self._connected_at == 0.0:
+            return 0
+        return int(time.monotonic() - self._connected_at)
 
     @property
     def ib(self) -> IB:
@@ -211,6 +220,7 @@ class BrokerConnection:
             )
             self._connected = True
             self._consecutive_failures = 0
+            self._connected_at = time.monotonic()
             # Silence ib_insync's own console output (Timeout /
             # Error 162 lines) — our _on_ib_error handler takes over.
             logging.getLogger("ib_insync").setLevel(logging.CRITICAL)
@@ -241,6 +251,7 @@ class BrokerConnection:
             self._session_closing = True
             self._ib.disconnect()
             self._connected = False
+            self._connected_at = 0.0
             logger.info("ALPHAEDGE disconnected from IB Gateway")
 
     async def reconnect(self, max_retries: int = 3) -> bool:

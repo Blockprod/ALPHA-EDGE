@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from alphaedge.config.constants import (
@@ -119,6 +119,10 @@ class SessionLifecycle:
         # Pairs that passed the regime gate for the current session.
         # Used by _handle_reconnection to avoid re-subscribing filtered-out pairs.
         self._active_pairs: list[str] = []
+        # Last reconcile snapshot — exposed to web dashboard via get_live_state()
+        self._last_reconcile_utc: str = ""
+        self._last_reconcile_drift_usd: float = 0.0
+        self._last_reconcile_has_critical: bool = False
 
     # ------------------------------------------------------------------
     # Graceful shutdown
@@ -648,7 +652,14 @@ class SessionLifecycle:
         """Attempt reconnection and reconcile state if successful."""
         try:
             # Verify gateway process/API are alive before reconnecting
-            await ensure_gateway_ready(self._s._config.ib)
+            gw_ok = await ensure_gateway_ready(self._s._config.ib)
+            if not gw_ok:
+                logger.critical(
+                    "ALPHAEDGE: IB Gateway unreachable — aborting reconnect, "
+                    "shutting down"
+                )
+                self._s._shutdown_requested = True
+                return
 
             success = await self._s._broker.reconnect(max_retries=3)
             if success:
@@ -660,6 +671,9 @@ class SessionLifecycle:
                 for pair in self._active_pairs:
                     await self._s._rt_feed.subscribe(pair)
                 logger.info("ALPHAEDGE: Real-time feeds re-subscribed after reconnect")
+                # Restart heartbeat — _reset_ib_client() replaced the IB instance,
+                # so the previous heartbeat task is orphaned on the old client.
+                self._s._broker.start_heartbeat()
                 asyncio.ensure_future(
                     self._s._alert_manager.send_async(alert_ib_reconnected())
                 ).add_done_callback(self._on_task_done)
@@ -696,6 +710,10 @@ class SessionLifecycle:
             traded_pairs=set(self._s._config.trading.pairs),
             starting_equity=starting_equity,
         )
+        # Update dashboard snapshot
+        self._last_reconcile_utc = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._last_reconcile_drift_usd = report.pnl_drift_usd
+        self._last_reconcile_has_critical = report.has_critical
         for pair in report.pairs_corrected:
             asyncio.ensure_future(
                 self._s._alert_manager.send_async(
@@ -1143,7 +1161,7 @@ class SessionLifecycle:
             current_day_bar: dict[str, Any] = daily_bars[-1] if daily_bars else {}
 
             # Volatility regime gate: skip pair if session is too quiet/violent
-            if daily_bars and current_day_bar:
+            if daily_bars and current_day_bar and self._s._config.regime_gate_enabled:
                 regime = check_volatility_regime(daily_bars[:-1], current_day_bar)
                 if not regime.allowed:
                     logger.warning(
@@ -1294,6 +1312,9 @@ class SessionLifecycle:
             logger.error("ALPHAEDGE: Cannot start — IB Gateway unavailable")
             return
 
+        # Activate heartbeat — detects silent TCP drops missed by disconnectedEvent
+        self._s._broker.start_heartbeat()
+
         try:
             # Prime margin cache — must run before any order check
             await self._s._broker.refresh_account_funds()
@@ -1397,6 +1418,7 @@ class SessionLifecycle:
             await self._handle_session_end()
             # Cleanup
             await self._s._rt_feed.unsubscribe_all()
+            await self._s._broker.stop_heartbeat()
             # Flag the closing BEFORE disconnect so _on_ib_disconnect
             # knows this is an expected shutdown, not a network failure.
             self._session_closing = True

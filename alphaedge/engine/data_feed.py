@@ -433,13 +433,17 @@ class HistoricalDataFeed:
             logger.warning(f"ALPHAEDGE fetch_bars timed out: {pair} {timeframe}")
             return []
         except ConnectionError:
-            # IB Gateway disconnected (maintenance window / restart).
-            # Trigger reconnect so the chunk retry loop can continue.
+            # IB Gateway disconnected mid-fetch.
+            # Reconnect is handled by BrokerConnection._on_disconnect /
+            # SessionLifecycle._handle_reconnection.  Calling reconnect() here
+            # would race with that handler on the same client_id and cause a
+            # double-connect collision → do NOT reconnect here.
             logger.warning(
-                f"ALPHAEDGE IB disconnected mid-fetch ({pair} {timeframe}) "
-                "\u2014 reconnecting"
+                "ALPHAEDGE IB disconnected mid-fetch (%s %s) "
+                "— reconnect delegated to lifecycle",
+                pair,
+                timeframe,
             )
-            await self._broker.reconnect()
             return []
         except RuntimeError:
             logger.exception(

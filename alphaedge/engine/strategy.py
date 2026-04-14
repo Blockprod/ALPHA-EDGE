@@ -194,6 +194,9 @@ class SwingStrategy:
         # Session loop, execution, reconnect logic
         self._lifecycle = SessionLifecycle(self)
 
+        # Last known volatility regime — updated each bar in _detect_momentum
+        self._last_regime: str = "unknown"
+
         # Wire IB disconnect event for auto-reconnection
         self._broker.add_disconnect_handler(self._lifecycle._on_ib_disconnect)
 
@@ -233,6 +236,8 @@ class SwingStrategy:
         result = self._signal_pipeline.detect_momentum(
             state, self._modules, self._config
         )
+        # Cache regime for dashboard — updated even when signal is None
+        self._last_regime = regime
         if result is None:
             state.signal_result = None
             return None
@@ -304,6 +309,7 @@ class SwingStrategy:
     def get_live_state(self) -> dict[str, Any]:
         """Return a snapshot of current live state for the web dashboard."""
         from datetime import timedelta
+        from zoneinfo import ZoneInfo
 
         from alphaedge.utils.timezone import (
             get_session_window_utc,
@@ -334,6 +340,8 @@ class SwingStrategy:
             ]
         total_pnl = sum(s.pnl_usd_today for s in self._states.values())
         total_trades = sum(s.trades_today for s in self._states.values())
+        total_wins = sum(s.wins_today for s in self._states.values())
+        total_losses = sum(s.losses_today for s in self._states.values())
 
         # Compute next session start time
         now = now_utc()
@@ -347,16 +355,108 @@ class SwingStrategy:
             session_start.strftime("%Y-%m-%dT%H:%M:%SZ") if session_start > now else ""
         )
 
+        # Paris / CET/CEST local time
+        paris_tz = ZoneInfo("Europe/Paris")
+        paris_time = now.astimezone(paris_tz).strftime("%Y-%m-%dT%H:%M:%S")
+
+        # Equity
+        starting_equity = self._lifecycle._session_starting_equity
+        current_equity = 0.0
+        if self._states:
+            current_equity = next(
+                (
+                    s.current_equity
+                    for s in self._states.values()
+                    if s.current_equity > 0
+                ),
+                0.0,
+            )
+        if current_equity == 0.0 and starting_equity > 0:
+            current_equity = starting_equity
+
+        # Daily loss used
+        daily_loss_pct = self._config.trading.max_daily_loss_pct
+        if starting_equity > 0 and current_equity > 0:
+            daily_loss_used_pct = max(
+                0.0, (starting_equity - current_equity) / starting_equity * 100.0
+            )
+        else:
+            daily_loss_used_pct = 0.0
+
+        # Consecutive losses — worst single-pair streak
+        consecutive_losses = max(
+            (s.consecutive_losses_count for s in self._states.values()),
+            default=0,
+        )
+
+        # Trades remaining
+        max_trades = self._config.trading.max_trades_per_session
+        max_trades_remaining = max(0, max_trades - self._global_trades_today)
+
+        # Carry rates — aggregate across all active pair states
+        carry_rates: dict[str, Any] = {}
+        for s in self._states.values():
+            if s.carry_rates:
+                carry_rates[s.pair] = s.carry_rates
+
+        # Signal pipeline per pair
+        signal_pipeline = [
+            {
+                "pair": s.pair,
+                "signal": s.signal_result["direction"] if s.signal_result else None,
+            }
+            for s in self._states.values()
+        ]
+
+        # News blackout — check across all configured pairs
+        news_blackout_active = any(
+            self._news_filter.is_news_blackout(now, pair)
+            for pair in self._config.trading.pairs
+        )
+
+        # Gateway
+        gw_connected = self._broker.is_connected
+        gateway_status = "healthy" if gw_connected else "down"
+        gateway_uptime_s = self._broker.uptime_seconds
+
         return {
-            "ib_connected": self._broker.is_connected,
+            "ib_connected": gw_connected,
             "session_active": is_session_active() and not self._shutdown_requested,
             "next_session_utc": next_session_utc,
+            "paris_time": paris_time,
             "pairs": pairs_info,
             "position": {},
             "daily": {
                 "total_pnl_usd": total_pnl,
                 "total_trades": total_trades,
+                "wins_today": total_wins,
+                "losses_today": total_losses,
+                "pnl_pct_today": (
+                    (total_pnl / starting_equity * 100.0)
+                    if starting_equity > 0
+                    else 0.0
+                ),
             },
+            # Equity & risk
+            "starting_equity": starting_equity,
+            "current_equity": current_equity,
+            "daily_loss_limit_pct": daily_loss_pct,
+            "daily_loss_used_pct": daily_loss_used_pct,
+            "consecutive_losses": consecutive_losses,
+            "max_trades_remaining": max_trades_remaining,
+            # Signal pipeline
+            "signal_pipeline": signal_pipeline,
+            # System health
+            "gateway_status": gateway_status,
+            "gateway_uptime_s": gateway_uptime_s,
+            "last_reconcile_utc": self._lifecycle._last_reconcile_utc,
+            "reconcile_drift_usd": self._lifecycle._last_reconcile_drift_usd,
+            "reconcile_has_critical": self._lifecycle._last_reconcile_has_critical,
+            "news_blackout_active": news_blackout_active,
+            "news_blackout_event": "",
+            "regime": self._last_regime,
+            # Carry
+            "carry_rates": carry_rates,
         }
 
     async def run_session(self) -> None:
