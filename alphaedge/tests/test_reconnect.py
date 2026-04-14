@@ -136,6 +136,10 @@ class TestDisconnectTriggersReconnect:
             strategy._executor, "get_open_orders", AsyncMock(return_value=[])
         )
         monkeypatch.setattr(strategy._rt_feed, "subscribe", AsyncMock())
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
+            AsyncMock(return_value=True),
+        )
 
         await strategy._lifecycle._handle_reconnection()
 
@@ -172,6 +176,10 @@ class TestReconnectSuccessReconciles:
             strategy._executor, "get_open_orders", AsyncMock(return_value=[])
         )
         monkeypatch.setattr(strategy._rt_feed, "subscribe", AsyncMock())
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
+            AsyncMock(return_value=True),
+        )
 
         await strategy._lifecycle._handle_reconnection()
 
@@ -190,6 +198,10 @@ class TestReconnectFailureShutdown:
         strategy = _build_strategy()
         monkeypatch.setattr(
             strategy._broker, "reconnect", AsyncMock(return_value=False)
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
+            AsyncMock(return_value=True),
         )
 
         await strategy._lifecycle._handle_reconnection()
