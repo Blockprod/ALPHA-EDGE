@@ -618,17 +618,18 @@ class TestDoLoginFill:
 
     def test_fills_credentials_and_clicks_login(self) -> None:
         mock_w32gui, mock_kb, mock_mouse = self._make_mocks()
-        with patch(
-            "alphaedge.utils.gw_manager._find_gateway_hwnd", return_value=0x1234
+        with (
+            patch("alphaedge.utils.gw_manager._find_gateway_hwnd", return_value=0x1234),
+            patch("time.sleep"),  # avoid real waits (1.5s focus + 2s post-submit)
         ):
             result = _do_login_fill(
                 "myuser", "mypass", mock_w32gui, mock_kb, mock_mouse
             )
         assert result is True
-        # 3 clicks: username field, password field, login button
-        assert mock_mouse.click.call_count == 3
-        # 4 keyboard calls: ^a + text for each field
-        assert mock_kb.send_keys.call_count >= 4
+        # 7 clicks: triple-click username (3) + triple-click password (3) + login (1)
+        assert mock_mouse.click.call_count == 7
+        # 3 keyboard calls: username text + {TAB} + password text (no Ctrl+A)
+        assert mock_kb.send_keys.call_count == 3
 
     def test_focus_error_returns_false(self) -> None:
         mock_w32gui, mock_kb, mock_mouse = self._make_mocks()

@@ -63,6 +63,13 @@ _GW_LOGIN_BTN_RE = r"Connexion|Login|Log In|Se connecter"
 # This value has been stable in the Windows API since Windows 3.1.
 _SW_RESTORE: int = 9
 
+# Guard against re-submitting the login form while IB Gateway is processing
+# authentication.  Auth takes 30–60 s; the poll loop runs every 10 s.
+# Without this guard the form would be refilled on each cycle, confusing
+# the authentication server and causing systematic login failures.
+_last_login_submitted_at: float = 0.0
+_LOGIN_SUBMIT_COOLDOWN_SECONDS: float = 90.0
+
 
 # ------------------------------------------------------------------
 # Win32 / pywinauto Protocol shims (for type checking without stubs)
@@ -319,6 +326,17 @@ def _fill_gateway_login_sync(username: str, password: str) -> bool:
         True if credentials were submitted.  False if the window was not
         visible yet — will be retried on the next poll cycle.
     """
+    import time
+
+    global _last_login_submitted_at
+    elapsed = time.monotonic() - _last_login_submitted_at
+    if elapsed < _LOGIN_SUBMIT_COOLDOWN_SECONDS:
+        logger.debug(
+            f"ALPHAEDGE GW: Login cooldown active — submitted {elapsed:.0f}s ago "
+            f"(retry after {_LOGIN_SUBMIT_COOLDOWN_SECONDS:.0f}s cooldown)"
+        )
+        return False
+
     try:
         import pywinauto.keyboard as pw_keyboard
         import pywinauto.mouse as pw_mouse
@@ -330,13 +348,16 @@ def _fill_gateway_login_sync(username: str, password: str) -> bool:
         )
         return False
 
-    return _do_login_fill(
+    submitted = _do_login_fill(
         username,
         password,
         cast(_Win32Gui, win32gui),
         cast(_PwKeyboard, pw_keyboard),
         cast(_PwMouse, pw_mouse),
     )
+    if submitted:
+        _last_login_submitted_at = time.monotonic()
+    return submitted
 
 
 def _do_login_fill(
@@ -366,7 +387,14 @@ def _do_login_fill(
         logger.debug(f"ALPHAEDGE GW: Could not focus window — {exc}")
         return False
 
-    time.sleep(0.8)  # wait for focus
+    time.sleep(1.5)  # wait for Java Swing to finish rendering all controls
+
+    # Re-check: if the window closed while waiting, auth already completed.
+    if not win32gui.IsWindowVisible(hwnd):
+        logger.info(
+            "ALPHAEDGE GW: Login window closed while focusing — already authenticated"
+        )
+        return True
 
     rect = win32gui.GetWindowRect(hwnd)
     cx = (rect[0] + rect[2]) // 2
@@ -381,19 +409,29 @@ def _do_login_fill(
     btn_y = win_top + int(win_h * 0.67)
 
     try:
-        # Username field
+        # Username field — rapid triple-click selects all existing text in the
+        # JTextField without relying on Ctrl+A (which fails when Java Swing focus
+        # is not fully established after SetForegroundWindow).
         pw_mouse.click(coords=(cx, user_y))
-        time.sleep(0.3)
-        pw_keyboard.send_keys("^a")  # select all (clear existing)
-        pw_keyboard.send_keys(_escape_sendkeys(username), with_spaces=True, pause=0.02)
+        time.sleep(0.05)
+        pw_mouse.click(coords=(cx, user_y))
+        time.sleep(0.05)
+        pw_mouse.click(coords=(cx, user_y))
+        time.sleep(0.4)
+        pw_keyboard.send_keys(_escape_sendkeys(username), with_spaces=True, pause=0.05)
 
-        # Password field
+        # Password field — Tab out of username then triple-click for selection.
+        pw_keyboard.send_keys("{TAB}", pause=0.1)
+        time.sleep(0.3)
         pw_mouse.click(coords=(cx, pass_y))
-        time.sleep(0.3)
-        pw_keyboard.send_keys("^a")
-        pw_keyboard.send_keys(_escape_sendkeys(password), with_spaces=True, pause=0.02)
+        time.sleep(0.05)
+        pw_mouse.click(coords=(cx, pass_y))
+        time.sleep(0.05)
+        pw_mouse.click(coords=(cx, pass_y))
+        time.sleep(0.4)
+        pw_keyboard.send_keys(_escape_sendkeys(password), with_spaces=True, pause=0.05)
 
-        time.sleep(0.2)
+        time.sleep(0.3)
 
         # Connexion button
         pw_mouse.click(coords=(cx, btn_y))
@@ -401,6 +439,19 @@ def _do_login_fill(
         logger.info(
             "ALPHAEDGE GW: Login credentials submitted — awaiting authentication"
         )
+        # Post-submit check: if the login window is still visible after 2 s the
+        # button click may have missed.  The cooldown guard prevents re-submit for
+        # 90 s — the next cycle will retry once the cooldown expires.
+        time.sleep(2.0)
+        if _find_gateway_hwnd(cast(_Win32Gui, win32gui)):
+            logger.warning(
+                "ALPHAEDGE GW: Login window still visible 2 s after submit — "
+                "button click may have missed; retrying after cooldown"
+            )
+        else:
+            logger.info(
+                "ALPHAEDGE GW: Login window dismissed — authentication accepted"
+            )
         return True
 
     except Exception as exc:
