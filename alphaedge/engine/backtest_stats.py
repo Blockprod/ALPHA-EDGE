@@ -73,8 +73,10 @@ def compute_stats(
     stats.total_pnl_usd = sum(t.pnl_usd for t in trades)
     stats.total_pnl_eur = stats.total_pnl_usd / eur_usd_rate
     stats.max_drawdown_pct = _compute_max_drawdown(trades, starting_equity)
-    stats.sharpe_ratio = _compute_sharpe(trades)
-    stats.sharpe_equity = _compute_equity_sharpe(trades, starting_equity)
+    stats.sharpe_ratio = _compute_sharpe(trades, starting_equity=starting_equity)
+    stats.sharpe_equity = (
+        stats.sharpe_ratio
+    )  # identical: kept for display + backward compat
 
     stats.avg_win_pips = float(np.mean([t.pnl_pips for t in wins])) if wins else 0.0
     stats.avg_loss_pips = (
@@ -220,52 +222,34 @@ def _compute_max_drawdown(
 
 def _compute_sharpe(
     trades: list[TradeRecord],
+    starting_equity: float = 10000.0,
     risk_free_rate: float = 0.0,
 ) -> float:
     """
-    Calculate annualized Sharpe ratio from trade P&L.
+    Annualised Sharpe ratio from equity-percentage returns.
+
+    Uses ``pnl_usd[i] / running_equity[i-1]`` as the return series
+    (not raw pips — pips do not scale with position size or equity).
+    Annualised by ``sqrt(252)`` assuming a maximum of one trade per
+    NYSE trading day.
 
     Parameters
     ----------
     trades : list[TradeRecord]
         Completed trades.
+    starting_equity : float
+        Initial equity for the equity curve.
     risk_free_rate : float
-        Annual risk-free rate.
+        Per-trade risk-free rate (default 0 — acceptable for Forex).
 
     Returns
     -------
     float
-        Annualized Sharpe ratio.
-    """
-    if len(trades) < 2:
-        return 0.0
-
-    returns = [t.pnl_pips for t in trades]
-    avg_return = np.mean(returns)
-    std_return = np.std(returns, ddof=1)
-
-    if std_return == 0:
-        return 0.0
-
-    # Annualize assuming ~252 trading days
-    sharpe = (avg_return - risk_free_rate) / std_return
-    return float(sharpe * np.sqrt(252))
-
-
-def _compute_equity_sharpe(
-    trades: list[TradeRecord],
-    starting_equity: float = 10000.0,
-) -> float:
-    """
-    Annualised Sharpe ratio computed from equity percentage returns.
-
-    Uses ``pnl_usd / running_equity`` per trade (requires
-    ``_apply_equity_sizing`` to have been called beforehand for accurate
-    dollar values).  This is the Sharpe that corresponds to the % return
-    shown in the P&L section.
+        Annualised Sharpe ratio.
     """
     if len(trades) < 2 or starting_equity <= 0:
         return 0.0
+
     equity = starting_equity
     pct_returns: list[float] = []
     for t in trades:
@@ -274,11 +258,28 @@ def _compute_equity_sharpe(
         else:
             pct_returns.append(0.0)
         equity += t.pnl_usd
+
     arr = np.array(pct_returns)
     std = float(arr.std(ddof=1))
     if std == 0:
         return 0.0
-    return float(arr.mean() / std * np.sqrt(252))
+
+    # Annualise assuming max-one-trade-per-day cadence (252 NYSE days).
+    return float((arr.mean() - risk_free_rate) / std * np.sqrt(252))
+
+
+def _compute_equity_sharpe(
+    trades: list[TradeRecord],
+    starting_equity: float = 10000.0,
+) -> float:
+    """
+    Alias for ``_compute_sharpe()`` — kept for call-site compatibility.
+
+    Both ``sharpe_ratio`` and ``sharpe_equity`` in ``BacktestStats`` use
+    equity-percentage returns.  This wrapper ensures existing tests and
+    scripts that import ``_compute_equity_sharpe`` continue to work.
+    """
+    return _compute_sharpe(trades, starting_equity=starting_equity)
 
 
 # ------------------------------------------------------------------
@@ -435,10 +436,9 @@ def _log_stats_summary(
     logger.info(f"    Max consec. losses:   {stats.max_consec_losses}")
     logger.info(f"  {'PERFORMANCE':}")
     logger.info(f"    Profit factor:        {stats.profit_factor:.2f}")
-    logger.info(f"    Sharpe (pips):        {stats.sharpe_ratio:.2f}  [signal quality]")
     logger.info(
-        f"    Sharpe (equity %):    {stats.sharpe_equity:.2f}"
-        f"  [real risk-adjusted return]"
+        f"    Sharpe (equity %):    {stats.sharpe_ratio:.2f}"
+        f"  [annualised, equity pct returns]"
     )
     logger.info(f"    Max drawdown:         {stats.max_drawdown_pct:.2f}%")
     total_return_pct = (
@@ -588,10 +588,9 @@ def print_rich_summary(
     tbl.add_section()
     tbl.add_row("[bold]PERFORMANCE[/bold]", "")
     tbl.add_row("  Profit factor", f"{stats.profit_factor:.2f}")
-    tbl.add_row("  Sharpe (pips)", f"{stats.sharpe_ratio:.2f}")
     tbl.add_row(
         "  Sharpe (equity %)",
-        f"[{sharpe_color}]{stats.sharpe_equity:.2f}[/{sharpe_color}]",
+        f"[{sharpe_color}]{stats.sharpe_ratio:.2f}[/{sharpe_color}]",
     )
     tbl.add_row(
         "  Max drawdown", f"[{dd_color}]{stats.max_drawdown_pct:.2f}%[/{dd_color}]"

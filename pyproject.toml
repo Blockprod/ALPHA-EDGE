@@ -57,6 +57,12 @@ asyncio_mode = "auto"
 norecursedirs = ["build", ".venv", "__pycache__", "*.egg-info", ".git"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+filterwarnings = [
+    # MagicMock objects are GC'd while pytest-asyncio's event loop is still active;
+    # this triggers a CPython-internal AsyncMock coroutine that is never awaited.
+    # Not a test defect — suppressed globally to keep the output clean.
+    "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
+]
 markers = [
     "compiled: tests that require compiled Cython .pyd/.so modules (skipped if unavailable)",
 ]

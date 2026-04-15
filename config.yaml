@@ -146,7 +146,7 @@ momentum:
   fast_period: 12        # EMA fast period
   slow_period: 26        # EMA slow period
   adx_period: 14         # ADX smoothing period
-  adx_threshold: 30.0    # Minimum ADX to confirm trend (gate) — raised 2026-04-01: ADX≥30 = strong trend (institutional standard)
+  adx_threshold: 32.0    # Minimum ADX to confirm trend (gate) — raised 2026-04-01: ADX≥30; raised 2026-04-14: ADX≥32 (WF OOS: PF 1.83→2.02, Sharpe 4.67→5.46, WR 51.8→54.2%)
   lookback_days: 252     # Historical bars for signal computation
 
 # --- Carry Signal Parameters ---

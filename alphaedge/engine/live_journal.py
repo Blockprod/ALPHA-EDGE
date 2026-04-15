@@ -46,6 +46,7 @@ CSV_HEADERS = [
     "pnl_eur",
     "entry_time",
     "exit_time",
+    "fill_status",
 ]
 
 
@@ -90,6 +91,7 @@ def append_live_trade_csv(record: LiveTradeRecord) -> None:
         "pnl_eur": round(record.pnl_eur, 2),
         "entry_time": (record.entry_time.isoformat() if record.entry_time else ""),
         "exit_time": (record.exit_time.isoformat() if record.exit_time else ""),
+        "fill_status": record.fill_status,
     }
     tmp_fd, tmp_path = tempfile.mkstemp(
         dir=path.parent, suffix=".tmp", prefix="live_journal_"

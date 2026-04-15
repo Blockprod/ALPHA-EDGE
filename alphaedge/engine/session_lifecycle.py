@@ -207,14 +207,30 @@ class SessionLifecycle:
 
             if status == "Filled":
                 remaining = float(getattr(order_status, "remaining", 0.0))
-                fill_type = "partial" if remaining > 0 else "full"
-                if fill_type == "partial":
-                    logger.warning(
-                        "ALPHAEDGE: Partial fill — {} — remaining={} units",
+                if remaining > 0:
+                    logger.critical(
+                        "ALPHAEDGE: Partial fill — {} — remaining={} units"
+                        " — cancelling all legs (Option A)",
                         state.pair,
                         remaining,
                     )
-                return (trades_placed, fill_type)
+                    asyncio.ensure_future(
+                        self._s._alert_manager.send_async(
+                            Alert(
+                                event=AlertEvent.TRADE_EXECUTED,
+                                level=AlertLevel.CRITICAL,
+                                title=f"⚠️ Partial fill — {state.pair} — CANCELLED",
+                                message=(
+                                    "Parent order partially filled "
+                                    f"(remaining={remaining}). "
+                                    "All legs cancelled. No open position."
+                                ),
+                            )
+                        )
+                    ).add_done_callback(self._on_task_done)
+                    await self._s._executor.cancel_all_orders()
+                    return None
+                return (trades_placed, "full")
 
             if status in ("Cancelled", "Inactive", "ApiCancelled"):
                 logger.critical(
@@ -340,8 +356,9 @@ class SessionLifecycle:
         state.trades_today += 1
         self._s._global_trades_today += 1
         state.is_position_open = True
-        task = asyncio.ensure_future(asyncio.to_thread(self._persist_daily_state))
-        task.add_done_callback(self._on_task_done)
+        # B-01-C: call synchronously so state is persisted before any
+        # concurrent async path can overwrite it with a stale snapshot.
+        self._persist_daily_state()
 
     # ------------------------------------------------------------------
     # Trade execution — orchestrator
@@ -492,6 +509,15 @@ class SessionLifecycle:
                                 "avgFillPrice",
                                 None,
                             )
+                            # Fallback: last fill execution average price
+                            if not raw_exit:
+                                fills = getattr(ib_trade, "fills", None)
+                                if fills:
+                                    raw_exit = getattr(
+                                        getattr(fills[-1], "execution", None),
+                                        "avgPrice",
+                                        None,
+                                    )
                         exit_price = float(raw_exit) if raw_exit else 0.0
 
                         pnl_pips = (
@@ -560,13 +586,24 @@ class SessionLifecycle:
                                 )
                         state.pnl_usd_today += record.pnl_usd
 
-                        # Determine exit reason from bracket child order ID
-                        if filled_id is not None and (
+                        # Determine exit reason from bracket child order ID.
+                        # Cast filled_id to int — ib_insync may return an IB
+                        # OrderId type that does not compare equal to a plain int.
+                        filled_id_int = (
+                            int(filled_id) if filled_id is not None else None
+                        )
+                        if filled_id_int is not None and (
                             state._tp_order_id or state._sl_order_id
                         ):
-                            if filled_id == state._tp_order_id:
+                            if (
+                                state._tp_order_id > 0
+                                and filled_id_int == state._tp_order_id
+                            ):
                                 record.exit_reason = "tp_hit"
-                            elif filled_id == state._sl_order_id:
+                            elif (
+                                state._sl_order_id > 0
+                                and filled_id_int == state._sl_order_id
+                            ):
                                 record.exit_reason = "sl_hit"
                             else:
                                 record.exit_reason = "unknown"
@@ -760,6 +797,11 @@ class SessionLifecycle:
         """Handle incoming real-time M1 bar data."""
         if self._s._shutdown_requested:
             return
+        # B-01-B: drop bar events while reconnection is in progress to avoid
+        # accessing partially-reinitialised pair state (feeds re-subscribed
+        # but state dict not yet fully reset).
+        if self._s._reconnecting:
+            return
 
         state = self._s._states.get(pair)
         if state is None:
@@ -840,8 +882,13 @@ class SessionLifecycle:
                 )
                 return
 
-        # Per-pair risk cap: quick pre-check (without lock)
-        open_pairs = [p for p, s in self._s._states.items() if s.is_position_open]
+        # Per-pair risk cap: quick pre-check (without lock).
+        # B-01-A: include _executing_pairs so a pair already reserved by
+        # _atomic_check_and_execute (lock released, awaiting spread/fill)
+        # is visible here and prevents scheduling a redundant task.
+        open_pairs = [
+            p for p, s in self._s._states.items() if s.is_position_open
+        ] + list(self._s._executing_pairs)
         risk_mod = self._s._modules.risk_manager
         pair_check: dict[str, Any] = risk_mod.check_pair_limit(
             pair=pair,

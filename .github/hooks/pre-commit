@@ -2,6 +2,7 @@
 # ALPHAEDGE — pre-commit hook
 # 1. ruff --fix auto-corrects E501 and other fixable issues on staged .py files
 # 2. pre_commit_guard.py blocks .env / type:ignore violations
+# 3. check_stub_parity.py blocks .pyx ↔ _stubs/ signature drift
 
 set -e
 
@@ -14,3 +15,10 @@ if [ -n "$STAGED_PY" ]; then
 fi
 
 PYTHONUTF8=1 .venv/Scripts/python.exe scripts/pre_commit_guard.py
+
+# B-06: Block commit if .pyx public signatures diverge from _stubs/
+PYTHONUTF8=1 .venv/Scripts/python.exe scripts/check_stub_parity.py || {
+    echo "ERROR: .pyx ↔ stub signature mismatch detected."
+    echo "Update alphaedge/core/_stubs/ to match .pyx before committing."
+    exit 1
+}

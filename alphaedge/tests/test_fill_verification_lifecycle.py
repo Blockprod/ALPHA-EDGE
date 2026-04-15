@@ -137,8 +137,8 @@ class TestFillStatusTracking:
         assert state.live_record.fill_status == "full"
 
     @pytest.mark.asyncio()
-    async def test_partial_fill_sets_status_partial(self) -> None:
-        """orderStatus.remaining > 0 → fill_status='partial', trade still opens."""
+    async def test_partial_fill_cancels_position(self) -> None:
+        """orderStatus.remaining > 0 → B-05: cancel all legs, no position opened."""
         strategy = _build_strategy()
         state = strategy._init_pair_state("EURUSD")
         state.starting_equity = 10000.0
@@ -149,13 +149,13 @@ class TestFillStatusTracking:
 
         trade = _make_trade(status="Filled", remaining=200.0)
         strategy._executor.place_bracket_order = AsyncMock(return_value=[trade])
+        strategy._executor.cancel_all_orders = AsyncMock()
 
         result = await strategy._lifecycle._execute_signal(state, _signal(), 0.0001)
 
-        assert result is True
-        assert state.live_record is not None
-        assert state.live_record.fill_status == "partial"
-        assert state.is_position_open is True
+        assert result is False
+        assert state.is_position_open is False
+        strategy._executor.cancel_all_orders.assert_awaited_once()
 
 
 # ==================================================================

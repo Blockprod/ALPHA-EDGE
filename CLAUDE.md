@@ -1,4 +1,4 @@
-﻿# ⚡ ALPHAEDGE — AI Agent Entry Point
+# ⚡ ALPHAEDGE — AI Agent Entry Point
 
 > **Read this file first.** Review `tasks/lessons.md` at the start of EVERY session — no exceptions.
 
@@ -84,6 +84,9 @@ knowledge/     — contraintes IBKR + marché Forex
 
 Après tout `.pyx` : **`make build` → `make qa`** — les deux doivent passer.
 Les `.pyd`/`.so` sont le runtime — un `.pyx` sans `make build` est silencieusement cassé.
+
+**Toute modification de signature dans un `.pyx` impose la mise à jour manuelle du stub correspondant (`alphaedge/core/_stubs/<module>.py`) AVANT `make build`.**
+Le script `scripts/check_stub_parity.py` (et `test_stub_parity.py` dans `make qa`) bloquent si les signatures divergent.
 
 ---
 

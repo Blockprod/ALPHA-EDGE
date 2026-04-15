@@ -177,10 +177,11 @@ class TestComputeSharpe:
         assert _compute_sharpe([]) == 0.0
         assert _compute_sharpe([_make_trade(10.0)]) == 0.0
 
-    def test_uniform_returns_zero_std(self) -> None:
-        trades = [_make_trade(10.0, entry_offset=i) for i in range(5)]
+    def test_zero_pnl_returns_zero_sharpe(self) -> None:
+        """All breakeven trades (pnl_usd=0) → zero variance → Sharpe = 0."""
+        trades = [_make_trade(0.0, entry_offset=i) for i in range(5)]
         result = _compute_sharpe(trades)
-        assert result == 0.0  # std=0 → returns 0
+        assert result == 0.0
 
     def test_positive_return_positive_sharpe(self) -> None:
         trades = [
@@ -190,6 +191,44 @@ class TestComputeSharpe:
         ]
         result = _compute_sharpe(trades)
         assert result > 0.0
+
+    @pytest.mark.parametrize(
+        "trades_spec,starting_equity",
+        [
+            # 5 wins +200 USD, 5 losses −100 USD — positive expectancy
+            ([(200.0,) * 5 + (-100.0,) * 5], 10_000.0),
+            # 3 wins +100 USD, 7 losses −100 USD — negative expectancy
+            ([(100.0,) * 3 + (-100.0,) * 7], 10_000.0),
+        ],
+    )
+    def test_matches_numpy_formula(
+        self, trades_spec: list, starting_equity: float
+    ) -> None:
+        """_compute_sharpe must match the direct numpy equity-% formula (< 1e–6 rel).
+
+        This test would fail if the implementation regressed to pips-based
+        returns: uniform-pip trades produce zero variance in pip-space (Sharpe=0)
+        but non-zero variance in equity-% space (Sharpe≠0).
+        """
+        import numpy as np
+
+        usd_values: tuple[float, ...] = trades_spec[0]
+        trades = [
+            _make_trade(10.0, pnl_usd=usd, entry_offset=i)
+            for i, usd in enumerate(usd_values)
+        ]
+        # Reference: direct numpy equity-% computation
+        equity = starting_equity
+        pct: list[float] = []
+        for t in trades:
+            pct.append(t.pnl_usd / equity if equity > 0 else 0.0)
+            equity += t.pnl_usd
+        arr = np.array(pct)
+        std = float(arr.std(ddof=1))
+        expected = float(arr.mean() / std * np.sqrt(252)) if std > 0 else 0.0
+
+        result = _compute_sharpe(trades, starting_equity=starting_equity)
+        assert result == pytest.approx(expected, rel=1e-6)
 
 
 # ==================================================================

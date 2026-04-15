@@ -138,6 +138,7 @@ class PositionManager:
         Returns ``None`` when the order is rejected (spread too wide,
         R:R too low, lot size out of range, etc.).
         """
+        max_cap: float = getattr(config.trading, "max_lot_size", MAX_LOTS)
         bracket: BracketOrderResult = modules.order_manager.create_bracket_order(
             direction=signal["direction"],
             entry_price=signal["entry_price"],
@@ -149,7 +150,7 @@ class PositionManager:
             max_spread_pips=config.trading.max_spread_pips,
             min_rr=config.trading.rr_ratio * 0.9,
             min_lots=MIN_LOTS,
-            max_lots=MAX_LOTS,
+            max_lots=max_cap,
             adjust_for_spread=True,
         )
         if not bracket.get("is_valid", False):
