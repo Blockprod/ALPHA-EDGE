@@ -473,13 +473,13 @@ def _do_login_fill(
         logger.info(
             "ALPHAEDGE GW: Login credentials submitted — awaiting authentication"
         )
-        # Post-submit check: if the login window is still visible after 2 s the
+        # Post-submit check: if the login window is still visible after 5 s the
         # button click may have missed.  The cooldown guard prevents re-submit for
         # 90 s — the next cycle will retry once the cooldown expires.
-        time.sleep(2.0)
+        time.sleep(5.0)
         if _find_gateway_hwnd(cast(_Win32Gui, win32gui)):
             logger.warning(
-                "ALPHAEDGE GW: Login window still visible 2 s after submit — "
+                "ALPHAEDGE GW: Login window still visible 5 s after submit — "
                 "button click may have missed; retrying after cooldown"
             )
         else:

@@ -239,6 +239,10 @@ class SwingStrategy:
         # Cache regime for dashboard — updated even when signal is None
         self._last_regime = regime
         if result is None:
+            logger.info(
+                f"ALPHAEDGE: no momentum signal pair={state.pair} "
+                f"(ADX/EMA criteria not met)"
+            )
             state.signal_result = None
             return None
 

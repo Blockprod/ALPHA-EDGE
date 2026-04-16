@@ -360,9 +360,8 @@ class BrokerConnection:
             self._heartbeat_loop(interval=interval, max_misses=max_misses)
         )
         logger.info(
-            "ALPHAEDGE heartbeat started (interval=%ds, max_misses=%d)",
-            interval,
-            max_misses,
+            f"ALPHAEDGE heartbeat started "
+            f"(interval={interval}s, max_misses={max_misses})"
         )
 
     async def stop_heartbeat(self) -> None:
