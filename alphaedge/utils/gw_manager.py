@@ -38,6 +38,7 @@ import asyncio
 import pathlib
 import socket
 import subprocess
+import time
 from collections.abc import Callable
 from typing import Protocol, cast
 
@@ -223,6 +224,12 @@ async def ensure_gateway_ready(config: IBConfig) -> bool:
 _DETACHED_PROCESS: int = 0x00000008  # DETACHED_PROCESS
 _CREATE_NEW_PROCESS_GROUP: int = 0x00000200  # CREATE_NEW_PROCESS_GROUP
 
+# Shared mutex file that prevents EDGECORE_V1 and AlphaEdge from both launching
+# ibgateway.exe at the same moment.  Whichever process creates the file first
+# wins; the other defers.  Stale lock (> TTL) is auto-removed.
+_GW_LAUNCH_MUTEX_PATH = pathlib.Path(r"C:\Jts\ibgateway\.launch.lock")
+_GW_LAUNCH_MUTEX_TTL_SECONDS: float = 30.0
+
 
 def _start_gateway_process(gateway_path: str) -> bool:
     """Launch ``ibgateway.exe`` from *gateway_path*.
@@ -247,6 +254,31 @@ def _start_gateway_process(gateway_path: str) -> bool:
         logger.error(f"ALPHAEDGE GW: Gateway executable not found: {exe}")
         return False
 
+    # Cross-project mutex: prevent AlphaEdge and EDGECORE_V1 from both launching
+    # ibgateway.exe when they start at the same moment.  Exclusive O_CREAT|O_EXCL
+    # open ensures only one process wins the race.
+    lock = _GW_LAUNCH_MUTEX_PATH
+    try:
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        if lock.exists():
+            age = time.time() - lock.stat().st_mtime
+            if age < _GW_LAUNCH_MUTEX_TTL_SECONDS:
+                logger.info(
+                    f"ALPHAEDGE GW: Launch deferred — another process is launching "
+                    f"gateway (lock age {age:.1f}s)"
+                )
+                return False  # let the other project's launch complete
+            lock.unlink(missing_ok=True)  # stale lock — remove and proceed
+        lock.touch(exist_ok=False)
+    except FileExistsError:
+        logger.info(
+            "ALPHAEDGE GW: Launch deferred — concurrent launch detected via mutex"
+        )
+        return False
+    except OSError as exc:
+        logger.warning(f"ALPHAEDGE GW: Mutex unavailable — {exc}")
+        # Proceed without mutex rather than aborting entirely
+
     try:
         subprocess.Popen(
             [str(exe)],
@@ -259,6 +291,8 @@ def _start_gateway_process(gateway_path: str) -> bool:
     except OSError as exc:
         logger.error(f"ALPHAEDGE GW: Failed to launch IB Gateway — {exc}")
         return False
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 def _try_enable_java_access_bridge(gateway_dir: pathlib.Path) -> None:
