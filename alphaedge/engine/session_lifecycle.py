@@ -1333,18 +1333,32 @@ class SessionLifecycle:
             return
 
         # Ensure IB Gateway is running early — before waiting for session window.
-        # This detects a missing gateway immediately (and auto-launches it if
-        # gateway_path is configured), instead of discovering the problem only
-        # after the session wait expires.
-        if not await ensure_gateway_ready(self._s._config.ib):
-            logger.critical(
-                "ALPHAEDGE: Cannot start — IB Gateway not reachable after all retries"
-            )
-            return
+        # On weekdays this detects a missing gateway immediately (and auto-
+        # launches it if gateway_path is configured).  On weekends we skip
+        # the early check entirely: the market is closed and IB Gateway must
+        # NOT be launched.  _wait_for_session_open handles the Sat/Sun → Mon
+        # transition, and the post-wait check below launches the gateway once
+        # the next trading day arrives.
+        if now_utc().weekday() < 5:  # Mon–Fri only
+            if not await ensure_gateway_ready(self._s._config.ib):
+                logger.critical(
+                    "ALPHAEDGE: Cannot start — IB Gateway "
+                    "not reachable after all retries"
+                )
+                return
 
         # Wait for the session window to open (do NOT connect to IB yet)
         await self._wait_for_session_open()
         if self._s._shutdown_requested:
+            return
+
+        # Post-wait gateway check: covers weekend starts (where the early
+        # check was skipped) and confirms the gateway is still alive after
+        # a potentially multi-hour wait.
+        if not await ensure_gateway_ready(self._s._config.ib):
+            logger.critical(
+                "ALPHAEDGE: Cannot start — IB Gateway not reachable after all retries"
+            )
             return
 
         # Log here — after _wait_for_session_open — so the message only appears

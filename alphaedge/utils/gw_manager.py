@@ -40,6 +40,7 @@ import socket
 import subprocess
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Protocol, cast
 
 from alphaedge.config.constants import (
@@ -120,8 +121,17 @@ class _PwMouse(Protocol):
 # ------------------------------------------------------------------
 # Public API
 # ------------------------------------------------------------------
+def _is_weekend() -> bool:
+    """Return True on Saturday (5) or Sunday (6) UTC."""
+    return datetime.now(UTC).weekday() >= 5
+
+
 async def ensure_gateway_ready(config: IBConfig) -> bool:
     """Ensure IB Gateway is running and the API is reachable.
+
+    Returns False immediately on weekends (market closed, no gateway
+    needed).  The session lifecycle skips to _wait_for_session_open
+    which handles the weekend → Monday transition.
 
     Strategy:
     1. If port open + API responds → return True immediately.
@@ -142,6 +152,11 @@ async def ensure_gateway_ready(config: IBConfig) -> bool:
     bool
         True if gateway is healthy and API is reachable.
     """
+    # Weekend guard — market closed Sat & Sun, do not launch gateway
+    if _is_weekend():
+        logger.info("ALPHAEDGE GW: Weekend — market closed, skipping gateway launch")
+        return False
+
     # Fast path: already healthy
     if _is_api_port_open(config.host, config.port):
         if await _validate_api_connection(config):

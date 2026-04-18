@@ -91,7 +91,8 @@ echo     ^</RestartOnFailure^>
 echo   ^</Settings^>
 echo   ^<Actions Context="Author"^>
 echo     ^<Exec^>
-echo       ^<Command^>%IBGATEWAY_EXE%^</Command^>
+echo       ^<Command^>cmd.exe^</Command^>
+echo       ^<Arguments^>/c "%PROJECT_DIR%\scripts\launch_ibgateway.bat"^</Arguments^>
 echo       ^<WorkingDirectory^>C:\Jts\ibgateway\1044^</WorkingDirectory^>
 echo     ^</Exec^>
 echo   ^</Actions^>

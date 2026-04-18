@@ -31,6 +31,15 @@ from alphaedge.utils.gw_manager import (
 
 
 # ------------------------------------------------------------------
+# Fixtures
+# ------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _force_weekday(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure tests always run as if it were a weekday."""
+    monkeypatch.setattr("alphaedge.utils.gw_manager._is_weekend", lambda: False)
+
+
+# ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
 def _make_config() -> IBConfig:
@@ -139,6 +148,20 @@ class TestValidateApiConnection:
         mock_ib.isConnected = MagicMock(return_value=False)
         with patch("ib_insync.IB", return_value=mock_ib):
             result = await _validate_api_connection(config)
+        assert result is False
+
+
+# ==================================================================
+# _is_weekend guard
+# ==================================================================
+class TestWeekendGuard:
+    """ensure_gateway_ready returns False immediately on weekends."""
+
+    @pytest.mark.asyncio
+    async def test_weekend_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("alphaedge.utils.gw_manager._is_weekend", lambda: True)
+        config = _make_config()
+        result = await ensure_gateway_ready(config)
         assert result is False
 
 
