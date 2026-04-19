@@ -1,4 +1,4 @@
-﻿{
+{
     // ============================================================
     // PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
     // FILE         : .vscode/settings.json
@@ -33,6 +33,9 @@
     // --- Type Checking (Pylance) ---
     "python.analysis.autoImportCompletions": true,
     "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.ignore": [
+        "C:/Users/averr/EDGECORE_V1/**"
+    ],
 
     // --- Testing (Pytest) ---
     "python.testing.pytestEnabled": true,

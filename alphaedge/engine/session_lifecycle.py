@@ -70,6 +70,7 @@ from alphaedge.utils.timezone import (
     get_session_window_utc,
     is_dst_transition_week,
     is_session_active,
+    is_weekend_paris,
     now_utc,
 )
 from alphaedge.utils.volatility_regime import check_volatility_regime
@@ -1339,7 +1340,7 @@ class SessionLifecycle:
         # NOT be launched.  _wait_for_session_open handles the Sat/Sun → Mon
         # transition, and the post-wait check below launches the gateway once
         # the next trading day arrives.
-        if now_utc().weekday() < 5:  # Mon–Fri only
+        if not is_weekend_paris():  # Mon–Fri Paris time only
             if not await ensure_gateway_ready(self._s._config.ib):
                 logger.critical(
                     "ALPHAEDGE: Cannot start — IB Gateway "

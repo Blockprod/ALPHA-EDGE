@@ -57,6 +57,33 @@ def now_paris() -> datetime:
     return datetime.now(tz=get_tz_paris())
 
 
+def is_weekend_paris(dt: datetime | None = None) -> bool:
+    """Return True on Saturday (5) or Sunday (6) in Europe/Paris time.
+
+    Uses Paris local time — not UTC — so Friday evening in Paris
+    (23:00 CET / 22:00 CEST) that has already crossed midnight into
+    Saturday is correctly treated as a weekend day, while a UTC-based
+    check would still consider it a weekday.
+
+    Parameters
+    ----------
+    dt : datetime | None
+        Timezone-aware datetime to check.  Defaults to the current
+        Europe/Paris time when None.
+
+    Returns
+    -------
+    bool
+        True if the day in Europe/Paris is Saturday (weekday 5) or
+        Sunday (weekday 6).
+    """
+    if dt is None:
+        paris_dt = now_paris()
+    else:
+        paris_dt = dt.astimezone(get_tz_paris())
+    return paris_dt.weekday() >= 5
+
+
 def now_ny() -> datetime:
     """Return the current America/New_York datetime (timezone-aware)."""
     return datetime.now(tz=get_tz_ny())

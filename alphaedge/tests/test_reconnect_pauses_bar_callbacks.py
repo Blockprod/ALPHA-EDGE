@@ -169,7 +169,7 @@ class TestPersistStateSync:
 
         persist_calls: list[int] = []
 
-        def _mock_persist(*, shutdown: bool = False) -> None:
+        def _mock_persist(**_kwargs: object) -> None:
             persist_calls.append(1)
 
         strategy._lifecycle._persist_daily_state = _mock_persist

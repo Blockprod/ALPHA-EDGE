@@ -197,7 +197,7 @@ class TestEnsureGatewayReady:
         port_calls: list[bool] = [False, False, True]
         port_idx = {"i": 0}
 
-        def _port_side_effect(host: str, port: int) -> bool:
+        def _port_side_effect(_host: str, _port: int) -> bool:
             idx = port_idx["i"]
             port_idx["i"] += 1
             if idx < len(port_calls):
@@ -255,7 +255,7 @@ class TestEnsureGatewayReady:
         validate_calls = [False, False, True]
         validate_idx = {"i": 0}
 
-        async def _validate_effect(cfg: IBConfig) -> bool:
+        async def _validate_effect(_cfg: IBConfig) -> bool:
             idx = validate_idx["i"]
             validate_idx["i"] += 1
             if idx < len(validate_calls):
@@ -291,7 +291,7 @@ class TestEnsureGatewayReady:
         port_calls = [False, False, False, True]
         port_idx = {"i": 0}
 
-        def _port_effect(host: str, port: int) -> bool:
+        def _port_effect(_host: str, _port: int) -> bool:
             idx = port_idx["i"]
             port_idx["i"] += 1
             if idx < len(port_calls):
@@ -342,7 +342,7 @@ class TestStartGatewayProcess:
         assert _start_gateway_process(str(tmp_path)) is False
 
     @patch("alphaedge.utils.gw_manager.subprocess.Popen", side_effect=OSError("denied"))
-    def test_oserror(self, mock_popen: MagicMock, tmp_path: pathlib.Path) -> None:
+    def test_oserror(self, _mock_popen: MagicMock, tmp_path: pathlib.Path) -> None:
         """Popen raises → False."""
         exe = tmp_path / "ibgateway.exe"
         exe.write_text("fake")
@@ -372,7 +372,7 @@ class TestEnsureGatewayReadyAutoLaunch:
         port_calls = [False, False, True]
         port_idx = {"i": 0}
 
-        def _port_effect(host: str, port: int) -> bool:
+        def _port_effect(_host: str, _port: int) -> bool:
             idx = port_idx["i"]
             port_idx["i"] += 1
             if idx < len(port_calls):

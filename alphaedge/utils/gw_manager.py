@@ -40,7 +40,6 @@ import socket
 import subprocess
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime
 from typing import Protocol, cast
 
 from alphaedge.config.constants import (
@@ -52,6 +51,7 @@ from alphaedge.config.constants import (
 )
 from alphaedge.config.loader import IBConfig
 from alphaedge.utils.logger import get_logger
+from alphaedge.utils.timezone import is_weekend_paris
 
 logger = get_logger()
 
@@ -122,8 +122,13 @@ class _PwMouse(Protocol):
 # Public API
 # ------------------------------------------------------------------
 def _is_weekend() -> bool:
-    """Return True on Saturday (5) or Sunday (6) UTC."""
-    return datetime.now(UTC).weekday() >= 5
+    """Return True on Saturday (5) or Sunday (6) in Europe/Paris time.
+
+    Uses Paris local time so that Friday evening that has already crossed
+    midnight into Saturday in Paris is correctly treated as a weekend day,
+    preventing IB Gateway from being launched outside trading days.
+    """
+    return is_weekend_paris()
 
 
 async def ensure_gateway_ready(config: IBConfig) -> bool:
