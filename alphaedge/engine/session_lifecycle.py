@@ -1357,6 +1357,20 @@ class SessionLifecycle:
         # NOT be launched.  _wait_for_session_open handles the Sat/Sun → Mon
         # transition, and the post-wait check below launches the gateway once
         # the next trading day arrives.
+        if is_weekend_paris():
+            _now = now_utc()
+            _utc_noon = _now.replace(hour=12, minute=0, second=0, microsecond=0)
+            _next = _utc_noon + timedelta(days=1)
+            while _next.weekday() >= 5:
+                _next += timedelta(days=1)
+            _next_start, _ = get_session_window_utc(_next)
+            _wait_h = (_next_start - _now).total_seconds() / 3600
+            logger.info(
+                f"ALPHAEDGE: Weekend detected — market closed. "
+                f"Next session in {_wait_h:.1f}h "
+                f"({format_dual_time(_next_start)}). Waiting..."
+            )
+
         if not is_weekend_paris():  # Mon–Fri Paris time only
             if not await ensure_gateway_ready(self._s._config.ib):
                 logger.critical(

@@ -19,7 +19,7 @@ skips straight to the next weekday when Paris time is Sat/Sun.
 from __future__ import annotations
 
 import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -165,3 +165,72 @@ class TestWaitForSessionOpenWeekendGuard:
         # The key assertion: is_weekend_paris was False → we did NOT enter
         # the weekend branch.  A sleep(60.0) here is the pre-session-wait sleep.
         assert len(sleep_calls) == 1
+
+
+# ==================================================================
+# run_session — weekend startup INFO log
+# ==================================================================
+class TestRunSessionWeekendInfoLog:
+    """run_session() must log an INFO message at startup when the bot
+    is launched on a weekend, showing the next session time."""
+
+    @pytest.mark.asyncio()
+    async def test_weekend_startup_logs_info(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On a weekend, run_session() must emit one INFO log indicating
+        the market is closed and the next session time before entering wait."""
+        strategy = _build_strategy()
+
+        log_messages: list[str] = []
+
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_weekend_paris",
+            lambda: True,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_dst_transition_week",
+            lambda: False,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.load_daily_state",
+            lambda: None,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.now_utc",
+            lambda: _SUNDAY_UTC,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.get_session_window_utc",
+            lambda _dt: (_MONDAY_SESSION_START, _MONDAY_SESSION_END),
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.format_dual_time",
+            lambda _dt: "2026-04-21 13:40 UTC",
+        )
+        # Capture logger.info calls
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.logger.info",
+            lambda msg, *_a, **_kw: log_messages.append(str(msg)),
+        )
+        # _wait_for_session_open: shut down immediately to avoid infinite loop
+        monkeypatch.setattr(strategy._lifecycle, "_wait_for_session_open", AsyncMock())
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
+            AsyncMock(return_value=True),
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_session_active",
+            lambda: False,
+        )
+        monkeypatch.setattr(strategy._broker, "connect", AsyncMock(return_value=False))
+        monkeypatch.setattr(strategy._broker, "disconnect", AsyncMock())
+        monkeypatch.setattr(strategy._broker, "stop_heartbeat", AsyncMock())
+
+        strategy._shutdown_requested = False
+        await strategy._lifecycle.run_session()
+
+        weekend_logs = [m for m in log_messages if "Weekend detected" in m]
+        assert len(weekend_logs) == 1
+        assert "Next session" in weekend_logs[0]
+        assert "Waiting" in weekend_logs[0]
