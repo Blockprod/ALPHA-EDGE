@@ -1272,6 +1272,23 @@ class SessionLifecycle:
             utc_noon = now.replace(hour=12, minute=0, second=0, microsecond=0)
             session_start, session_end = get_session_window_utc(utc_noon)
 
+            # Weekend guard (Paris time): skip straight to next weekday session.
+            # Without this, the loop would wait for Saturday/Sunday's computed
+            # session window (NYSE session hours applied to a non-trading day).
+            if is_weekend_paris():
+                next_candidate = utc_noon + timedelta(days=1)
+                while next_candidate.weekday() >= 5:  # 5=Sat, 6=Sun
+                    next_candidate += timedelta(days=1)
+                next_start, _ = get_session_window_utc(next_candidate)
+                wait_h = (next_start - now).total_seconds() / 3600
+                if now.minute % 15 == 0 or wait_h > 40.0:
+                    logger.info(
+                        f"ALPHAEDGE: Weekend — next session in {wait_h:.1f}h "
+                        f"({format_dual_time(next_start)})"
+                    )
+                await asyncio.sleep(60.0)
+                continue
+
             # Already inside the window — proceed immediately
             if session_start <= now < session_end:
                 return
