@@ -327,26 +327,52 @@ class TestEnsureGatewayReady:
 class TestStartGatewayProcess:
     """Auto-launch of ibgateway.exe."""
 
+    @patch("alphaedge.utils.gw_manager._is_gateway_process_running", return_value=False)
     @patch("alphaedge.utils.gw_manager.subprocess.Popen")
     def test_launch_success(
-        self, mock_popen: MagicMock, tmp_path: pathlib.Path
+        self, mock_popen: MagicMock, _mock_running: MagicMock, tmp_path: pathlib.Path
     ) -> None:
         """Exe exists → Popen called → True."""
         exe = tmp_path / "ibgateway.exe"
         exe.write_text("fake")
-        assert _start_gateway_process(str(tmp_path)) is True
+        with patch(
+            "alphaedge.utils.gw_manager._GW_LAUNCH_MUTEX_PATH",
+            tmp_path / ".launch.lock",
+        ):
+            assert _start_gateway_process(str(tmp_path)) is True
         mock_popen.assert_called_once()
 
-    def test_exe_not_found(self, tmp_path: pathlib.Path) -> None:
+    @patch("alphaedge.utils.gw_manager._is_gateway_process_running", return_value=False)
+    def test_exe_not_found(
+        self, _mock_running: MagicMock, tmp_path: pathlib.Path
+    ) -> None:
         """Exe missing → False, no Popen."""
         assert _start_gateway_process(str(tmp_path)) is False
 
+    @patch("alphaedge.utils.gw_manager._is_gateway_process_running", return_value=False)
     @patch("alphaedge.utils.gw_manager.subprocess.Popen", side_effect=OSError("denied"))
-    def test_oserror(self, _mock_popen: MagicMock, tmp_path: pathlib.Path) -> None:
+    def test_oserror(
+        self, _mock_popen: MagicMock, _mock_running: MagicMock, tmp_path: pathlib.Path
+    ) -> None:
         """Popen raises → False."""
         exe = tmp_path / "ibgateway.exe"
         exe.write_text("fake")
-        assert _start_gateway_process(str(tmp_path)) is False
+        with patch(
+            "alphaedge.utils.gw_manager._GW_LAUNCH_MUTEX_PATH",
+            tmp_path / ".launch.lock",
+        ):
+            assert _start_gateway_process(str(tmp_path)) is False
+
+    @patch("alphaedge.utils.gw_manager._is_gateway_process_running", return_value=True)
+    def test_already_running_skips_launch(
+        self, _mock_running: MagicMock, tmp_path: pathlib.Path
+    ) -> None:
+        """Process already running → True without Popen."""
+        exe = tmp_path / "ibgateway.exe"
+        exe.write_text("fake")
+        with patch("alphaedge.utils.gw_manager.subprocess.Popen") as mock_popen:
+            assert _start_gateway_process(str(tmp_path)) is True
+        mock_popen.assert_not_called()
 
 
 # ==================================================================
@@ -397,6 +423,10 @@ class TestEnsureGatewayReadyAutoLaunch:
             patch(
                 "alphaedge.utils.gw_manager.asyncio.sleep",
                 new_callable=AsyncMock,
+            ),
+            patch(
+                "alphaedge.utils.gw_manager._GW_LAUNCH_MUTEX_PATH",
+                tmp_path / ".launch.lock",
             ),
         ):
             result = await ensure_gateway_ready(config)

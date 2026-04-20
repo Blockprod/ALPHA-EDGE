@@ -274,6 +274,17 @@ def _start_gateway_process(gateway_path: str) -> bool:
     is enabled in the gateway configuration.  Subsequent launches
     auto-authenticate without manual intervention.
 
+    **Duplicate protection (absolute rule — never open two instances):**
+
+    1. Process-level guard: if ``ibgateway.exe`` is already in the
+       process list, return True immediately without launching.
+    2. Cross-project file mutex (``C:\\Jts\\ibgateway\\.launch.lock``):
+       atomic ``O_CREAT|O_EXCL`` ensures only one process wins.
+    3. The lock is **intentionally NOT released** after a successful
+       launch.  It expires via TTL (30 s), by which time the process
+       is guaranteed to appear in ``tasklist``.  This closes the
+       ~50 ms TOCTOU window between ``Popen`` and process visibility.
+
     Parameters
     ----------
     gateway_path : str
@@ -283,17 +294,26 @@ def _start_gateway_process(gateway_path: str) -> bool:
     Returns
     -------
     bool
-        True if the process was launched successfully.
+        True if the process was launched (or is already running).
     """
+    # ── Guard 1: process already running ──────────────────────────
+    # The caller checks _is_gateway_process_running() before calling us,
+    # but a second project may have launched it in the meantime (TOCTOU).
+    if _is_gateway_process_running():
+        logger.info("ALPHAEDGE GW: ibgateway.exe already running — skipping launch")
+        return True
+
     exe = pathlib.Path(gateway_path) / "ibgateway.exe"
     if not exe.exists():
         logger.error(f"ALPHAEDGE GW: Gateway executable not found: {exe}")
         return False
 
-    # Cross-project mutex: prevent AlphaEdge and EDGECORE_V1 from both launching
-    # ibgateway.exe when they start at the same moment.  Exclusive O_CREAT|O_EXCL
-    # open ensures only one process wins the race.
+    # ── Guard 2: cross-project file mutex ─────────────────────────
+    # Prevents AlphaEdge and EDGECORE_V1 from both launching
+    # ibgateway.exe when they start at the same moment.  Exclusive
+    # O_CREAT|O_EXCL open ensures only one process wins the race.
     lock = _GW_LAUNCH_MUTEX_PATH
+    lock_acquired = False
     try:
         lock.parent.mkdir(parents=True, exist_ok=True)
         if lock.exists():
@@ -306,6 +326,7 @@ def _start_gateway_process(gateway_path: str) -> bool:
                 return False  # let the other project's launch complete
             lock.unlink(missing_ok=True)  # stale lock — remove and proceed
         lock.touch(exist_ok=False)
+        lock_acquired = True
     except FileExistsError:
         logger.info(
             "ALPHAEDGE GW: Launch deferred — concurrent launch detected via mutex"
@@ -323,12 +344,16 @@ def _start_gateway_process(gateway_path: str) -> bool:
             close_fds=True,
         )
         logger.info(f"ALPHAEDGE GW: Launched IB Gateway from {exe}")
+        # Lock intentionally NOT released here.  It auto-expires via TTL
+        # (30 s), giving ibgateway.exe time to appear in the process list.
+        # This prevents a second project from launching a duplicate in the
+        # ~50 ms window between Popen and tasklist visibility.
         return True
     except OSError as exc:
         logger.error(f"ALPHAEDGE GW: Failed to launch IB Gateway — {exc}")
+        if lock_acquired:
+            lock.unlink(missing_ok=True)  # release lock on failure only
         return False
-    finally:
-        lock.unlink(missing_ok=True)
 
 
 def _try_enable_java_access_bridge(gateway_dir: pathlib.Path) -> None:
