@@ -141,6 +141,11 @@ class TestVolatilityRegimeGate:
                 return_value=False,
             ),
             patch(
+                "alphaedge.engine.session_lifecycle.check_gateway_health",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch(
                 "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
                 new_callable=AsyncMock,
                 return_value=True,
@@ -189,6 +194,11 @@ class TestVolatilityRegimeGate:
             patch(
                 "alphaedge.engine.session_lifecycle.is_session_active",
                 return_value=False,
+            ),
+            patch(
+                "alphaedge.engine.session_lifecycle.check_gateway_health",
+                new_callable=AsyncMock,
+                return_value=True,
             ),
             patch(
                 "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
@@ -241,6 +251,11 @@ class TestVolatilityRegimeGate:
             patch(
                 "alphaedge.engine.session_lifecycle.is_session_active",
                 return_value=False,
+            ),
+            patch(
+                "alphaedge.engine.session_lifecycle.check_gateway_health",
+                new_callable=AsyncMock,
+                return_value=True,
             ),
             patch(
                 "alphaedge.engine.session_lifecycle.ensure_gateway_ready",

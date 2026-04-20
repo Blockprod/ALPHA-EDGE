@@ -216,6 +216,10 @@ class TestRunSessionWeekendInfoLog:
         # _wait_for_session_open: shut down immediately to avoid infinite loop
         monkeypatch.setattr(strategy._lifecycle, "_wait_for_session_open", AsyncMock())
         monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.check_gateway_health",
+            AsyncMock(return_value=True),
+        )
+        monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
             AsyncMock(return_value=True),
         )
@@ -246,14 +250,15 @@ _MONDAY_04_00_ET = datetime.datetime(2026, 4, 21, 8, 0, 0, tzinfo=datetime.UTC)
 
 
 class TestPostRestartGatewayCheck:
-    """_wait_for_session_open must call ensure_gateway_ready()
-    proactively after the IB daily 05:30 ET restart."""
+    """_wait_for_session_open must call check_gateway_health()
+    proactively after the IB daily 05:30 ET restart (passive — no
+    launch, no login, no polling)."""
 
     @pytest.mark.asyncio()
     async def test_health_check_fires_after_restart_time(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """After 05:40 ET on a weekday (minute % 15 == 0), the proactive
+        """After 05:40 ET on a weekday (minute % 15 == 0), the passive
         gateway health check must fire inside the wait loop."""
         strategy = _build_strategy()
         sleep_calls: list[float] = []
@@ -263,7 +268,7 @@ class TestPostRestartGatewayCheck:
             sleep_calls.append(secs)
             strategy._shutdown_requested = True
 
-        async def _fake_ensure_gw(_cfg: object) -> bool:
+        async def _fake_check_health(_cfg: object) -> bool:
             gw_calls.append(True)
             return True
 
@@ -307,8 +312,8 @@ class TestPostRestartGatewayCheck:
             lambda _dt: "2026-04-21 13:40 UTC",
         )
         monkeypatch.setattr(
-            "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
-            _fake_ensure_gw,
+            "alphaedge.engine.session_lifecycle.check_gateway_health",
+            _fake_check_health,
         )
 
         strategy._shutdown_requested = False
@@ -332,7 +337,7 @@ class TestPostRestartGatewayCheck:
             sleep_calls.append(secs)
             strategy._shutdown_requested = True
 
-        async def _fake_ensure_gw(_cfg: object) -> bool:
+        async def _fake_check_health(_cfg: object) -> bool:
             gw_calls.append(True)
             return True
 
@@ -376,8 +381,8 @@ class TestPostRestartGatewayCheck:
             lambda _dt: "2026-04-21 13:40 UTC",
         )
         monkeypatch.setattr(
-            "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
-            _fake_ensure_gw,
+            "alphaedge.engine.session_lifecycle.check_gateway_health",
+            _fake_check_health,
         )
 
         strategy._shutdown_requested = False
@@ -386,4 +391,128 @@ class TestPostRestartGatewayCheck:
         assert len(gw_calls) == 0, (
             f"Gateway check should NOT fire before restart time, "
             f"but got {len(gw_calls)} call(s)"
+        )
+
+
+# ==================================================================
+# External gateway: skip lifecycle when already connected
+# ==================================================================
+class TestExternalGatewayFastPath:
+    """When another project has already launched and connected IB Gateway,
+    run_session() must skip ensure_gateway_ready() entirely and proceed
+    directly to the session window / data connection."""
+
+    @pytest.mark.asyncio()
+    async def test_skips_ensure_when_health_check_passes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If check_gateway_health() returns True (external gateway),
+        ensure_gateway_ready() must NOT be called."""
+        strategy = _build_strategy()
+        ensure_calls: list[bool] = []
+        log_messages: list[str] = []
+
+        async def _fake_check_health(_cfg: object) -> bool:
+            return True
+
+        async def _fake_ensure_gw(_cfg: object) -> bool:
+            ensure_calls.append(True)
+            return True
+
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_weekend_paris",
+            lambda: False,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_dst_transition_week",
+            lambda: False,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.load_daily_state",
+            lambda: None,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.check_gateway_health",
+            _fake_check_health,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
+            _fake_ensure_gw,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.logger.info",
+            lambda msg, *_a, **_kw: log_messages.append(str(msg)),
+        )
+        # Skip wait + connect to isolate the gateway path
+        monkeypatch.setattr(strategy._lifecycle, "_wait_for_session_open", AsyncMock())
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_session_active",
+            lambda: False,
+        )
+        monkeypatch.setattr(strategy._broker, "connect", AsyncMock(return_value=False))
+        monkeypatch.setattr(strategy._broker, "disconnect", AsyncMock())
+        monkeypatch.setattr(strategy._broker, "stop_heartbeat", AsyncMock())
+
+        strategy._shutdown_requested = False
+        await strategy._lifecycle.run_session()
+
+        assert len(ensure_calls) == 0, (
+            "ensure_gateway_ready() should NOT be called when "
+            "check_gateway_health() returns True (external gateway)"
+        )
+        skip_logs = [m for m in log_messages if "skipping gateway" in m.lower()]
+        assert len(skip_logs) >= 1, "Expected INFO log about skipping gateway lifecycle"
+
+    @pytest.mark.asyncio()
+    async def test_falls_back_to_ensure_when_health_fails(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If check_gateway_health() returns False, ensure_gateway_ready()
+        must be called as fallback."""
+        strategy = _build_strategy()
+        ensure_calls: list[bool] = []
+
+        async def _fake_check_health(_cfg: object) -> bool:
+            return False
+
+        async def _fake_ensure_gw(_cfg: object) -> bool:
+            ensure_calls.append(True)
+            return True
+
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_weekend_paris",
+            lambda: False,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_dst_transition_week",
+            lambda: False,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.load_daily_state",
+            lambda: None,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.check_gateway_health",
+            _fake_check_health,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
+            _fake_ensure_gw,
+        )
+        # Skip wait + connect to isolate the gateway path
+        monkeypatch.setattr(strategy._lifecycle, "_wait_for_session_open", AsyncMock())
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_session_active",
+            lambda: False,
+        )
+        monkeypatch.setattr(strategy._broker, "connect", AsyncMock(return_value=False))
+        monkeypatch.setattr(strategy._broker, "disconnect", AsyncMock())
+        monkeypatch.setattr(strategy._broker, "stop_heartbeat", AsyncMock())
+
+        strategy._shutdown_requested = False
+        await strategy._lifecycle.run_session()
+
+        assert len(ensure_calls) >= 1, (
+            "ensure_gateway_ready() MUST be called when "
+            "check_gateway_health() returns False"
         )

@@ -57,7 +57,7 @@ from alphaedge.utils.alerting import (
     alert_trade_closed,
     alert_trade_executed,
 )
-from alphaedge.utils.gw_manager import ensure_gateway_ready
+from alphaedge.utils.gw_manager import check_gateway_health, ensure_gateway_ready
 from alphaedge.utils.logger import get_logger
 from alphaedge.utils.pair_correlation import (
     build_correlation_matrix,
@@ -1344,16 +1344,16 @@ class SessionLifecycle:
                     IB_DAILY_RESTART_HOUR_ET,
                     IB_DAILY_RESTART_MINUTE_ET,
                 )
-                gw_ok = await ensure_gateway_ready(self._s._config.ib)
+                gw_ok = await check_gateway_health(self._s._config.ib)
                 if gw_ok:
                     logger.info(
                         "ALPHAEDGE: Gateway healthy — credentials OK, "
                         "waiting for session window"
                     )
                 else:
-                    logger.warning(
-                        "ALPHAEDGE: Gateway not ready after post-restart "
-                        "check — will retry at session open"
+                    logger.info(
+                        "ALPHAEDGE: Gateway not yet ready — "
+                        "will check again at session open"
                     )
 
             if wait_s >= 60:
@@ -1414,7 +1414,15 @@ class SessionLifecycle:
             )
 
         if not is_weekend_paris():  # Mon–Fri Paris time only
-            if not await ensure_gateway_ready(self._s._config.ib):
+            # Fast path: if gateway is already healthy (managed by another
+            # project — e.g. EDGECORE), skip the full lifecycle management
+            # (launch / login / poll) and proceed directly.
+            if await check_gateway_health(self._s._config.ib):
+                logger.info(
+                    "ALPHAEDGE: IB Gateway already connected "
+                    "— skipping gateway lifecycle management"
+                )
+            elif not await ensure_gateway_ready(self._s._config.ib):
                 logger.critical(
                     "ALPHAEDGE: Cannot start — IB Gateway "
                     "not reachable after all retries"
@@ -1429,11 +1437,14 @@ class SessionLifecycle:
         # Post-wait gateway check: covers weekend starts (where the early
         # check was skipped) and confirms the gateway is still alive after
         # a potentially multi-hour wait.
-        if not await ensure_gateway_ready(self._s._config.ib):
-            logger.critical(
-                "ALPHAEDGE: Cannot start — IB Gateway not reachable after all retries"
-            )
-            return
+        # Fast path first: if still healthy, no lifecycle management needed.
+        if not await check_gateway_health(self._s._config.ib):
+            if not await ensure_gateway_ready(self._s._config.ib):
+                logger.critical(
+                    "ALPHAEDGE: Cannot start — IB Gateway "
+                    "not reachable after all retries"
+                )
+                return
 
         # Log here — after _wait_for_session_open — so the message only appears
         # when we are actually inside the trading window, not 60s after session end.

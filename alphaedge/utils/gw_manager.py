@@ -131,6 +131,22 @@ def _is_weekend() -> bool:
     return is_weekend_paris()
 
 
+async def check_gateway_health(config: IBConfig) -> bool:
+    """Read-only probe: is IB Gateway reachable and authenticated?
+
+    Unlike :func:`ensure_gateway_ready` this function **never** launches
+    a process, fills credentials, or polls.  It is safe to call when
+    another project manages the gateway lifecycle (e.g. EDGECORE_V1 has
+    already launched, logged in, and connected IB Gateway).
+
+    Returns True if the API port is open **and** a lightweight readonly
+    ``ib_insync`` handshake succeeds.
+    """
+    if not _is_api_port_open(config.host, config.port):
+        return False
+    return await _validate_api_connection(config)
+
+
 async def ensure_gateway_ready(config: IBConfig) -> bool:
     """Ensure IB Gateway is running and the API is reachable.
 
