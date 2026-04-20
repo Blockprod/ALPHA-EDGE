@@ -234,3 +234,156 @@ class TestRunSessionWeekendInfoLog:
         assert len(weekend_logs) == 1
         assert "Next session" in weekend_logs[0]
         assert "Waiting" in weekend_logs[0]
+
+
+# ==================================================================
+# Proactive post-restart gateway health check
+# ==================================================================
+# Monday 2026-04-21 10:00 UTC = 06:00 ET (after 05:30 restart + 10min buffer)
+_MONDAY_06_00_ET = datetime.datetime(2026, 4, 21, 10, 0, 0, tzinfo=datetime.UTC)
+# Monday 2026-04-21 08:00 UTC = 04:00 ET (before 05:30 restart)
+_MONDAY_04_00_ET = datetime.datetime(2026, 4, 21, 8, 0, 0, tzinfo=datetime.UTC)
+
+
+class TestPostRestartGatewayCheck:
+    """_wait_for_session_open must call ensure_gateway_ready()
+    proactively after the IB daily 05:30 ET restart."""
+
+    @pytest.mark.asyncio()
+    async def test_health_check_fires_after_restart_time(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """After 05:40 ET on a weekday (minute % 15 == 0), the proactive
+        gateway health check must fire inside the wait loop."""
+        strategy = _build_strategy()
+        sleep_calls: list[float] = []
+        gw_calls: list[bool] = []
+
+        async def _fake_sleep(secs: float) -> None:
+            sleep_calls.append(secs)
+            strategy._shutdown_requested = True
+
+        async def _fake_ensure_gw(_cfg: object) -> bool:
+            gw_calls.append(True)
+            return True
+
+        session_start = datetime.datetime(
+            2026,
+            4,
+            21,
+            13,
+            40,
+            0,
+            tzinfo=datetime.UTC,
+        )
+        session_end = datetime.datetime(
+            2026,
+            4,
+            21,
+            14,
+            30,
+            0,
+            tzinfo=datetime.UTC,
+        )
+
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_weekend_paris",
+            lambda: False,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.asyncio.sleep",
+            _fake_sleep,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.now_utc",
+            lambda: _MONDAY_06_00_ET,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.get_session_window_utc",
+            lambda _dt: (session_start, session_end),
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.format_dual_time",
+            lambda _dt: "2026-04-21 13:40 UTC",
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
+            _fake_ensure_gw,
+        )
+
+        strategy._shutdown_requested = False
+        await strategy._lifecycle._wait_for_session_open()
+
+        assert len(gw_calls) == 1, (
+            f"Expected 1 proactive gateway check but got {len(gw_calls)}"
+        )
+
+    @pytest.mark.asyncio()
+    async def test_health_check_skipped_before_restart_time(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Before the restart time (04:00 ET), the proactive check must NOT
+        fire even though it is a weekday."""
+        strategy = _build_strategy()
+        sleep_calls: list[float] = []
+        gw_calls: list[bool] = []
+
+        async def _fake_sleep(secs: float) -> None:
+            sleep_calls.append(secs)
+            strategy._shutdown_requested = True
+
+        async def _fake_ensure_gw(_cfg: object) -> bool:
+            gw_calls.append(True)
+            return True
+
+        session_start = datetime.datetime(
+            2026,
+            4,
+            21,
+            13,
+            40,
+            0,
+            tzinfo=datetime.UTC,
+        )
+        session_end = datetime.datetime(
+            2026,
+            4,
+            21,
+            14,
+            30,
+            0,
+            tzinfo=datetime.UTC,
+        )
+
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_weekend_paris",
+            lambda: False,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.asyncio.sleep",
+            _fake_sleep,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.now_utc",
+            lambda: _MONDAY_04_00_ET,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.get_session_window_utc",
+            lambda _dt: (session_start, session_end),
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.format_dual_time",
+            lambda _dt: "2026-04-21 13:40 UTC",
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
+            _fake_ensure_gw,
+        )
+
+        strategy._shutdown_requested = False
+        await strategy._lifecycle._wait_for_session_open()
+
+        assert len(gw_calls) == 0, (
+            f"Gateway check should NOT fire before restart time, "
+            f"but got {len(gw_calls)} call(s)"
+        )

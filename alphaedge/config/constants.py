@@ -219,6 +219,9 @@ IB_MAX_CONCURRENT_HIST_REQUESTS: int = 3  # IB cancels >~3 simultaneous hist req
 IB_GATEWAY_HEALTH_RETRIES: int = 8
 IB_GATEWAY_HEALTH_RETRY_DELAY_SECONDS: int = 10
 IB_GATEWAY_STARTUP_TIMEOUT_SECONDS: int = 120  # max wait after auto-launching gateway
+IB_DAILY_RESTART_HOUR_ET: int = 5  # IB Gateway auto-restart hour (ET)
+IB_DAILY_RESTART_MINUTE_ET: int = 30  # IB Gateway auto-restart minute (ET)
+IB_POST_RESTART_CHECK_DELAY_MINUTES: int = 10  # wait after restart before health check
 
 # Circuit breaker: open after this many consecutive connection failures
 IB_CIRCUIT_BREAKER_MAX_FAILURES: int = 5

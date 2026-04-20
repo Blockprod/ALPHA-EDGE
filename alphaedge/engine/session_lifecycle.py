@@ -25,7 +25,10 @@ from typing import TYPE_CHECKING, Any
 
 from alphaedge.config.constants import (
     DEFAULT_PIP_SIZE,
+    IB_DAILY_RESTART_HOUR_ET,
+    IB_DAILY_RESTART_MINUTE_ET,
     IB_FILL_TIMEOUT_SECONDS,
+    IB_POST_RESTART_CHECK_DELAY_MINUTES,
     MAX_BAR_STALENESS_SECONDS,
     PIP_SIZES,
     RISK_CHECK_INTERVAL_IDLE,
@@ -68,6 +71,7 @@ from alphaedge.utils.state_persistence import (
 from alphaedge.utils.timezone import (
     format_dual_time,
     get_session_window_utc,
+    get_tz_ny,
     is_dst_transition_week,
     is_session_active,
     is_weekend_paris,
@@ -1314,6 +1318,44 @@ class SessionLifecycle:
 
             # Before today's session_start
             wait_s = (session_start - now).total_seconds()
+
+            # ----------------------------------------------------------
+            # Proactive gateway health check after IB daily restart
+            # IB Gateway auto-restarts at ~05:30 ET every day.  After
+            # the restart the login window reappears and credentials
+            # must be re-entered.  Instead of waiting until session
+            # open to discover this, we check periodically once the
+            # restart time has passed (+ a buffer for IB to come back).
+            # ----------------------------------------------------------
+            ny_now = now.astimezone(get_tz_ny())
+            restart_et = ny_now.replace(
+                hour=IB_DAILY_RESTART_HOUR_ET,
+                minute=IB_DAILY_RESTART_MINUTE_ET,
+                second=0,
+                microsecond=0,
+            )
+            check_after_et = restart_et + timedelta(
+                minutes=IB_POST_RESTART_CHECK_DELAY_MINUTES,
+            )
+            if ny_now >= check_after_et and ny_now.minute % 15 == 0:
+                logger.info(
+                    "ALPHAEDGE: Post-restart gateway health check "
+                    "(IB Gateway restarts daily at %02d:%02d ET)",
+                    IB_DAILY_RESTART_HOUR_ET,
+                    IB_DAILY_RESTART_MINUTE_ET,
+                )
+                gw_ok = await ensure_gateway_ready(self._s._config.ib)
+                if gw_ok:
+                    logger.info(
+                        "ALPHAEDGE: Gateway healthy — credentials OK, "
+                        "waiting for session window"
+                    )
+                else:
+                    logger.warning(
+                        "ALPHAEDGE: Gateway not ready after post-restart "
+                        "check — will retry at session open"
+                    )
+
             if wait_s >= 60:
                 logger.info(
                     f"ALPHAEDGE: Session opens in {wait_s / 60:.0f}min "
