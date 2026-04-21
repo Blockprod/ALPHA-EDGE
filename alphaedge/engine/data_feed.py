@@ -662,7 +662,8 @@ class RealtimeDataFeed:
         callback : callable
             Function to call with (pair, candle_dict) on each bar.
         """
-        self._bar_callbacks.append(callback)
+        if callback not in self._bar_callbacks:
+            self._bar_callbacks.append(callback)
 
     async def subscribe(self, pair: str) -> None:
         """
@@ -764,9 +765,22 @@ class RealtimeDataFeed:
 
         try:
             ticker = self._broker.ib.ticker(build_forex_contract(pair))
-            if ticker and ticker.bid > 0 and ticker.ask > 0:
-                return float(ticker.ask - ticker.bid)
-            return None
+            if ticker is None:
+                logger.warning(
+                    "ALPHAEDGE: No ticker object for %s "
+                    "— reqMktData may not have been called",
+                    pair,
+                )
+                return None
+            if ticker.bid <= 0 or ticker.ask <= 0:
+                logger.warning(
+                    "ALPHAEDGE: %s bid=%.5f ask=%.5f — quotes not yet delivered by IB",
+                    pair,
+                    ticker.bid,
+                    ticker.ask,
+                )
+                return None
+            return float(ticker.ask - ticker.bid)
         except RuntimeError:
             logger.exception(f"ALPHAEDGE get_live_spread IB runtime failure: {pair}")
             return None

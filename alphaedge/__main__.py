@@ -240,6 +240,9 @@ async def _main() -> None:
             # Brief pause between sessions (daily loss shutdown resets next day)
             logger.info("ALPHAEDGE: Session complete — waiting for next session window")
             await asyncio.sleep(60.0)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.info("ALPHAEDGE: Interrupted — triggering graceful shutdown")
+        await strategy.graceful_shutdown()
     finally:
         if _dashboard_task is not None:
             _dashboard_task.cancel()

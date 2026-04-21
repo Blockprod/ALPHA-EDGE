@@ -1338,11 +1338,10 @@ class SessionLifecycle:
                 minutes=IB_POST_RESTART_CHECK_DELAY_MINUTES,
             )
             if ny_now >= check_after_et and ny_now.minute % 15 == 0:
+                _rt = f"{IB_DAILY_RESTART_HOUR_ET:02d}:{IB_DAILY_RESTART_MINUTE_ET:02d}"
                 logger.info(
-                    "ALPHAEDGE: Post-restart gateway health check "
-                    "(IB Gateway restarts daily at %02d:%02d ET)",
-                    IB_DAILY_RESTART_HOUR_ET,
-                    IB_DAILY_RESTART_MINUTE_ET,
+                    f"ALPHAEDGE: Post-restart gateway health check "
+                    f"(IB Gateway restarts daily at {_rt} ET)"
                 )
                 gw_ok = await check_gateway_health(self._s._config.ib)
                 if gw_ok:
