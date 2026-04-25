@@ -18,6 +18,7 @@ SwingStrategy becomes a thin orchestrator.
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import time
 from datetime import UTC, date, datetime, timedelta
@@ -65,6 +66,7 @@ from alphaedge.utils.pair_correlation import (
 )
 from alphaedge.utils.state_persistence import (
     DailyState,
+    clear_daily_state,
     load_daily_state,
     save_daily_state,
 )
@@ -128,6 +130,37 @@ class SessionLifecycle:
         self._last_reconcile_utc: str = ""
         self._last_reconcile_drift_usd: float = 0.0
         self._last_reconcile_has_critical: bool = False
+
+    def _remember_gateway_health(self, gateway_connected: bool) -> None:
+        """Update the dashboard-facing gateway availability cache."""
+        self._s.set_gateway_health(
+            gateway_connected=gateway_connected,
+            gateway_status="healthy" if gateway_connected else "down",
+        )
+
+    def _load_compatible_daily_state(self) -> DailyState | None:
+        """Load persisted daily state only when it matches current capital settings."""
+        persisted = load_daily_state()
+        if persisted is None:
+            return None
+
+        configured_equity = float(self._s._config.trading.starting_equity)
+        if math.isclose(
+            persisted.starting_equity,
+            configured_equity,
+            rel_tol=0.0,
+            abs_tol=0.01,
+        ):
+            return persisted
+
+        logger.warning(
+            "ALPHAEDGE: Clearing stale daily state with starting_equity=%.2f "
+            "because config.starting_equity=%.2f",
+            persisted.starting_equity,
+            configured_equity,
+        )
+        clear_daily_state()
+        return None
 
     # ------------------------------------------------------------------
     # Graceful shutdown
@@ -330,6 +363,7 @@ class SessionLifecycle:
             strength_at_entry=float(signal.get("strength", 0.0)),
             fill_status=fill_status,
         )
+        self._clear_pair_block_reason(state)
         logger.info(
             "TRADE_ENTRY | pair={} | dir={} | entry={} | fill={} | sl={} | tp={}"
             " | lots={} | sl_pips={:.1f} | spread={:.1f} | slip={:.2f}",
@@ -384,9 +418,12 @@ class SessionLifecycle:
             if pip_size >= 0.001:
                 mid = await self._s._rt_feed.get_mid_price(state.pair)
                 if mid is None:
-                    logger.error(
-                        f"ALPHAEDGE: Cannot get mid price for {state.pair} "
-                        f"— signal SKIPPED"
+                    self._log_pair_block_reason(
+                        state,
+                        "mid_price_unavailable",
+                        "error",
+                        "ALPHAEDGE FX: {} blocked — mid price unavailable",
+                        state.pair,
                     )
                     return False
                 exchange_rate = mid
@@ -399,15 +436,25 @@ class SessionLifecycle:
                 current_atr_pips=state.current_atr_pips,
             )
             if pos_result is None:
+                self._log_pair_block_reason(
+                    state,
+                    "position_size_invalid",
+                    "warning",
+                    "ALPHAEDGE RISK: {} blocked — invalid position sizing",
+                    state.pair,
+                )
                 return False
 
             if spread_pips is None:
                 spread = await self._s._rt_feed.get_live_spread(state.pair)
                 _t_spread_end = time.perf_counter_ns()
                 if spread is None:
-                    logger.error(
-                        "ALPHAEDGE: Cannot verify spread for "
-                        f"{state.pair} — signal SKIPPED"
+                    self._log_pair_block_reason(
+                        state,
+                        "spread_unavailable",
+                        "error",
+                        "ALPHAEDGE SPREAD: {} blocked — live spread unavailable",
+                        state.pair,
                     )
                     return False
                 spread_pips = spread / pip_size
@@ -421,9 +468,17 @@ class SessionLifecycle:
                 spread_pips,
             )
             if bracket is None:
+                self._log_pair_block_reason(
+                    state,
+                    "bracket_rejected",
+                    "warning",
+                    "ALPHAEDGE ORDER: {} blocked — bracket validation rejected",
+                    state.pair,
+                )
                 return False
 
             _t_order = time.perf_counter_ns()
+            self._clear_pair_block_reason(state)
             asyncio.ensure_future(
                 self._s._alert_manager.send_async(
                     alert_signal_detected(
@@ -629,6 +684,7 @@ class SessionLifecycle:
                         )
 
                         append_live_trade_csv(record)
+                        self._s._remember_dashboard_trade(record)
 
                         logger.info(
                             "TRADE_CLOSE | pair={} | exit={} | pnl_pips={:+.1f}"
@@ -695,6 +751,7 @@ class SessionLifecycle:
         try:
             # Verify gateway process/API are alive before reconnecting
             gw_ok = await ensure_gateway_ready(self._s._config.ib)
+            self._remember_gateway_health(gw_ok)
             if not gw_ok:
                 logger.critical(
                     "ALPHAEDGE: IB Gateway unreachable — aborting reconnect, "
@@ -795,6 +852,25 @@ class SessionLifecycle:
         if exc is not None:
             logger.error("ALPHAEDGE async task failed", exc_info=exc)
 
+    @staticmethod
+    def _clear_pair_block_reason(state: StrategyState) -> None:
+        """Reset the last deduplicated block reason for a pair."""
+        state.last_block_reason = ""
+
+    @staticmethod
+    def _log_pair_block_reason(
+        state: StrategyState,
+        reason: str,
+        level: str,
+        message: str,
+        *args: object,
+    ) -> None:
+        """Log a blocking reason once until the pair progresses."""
+        if state.last_block_reason == reason:
+            return
+        state.last_block_reason = reason
+        getattr(logger, level)(message, *args)
+
     # ------------------------------------------------------------------
     # Real-time M1 bar handler
     # ------------------------------------------------------------------
@@ -830,21 +906,32 @@ class SessionLifecycle:
             self._s._global_trades_today
             >= self._s._config.trading.max_trades_per_session
         ):
-            logger.debug(
-                "ALPHAEDGE: Max trades/session reached ({}) — skipping {}",
-                self._s._global_trades_today,
+            self._log_pair_block_reason(
+                state,
+                "max_trades_session",
+                "info",
+                "ALPHAEDGE LIMIT: {} blocked — max trades/session reached ({})",
                 pair,
+                self._s._global_trades_today,
             )
             return
 
         # Monitor spread spike while position is open
         if state.is_position_open:
+            self._clear_pair_block_reason(state)
             spread_task = asyncio.ensure_future(self._monitor_spread_spike(pair))
             spread_task.add_done_callback(self._on_task_done)
             return
 
         # News blackout check
         if self._s._news_filter.is_news_blackout(now_utc(), pair):
+            self._log_pair_block_reason(
+                state,
+                "news_blackout",
+                "info",
+                "ALPHAEDGE NEWS: {} blocked — blackout active",
+                pair,
+            )
             return
 
         usd_filter_enabled = _is_usd_filter_enabled(
@@ -866,9 +953,12 @@ class SessionLifecycle:
                 open_positions.append((open_pair, int(record.direction)))
 
             if would_amplify_usd_exposure(open_positions, pair, incoming_direction):
-                logger.info(
-                    "ALPHAEDGE USD FILTER: %s signal blocked — same-direction "
-                    "USD amplification",
+                self._log_pair_block_reason(
+                    state,
+                    "usd_amplification",
+                    "info",
+                    "ALPHAEDGE USD FILTER: {} blocked — "
+                    "same-direction USD amplification",
                     pair,
                 )
                 return
@@ -881,9 +971,13 @@ class SessionLifecycle:
                 pair, open_for_corr, self._s._correlation_matrix
             )
             if not corr_result.allowed:
-                logger.info(
-                    f"ALPHAEDGE CORRELATION: {pair} signal blocked "
-                    f"— {corr_result.reason}"
+                self._log_pair_block_reason(
+                    state,
+                    f"correlation:{corr_result.reason}",
+                    "info",
+                    "ALPHAEDGE CORRELATION: {} blocked — {}",
+                    pair,
+                    corr_result.reason,
                 )
                 return
 
@@ -901,14 +995,25 @@ class SessionLifecycle:
             max_open_pairs=1,
         )
         if not pair_check["allowed"]:
+            self._log_pair_block_reason(
+                state,
+                f"pair_limit:{pair_check.get('reason')}",
+                "info",
+                "ALPHAEDGE PAIR LIMIT: {} blocked — reason={} open_pairs={}",
+                pair,
+                pair_check.get("reason") or "max_pairs_reached",
+                ",".join(pair_check.get("open_pairs") or []),
+            )
             return
 
         # Gate: momentum signal must be active (confirmed at session start).
         if not state.signal_result or not state.signal_result.get("detected"):
+            self._clear_pair_block_reason(state)
             return
 
         direction: int = int(state.signal_result.get("direction") or 0)
         if direction == 0:
+            self._clear_pair_block_reason(state)
             return
 
         signal: dict[str, Any] = {
@@ -921,6 +1026,7 @@ class SessionLifecycle:
             "strength": state.signal_result.get("strength", 0.0),
             "adx": state.signal_result.get("adx", 0.0),
         }
+        self._clear_pair_block_reason(state)
         logger.info(
             f"ALPHAEDGE SIGNAL: {pair} "
             f"{'SELL' if direction == -1 else 'BUY'} "
@@ -954,9 +1060,12 @@ class SessionLifecycle:
                 max_open_pairs=1,
             )
             if not pair_check["allowed"]:
-                logger.info(
-                    f"ALPHAEDGE LOCK: {state.pair} signal rejected — "
-                    f"pair limit reached (re-check under lock)"
+                self._log_pair_block_reason(
+                    state,
+                    "pair_limit_under_lock",
+                    "info",
+                    "ALPHAEDGE LOCK: {} blocked — pair limit reached under lock",
+                    state.pair,
                 )
                 return False
             # Re-verify global trade count under lock
@@ -964,6 +1073,14 @@ class SessionLifecycle:
                 self._s._global_trades_today
                 >= self._s._config.trading.max_trades_per_session
             ):
+                self._log_pair_block_reason(
+                    state,
+                    "max_trades_under_lock",
+                    "info",
+                    "ALPHAEDGE LOCK: {} blocked — "
+                    "max trades/session reached under lock",
+                    state.pair,
+                )
                 return False
             # Reserve this pair atomically before releasing lock
             self._s._executing_pairs.add(state.pair)
@@ -983,16 +1100,24 @@ class SessionLifecycle:
         try:
             spread = await self._s._rt_feed.get_live_spread(state.pair)
             if spread is None:
-                logger.error(
-                    f"ALPHAEDGE: Cannot verify spread for {state.pair} — signal SKIPPED"
+                self._log_pair_block_reason(
+                    state,
+                    "spread_unavailable",
+                    "error",
+                    "ALPHAEDGE SPREAD: {} blocked — live spread unavailable",
+                    state.pair,
                 )
                 return False
             spread_pips = spread / pip_size
             if spread_pips > self._s._config.trading.max_spread_pips:
-                logger.info(
-                    f"ALPHAEDGE SPREAD: {state.pair} spread={spread_pips:.1f} "
-                    f"pips > max={self._s._config.trading.max_spread_pips} — "
-                    f"signal skipped"
+                self._log_pair_block_reason(
+                    state,
+                    "spread_too_wide",
+                    "info",
+                    "ALPHAEDGE SPREAD: {} blocked — {:.1f} pips > max={:.1f}",
+                    state.pair,
+                    spread_pips,
+                    self._s._config.trading.max_spread_pips,
                 )
                 return False
             return await self._execute_signal(
@@ -1107,6 +1232,7 @@ class SessionLifecycle:
                             else rec.pnl_usd
                         )
                         append_live_trade_csv(rec)
+                        self._s._remember_dashboard_trade(rec)
                         s_state.live_record = None
                         logger.info(
                             "TRADE_JOURNAL: session_end — {} journalised"
@@ -1167,7 +1293,7 @@ class SessionLifecycle:
             date=date.today().isoformat(),
             starting_equity=starting_eq,
             trades_today=total_trades,
-            shutdown_triggered=shutdown or self._s._shutdown_requested,
+            shutdown_triggered=shutdown,
             open_pairs=open_pairs,
         )
         save_daily_state(daily)
@@ -1284,14 +1410,13 @@ class SessionLifecycle:
                 while next_candidate.weekday() >= 5:  # 5=Sat, 6=Sun
                     next_candidate += timedelta(days=1)
                 next_start, _ = get_session_window_utc(next_candidate)
-                wait_h = (next_start - now).total_seconds() / 3600
-                if now.minute % 15 == 0 or wait_h > 40.0:
-                    logger.info(
-                        f"ALPHAEDGE: Weekend — next session in {wait_h:.1f}h "
-                        f"({format_dual_time(next_start)})"
-                    )
-                await asyncio.sleep(60.0)
-                continue
+                logger.warning(
+                    f"ALPHAEDGE: Weekend — bot process shutting down. "
+                    f"Next session: {format_dual_time(next_start)} "
+                    f"(IB Gateway stays running)"
+                )
+                await self.graceful_shutdown()
+                return
 
             # Already inside the window — proceed immediately
             if session_start <= now < session_end:
@@ -1306,6 +1431,20 @@ class SessionLifecycle:
                     next_candidate += timedelta(days=1)
                 next_start, _ = get_session_window_utc(next_candidate)
                 wait_h = (next_start - now).total_seconds() / 3600
+                # If next session is >36h away the gap spans a weekend
+                # (Friday → Monday ≈ 71h).  Shut down the bot process —
+                # IB Gateway stays running via IBC.  Task Scheduler
+                # restarts the bot on Monday at 15:00 local (≈13:00 UTC).
+                if wait_h > 36.0:
+                    logger.warning(
+                        f"ALPHAEDGE: Session ended — weekend ahead "
+                        f"({wait_h:.1f}h until next session). "
+                        f"Bot process shutting down. "
+                        f"Next session: {format_dual_time(next_start)} "
+                        f"(IB Gateway stays running)"
+                    )
+                    await self.graceful_shutdown()
+                    return
                 # Log at first check and then every ~15 min to avoid flooding
                 if now.minute % 15 == 0 or wait_h > 19.9:
                     logger.info(
@@ -1344,6 +1483,7 @@ class SessionLifecycle:
                     f"(IB Gateway restarts daily at {_rt} ET)"
                 )
                 gw_ok = await check_gateway_health(self._s._config.ib)
+                self._remember_gateway_health(gw_ok)
                 if gw_ok:
                     logger.info(
                         "ALPHAEDGE: Gateway healthy — credentials OK, "
@@ -1382,7 +1522,7 @@ class SessionLifecycle:
             )
 
         # Check persisted daily state before connecting
-        persisted = load_daily_state()
+        persisted = self._load_compatible_daily_state()
         if persisted and persisted.shutdown_triggered:
             logger.critical(
                 "ALPHAEDGE: Daily loss shutdown was triggered earlier "
@@ -1417,16 +1557,20 @@ class SessionLifecycle:
             # project — e.g. EDGECORE), skip the full lifecycle management
             # (launch / login / poll) and proceed directly.
             if await check_gateway_health(self._s._config.ib):
+                self._remember_gateway_health(True)
                 logger.info(
                     "ALPHAEDGE: IB Gateway already connected "
                     "— skipping gateway lifecycle management"
                 )
             elif not await ensure_gateway_ready(self._s._config.ib):
+                self._remember_gateway_health(False)
                 logger.critical(
                     "ALPHAEDGE: Cannot start — IB Gateway "
                     "not reachable after all retries"
                 )
                 return
+            else:
+                self._remember_gateway_health(True)
 
         # Wait for the session window to open (do NOT connect to IB yet)
         await self._wait_for_session_open()
@@ -1438,12 +1582,16 @@ class SessionLifecycle:
         # a potentially multi-hour wait.
         # Fast path first: if still healthy, no lifecycle management needed.
         if not await check_gateway_health(self._s._config.ib):
+            self._remember_gateway_health(False)
             if not await ensure_gateway_ready(self._s._config.ib):
                 logger.critical(
                     "ALPHAEDGE: Cannot start — IB Gateway "
                     "not reachable after all retries"
                 )
                 return
+            self._remember_gateway_health(True)
+        else:
+            self._remember_gateway_health(True)
 
         # Log here — after _wait_for_session_open — so the message only appears
         # when we are actually inside the trading window, not 60s after session end.
@@ -1501,24 +1649,22 @@ class SessionLifecycle:
                         "— using config.yaml rates"
                     )
 
-            # Get starting equity (use persisted value if restarting same day)
-            live_equity = await self._s._executor.get_account_equity()
+            # Use configured virtual capital for live strategy sizing and risk.
+            starting_equity = float(self._s._config.trading.starting_equity)
             if persisted and persisted.starting_equity > 0:
-                starting_equity = persisted.starting_equity
                 logger.info(
-                    f"ALPHAEDGE: Restored persisted starting_equity="
-                    f"{starting_equity:.2f} "
-                    f"(trades_today={persisted.trades_today})"
+                    "ALPHAEDGE: Restored persisted starting_equity=%.2f "
+                    "(trades_today=%s)",
+                    starting_equity,
+                    persisted.trades_today,
                 )
-            else:
-                starting_equity = live_equity
             self._session_starting_equity = starting_equity
             session_start, _session_end = get_session_window_utc()
 
             # Process each pair — regime gate, signal init
             active_pairs = await self._init_session_pairs(
                 starting_equity,
-                live_equity,
+                starting_equity,
                 persisted,
                 session_start,
             )

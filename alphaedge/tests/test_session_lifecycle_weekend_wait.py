@@ -9,7 +9,7 @@
 """Regression test for the weekend guard in _wait_for_session_open.
 
 Bug: on Sunday 2026-04-19 12:51 UTC, the loop computed a session window
-for Sunday (13:40–14:30 UTC), found it hadn't started yet, and waited
+for Sunday (13:30–14:30 UTC), found it hadn't started yet, and waited
 49 min for a non-trading day session.
 
 Fix: an is_weekend_paris() check at the top of each loop iteration
@@ -60,7 +60,7 @@ def _build_strategy() -> SwingStrategy:
 # Sunday 2026-04-19 12:51 UTC — the exact datetime from the bug report
 _SUNDAY_UTC = datetime.datetime(2026, 4, 19, 12, 51, 0, tzinfo=datetime.UTC)
 # Next Monday session (2026-04-22, not 2026-04-20 — Easter Monday)
-_MONDAY_SESSION_START = datetime.datetime(2026, 4, 21, 13, 40, 0, tzinfo=datetime.UTC)
+_MONDAY_SESSION_START = datetime.datetime(2026, 4, 21, 13, 30, 0, tzinfo=datetime.UTC)
 _MONDAY_SESSION_END = datetime.datetime(2026, 4, 21, 14, 30, 0, tzinfo=datetime.UTC)
 
 
@@ -68,30 +68,20 @@ _MONDAY_SESSION_END = datetime.datetime(2026, 4, 21, 14, 30, 0, tzinfo=datetime.
 # Weekend wait guard
 # ==================================================================
 class TestWaitForSessionOpenWeekendGuard:
-    """_wait_for_session_open must sleep 60s and continue (not return)
-    when is_weekend_paris() is True."""
+    """_wait_for_session_open must call graceful_shutdown() and return
+    immediately when is_weekend_paris() is True — not loop or sleep."""
 
     @pytest.mark.asyncio()
-    async def test_weekend_sleeps_60s_does_not_return_early(
+    async def test_weekend_triggers_graceful_shutdown(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """On Sunday, the method must sleep 60s (weekend branch) and loop,
-        NOT proceed to the session window or return to the caller."""
+        """On weekend, the method must call graceful_shutdown() once and
+        return — NOT sleep or loop indefinitely."""
         strategy = _build_strategy()
-        sleep_calls: list[float] = []
-
-        async def _fake_sleep(secs: float) -> None:
-            sleep_calls.append(secs)
-            # Break the while loop after the first sleep
-            strategy._shutdown_requested = True
 
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.is_weekend_paris",
             lambda: True,
-        )
-        monkeypatch.setattr(
-            "alphaedge.engine.session_lifecycle.asyncio.sleep",
-            _fake_sleep,
         )
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.now_utc",
@@ -103,18 +93,16 @@ class TestWaitForSessionOpenWeekendGuard:
         )
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.format_dual_time",
-            lambda _dt: "2026-04-21 13:40 UTC",
+            lambda _dt: "2026-04-21 13:30 UTC",
         )
+
+        shutdown_mock = AsyncMock()
+        monkeypatch.setattr(strategy._lifecycle, "graceful_shutdown", shutdown_mock)
 
         strategy._shutdown_requested = False
         await strategy._lifecycle._wait_for_session_open()
 
-        # Weekend branch must sleep exactly 60s — not the "before session_start"
-        # branch which uses min(wait_s - 30, 60) and can return non-60 values.
-        assert sleep_calls == [60.0], (
-            f"Expected [60.0] (weekend branch) but got {sleep_calls} — "
-            "the loop may have entered the weekday 'before session_start' branch"
-        )
+        shutdown_mock.assert_called_once()
 
     @pytest.mark.asyncio()
     async def test_weekday_does_not_hit_weekend_branch(
@@ -129,10 +117,9 @@ class TestWaitForSessionOpenWeekendGuard:
             sleep_calls.append(secs)
             strategy._shutdown_requested = True
 
-        # Monday 14:30 UTC — before session start (13:40 UTC is wrong —
-        # actually session is 13:40–14:30 — let's use 10:00 UTC, before session)
+        # Monday 10:00 UTC — before the 13:30 UTC session start.
         monday_before = datetime.datetime(2026, 4, 21, 10, 0, 0, tzinfo=datetime.UTC)
-        session_start = datetime.datetime(2026, 4, 21, 13, 40, 0, tzinfo=datetime.UTC)
+        session_start = datetime.datetime(2026, 4, 21, 13, 30, 0, tzinfo=datetime.UTC)
         session_end = datetime.datetime(2026, 4, 21, 14, 30, 0, tzinfo=datetime.UTC)
 
         monkeypatch.setattr(
@@ -153,18 +140,76 @@ class TestWaitForSessionOpenWeekendGuard:
         )
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.format_dual_time",
-            lambda _dt: "2026-04-21 13:40 UTC",
+            lambda _dt: "2026-04-21 13:30 UTC",
         )
 
         strategy._shutdown_requested = False
         await strategy._lifecycle._wait_for_session_open()
 
         # "Before session_start" branch — sleep value is min(wait_s - 30, 60)
-        # wait_s = (13:40 - 10:00) = 13200s → min(13170, 60) = 60.0
+        # wait_s = (13:30 - 10:00) = 12600s → min(12570, 60) = 60.0
         # But it's NOT the 60.0 of the weekend branch.
         # The key assertion: is_weekend_paris was False → we did NOT enter
         # the weekend branch.  A sleep(60.0) here is the pre-session-wait sleep.
         assert len(sleep_calls) == 1
+
+    @pytest.mark.asyncio()
+    async def test_friday_post_session_triggers_graceful_shutdown(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """After Friday's session ends, if the next session is >36h away
+        (i.e. Monday), the bot must call graceful_shutdown() and return —
+        not loop until Saturday is detected by is_weekend_paris()."""
+        strategy = _build_strategy()
+
+        # Friday 2026-04-24 15:00 UTC — session ended at 14:30 UTC
+        friday_after_session = datetime.datetime(
+            2026, 4, 24, 15, 0, 0, tzinfo=datetime.UTC
+        )
+        # Friday's session window
+        friday_start = datetime.datetime(2026, 4, 24, 13, 30, 0, tzinfo=datetime.UTC)
+        friday_end = datetime.datetime(2026, 4, 24, 14, 30, 0, tzinfo=datetime.UTC)
+        # Next session is Monday (~70h away)
+        monday_start = datetime.datetime(2026, 4, 27, 13, 30, 0, tzinfo=datetime.UTC)
+        monday_end = datetime.datetime(2026, 4, 27, 14, 30, 0, tzinfo=datetime.UTC)
+
+        call_count = 0
+
+        def _session_window(
+            dt: datetime.datetime,
+        ) -> tuple[datetime.datetime, datetime.datetime]:
+            nonlocal call_count
+            call_count += 1
+            # First call: Friday window; subsequent calls: Monday window
+            # (Saturday/Sunday are skipped by the weekday loop)
+            if dt.weekday() == 4:  # Friday
+                return friday_start, friday_end
+            return monday_start, monday_end
+
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_weekend_paris",
+            lambda: False,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.now_utc",
+            lambda: friday_after_session,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.get_session_window_utc",
+            _session_window,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.format_dual_time",
+            lambda _dt: "2026-04-27 13:30 UTC",
+        )
+
+        shutdown_mock = AsyncMock()
+        monkeypatch.setattr(strategy._lifecycle, "graceful_shutdown", shutdown_mock)
+
+        strategy._shutdown_requested = False
+        await strategy._lifecycle._wait_for_session_open()
+
+        shutdown_mock.assert_called_once()
 
 
 # ==================================================================
@@ -206,7 +251,7 @@ class TestRunSessionWeekendInfoLog:
         )
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.format_dual_time",
-            lambda _dt: "2026-04-21 13:40 UTC",
+            lambda _dt: "2026-04-21 13:30 UTC",
         )
         # Capture logger.info calls
         monkeypatch.setattr(
@@ -277,7 +322,7 @@ class TestPostRestartGatewayCheck:
             4,
             21,
             13,
-            40,
+            30,
             0,
             tzinfo=datetime.UTC,
         )
@@ -309,7 +354,7 @@ class TestPostRestartGatewayCheck:
         )
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.format_dual_time",
-            lambda _dt: "2026-04-21 13:40 UTC",
+            lambda _dt: "2026-04-21 13:30 UTC",
         )
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.check_gateway_health",
@@ -346,7 +391,7 @@ class TestPostRestartGatewayCheck:
             4,
             21,
             13,
-            40,
+            30,
             0,
             tzinfo=datetime.UTC,
         )
@@ -378,7 +423,7 @@ class TestPostRestartGatewayCheck:
         )
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.format_dual_time",
-            lambda _dt: "2026-04-21 13:40 UTC",
+            lambda _dt: "2026-04-21 13:30 UTC",
         )
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.check_gateway_health",

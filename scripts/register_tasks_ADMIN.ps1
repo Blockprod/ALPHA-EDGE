@@ -44,20 +44,26 @@ $botAction   = New-ScheduledTaskAction `
     -Execute  "powershell.exe" `
     -Argument "-NonInteractive -ExecutionPolicy Bypass -File `"$StartScript`""
 
-$botTrigger  = New-ScheduledTaskTrigger -AtStartup
+# Trigger 1 : at startup (covers reboots)
+$botTrigger1 = New-ScheduledTaskTrigger -AtStartup
+# Trigger 2 : every Monday at 15:00 local (Paris) = 13:00 UTC summer / 14:00 UTC winter
+# This restarts the bot after the weekend shutdown without requiring a reboot.
+$botTrigger2 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At "15:00"
+
 $botSettings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit  (New-TimeSpan -Hours 0) `
     -RestartCount        5 `
     -RestartInterval     (New-TimeSpan -Minutes 5) `
-    -StartWhenAvailable
+    -StartWhenAvailable `
+    -MultipleInstances   IgnoreNew
 
 Register-ScheduledTask `
     -TaskName    "ALPHAEDGE_Bot" `
     -Action      $botAction `
-    -Trigger     $botTrigger `
+    -Trigger     @($botTrigger1, $botTrigger2) `
     -Settings    $botSettings `
     -RunLevel    Highest `
-    -Description "ALPHAEDGE paper trading bot — auto-start on boot" `
+    -Description "ALPHAEDGE paper trading bot — auto-start on boot + weekly Monday 15:00 local" `
     -Force | Out-Null
 
 Write-Host "OK  Tache creee : ALPHAEDGE_Bot" -ForegroundColor Green
