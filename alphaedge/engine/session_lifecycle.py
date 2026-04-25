@@ -1410,13 +1410,20 @@ class SessionLifecycle:
                 while next_candidate.weekday() >= 5:  # 5=Sat, 6=Sun
                     next_candidate += timedelta(days=1)
                 next_start, _ = get_session_window_utc(next_candidate)
-                logger.warning(
-                    f"ALPHAEDGE: Weekend — bot process shutting down. "
+                # Wake up 60 min before session — one long sleep avoids
+                # 60s polling spam all weekend while keeping the process alive.
+                wake_at = next_start - timedelta(hours=1)
+                wait_s = max(0.0, (wake_at - now).total_seconds())
+                logger.info(
+                    f"ALPHAEDGE: Weekend — bot in standby. "
                     f"Next session: {format_dual_time(next_start)} "
-                    f"(IB Gateway stays running)"
+                    f"(waking in {wait_s / 3600:.1f}h)"
                 )
-                await self.graceful_shutdown()
-                return
+                while wait_s > 0 and not self._s._shutdown_requested:
+                    chunk = min(1800.0, wait_s)
+                    await asyncio.sleep(chunk)
+                    wait_s -= chunk
+                continue
 
             # Already inside the window — proceed immediately
             if session_start <= now < session_end:
@@ -1436,15 +1443,20 @@ class SessionLifecycle:
                 # IB Gateway stays running via IBC.  Task Scheduler
                 # restarts the bot on Monday at 15:00 local (≈13:00 UTC).
                 if wait_h > 36.0:
-                    logger.warning(
+                    # Friday → Monday gap: one long sleep instead of
+                    # 60s polling all weekend.  Wake up 60 min before Monday.
+                    wake_at = next_start - timedelta(hours=1)
+                    wait_s_long = max(0.0, (wake_at - now).total_seconds())
+                    logger.info(
                         f"ALPHAEDGE: Session ended — weekend ahead "
                         f"({wait_h:.1f}h until next session). "
-                        f"Bot process shutting down. "
-                        f"Next session: {format_dual_time(next_start)} "
-                        f"(IB Gateway stays running)"
+                        f"Bot in standby, waking at {format_dual_time(wake_at)}"
                     )
-                    await self.graceful_shutdown()
-                    return
+                    while wait_s_long > 0 and not self._s._shutdown_requested:
+                        chunk = min(1800.0, wait_s_long)
+                        await asyncio.sleep(chunk)
+                        wait_s_long -= chunk
+                    continue
                 # Log at first check and then every ~15 min to avoid flooding
                 if now.minute % 15 == 0 or wait_h > 19.9:
                     logger.info(

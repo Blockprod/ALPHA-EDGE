@@ -68,20 +68,30 @@ _MONDAY_SESSION_END = datetime.datetime(2026, 4, 21, 14, 30, 0, tzinfo=datetime.
 # Weekend wait guard
 # ==================================================================
 class TestWaitForSessionOpenWeekendGuard:
-    """_wait_for_session_open must call graceful_shutdown() and return
-    immediately when is_weekend_paris() is True — not loop or sleep."""
+    """On weekend, _wait_for_session_open must sleep in long chunks (standby)
+    and NOT call graceful_shutdown() or exit the process."""
 
     @pytest.mark.asyncio()
-    async def test_weekend_triggers_graceful_shutdown(
+    async def test_weekend_enters_standby_long_sleep(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """On weekend, the method must call graceful_shutdown() once and
-        return — NOT sleep or loop indefinitely."""
+        """On weekend, the method must sleep in ≤30-min chunks and loop back
+        (standby mode) — NOT call graceful_shutdown() or return immediately."""
         strategy = _build_strategy()
+        sleep_calls: list[float] = []
+
+        async def _fake_sleep(secs: float) -> None:
+            sleep_calls.append(secs)
+            # Break the inner standby loop after the first chunk
+            strategy._shutdown_requested = True
 
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.is_weekend_paris",
             lambda: True,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.asyncio.sleep",
+            _fake_sleep,
         )
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.now_utc",
@@ -102,7 +112,12 @@ class TestWaitForSessionOpenWeekendGuard:
         strategy._shutdown_requested = False
         await strategy._lifecycle._wait_for_session_open()
 
-        shutdown_mock.assert_called_once()
+        # Must sleep in ≤1800s chunks — not 60s and not a tiny value
+        assert len(sleep_calls) >= 1
+        assert sleep_calls[0] <= 1800.0
+        assert sleep_calls[0] > 60.0, "Expected long standby sleep, not 60s poll"
+        # Must NOT terminate the process
+        shutdown_mock.assert_not_called()
 
     @pytest.mark.asyncio()
     async def test_weekday_does_not_hit_weekend_branch(
@@ -154,41 +169,41 @@ class TestWaitForSessionOpenWeekendGuard:
         assert len(sleep_calls) == 1
 
     @pytest.mark.asyncio()
-    async def test_friday_post_session_triggers_graceful_shutdown(
+    async def test_friday_post_session_enters_standby(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """After Friday's session ends, if the next session is >36h away
-        (i.e. Monday), the bot must call graceful_shutdown() and return —
-        not loop until Saturday is detected by is_weekend_paris()."""
+        """After Friday's session ends (next session >36h away), the bot must
+        enter standby (long sleep chunks) — NOT call graceful_shutdown()."""
         strategy = _build_strategy()
+        sleep_calls: list[float] = []
 
         # Friday 2026-04-24 15:00 UTC — session ended at 14:30 UTC
         friday_after_session = datetime.datetime(
             2026, 4, 24, 15, 0, 0, tzinfo=datetime.UTC
         )
-        # Friday's session window
         friday_start = datetime.datetime(2026, 4, 24, 13, 30, 0, tzinfo=datetime.UTC)
         friday_end = datetime.datetime(2026, 4, 24, 14, 30, 0, tzinfo=datetime.UTC)
-        # Next session is Monday (~70h away)
         monday_start = datetime.datetime(2026, 4, 27, 13, 30, 0, tzinfo=datetime.UTC)
         monday_end = datetime.datetime(2026, 4, 27, 14, 30, 0, tzinfo=datetime.UTC)
-
-        call_count = 0
 
         def _session_window(
             dt: datetime.datetime,
         ) -> tuple[datetime.datetime, datetime.datetime]:
-            nonlocal call_count
-            call_count += 1
-            # First call: Friday window; subsequent calls: Monday window
-            # (Saturday/Sunday are skipped by the weekday loop)
             if dt.weekday() == 4:  # Friday
                 return friday_start, friday_end
             return monday_start, monday_end
 
+        async def _fake_sleep(secs: float) -> None:
+            sleep_calls.append(secs)
+            strategy._shutdown_requested = True
+
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.is_weekend_paris",
             lambda: False,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.asyncio.sleep",
+            _fake_sleep,
         )
         monkeypatch.setattr(
             "alphaedge.engine.session_lifecycle.now_utc",
@@ -209,7 +224,11 @@ class TestWaitForSessionOpenWeekendGuard:
         strategy._shutdown_requested = False
         await strategy._lifecycle._wait_for_session_open()
 
-        shutdown_mock.assert_called_once()
+        # Must sleep in ≤1800s chunks — not tiny, not a 60s poll
+        assert len(sleep_calls) >= 1
+        assert sleep_calls[0] <= 1800.0
+        assert sleep_calls[0] > 60.0, "Expected long standby sleep, not 60s poll"
+        shutdown_mock.assert_not_called()
 
 
 # ==================================================================
