@@ -1,1279 +1,1293 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ALPHAEDGE — Monitor</title>
-  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
-  <style>
-    /* ================================================================
-       ALPHAEDGE — EDGECORE-style Bloomberg Terminal Theme
-       4-col CSS Grid · 1px gap gridlines · flat panels · dense
-       ================================================================ */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg-0: #06080d;
-      --bg-1: #0c1017;
-      --bg-2: #111820;
-      --bg-3: #19212d;
-      --border: #1e2a3a;
-      --border-accent: #2a3a52;
-      --text-0: #e8edf5;
-      --text-1: #a4b1c7;
-      --text-2: #6b7a94;
-      --text-3: #3f4f66;
-      --accent: #3b82f6;
-      --accent-dim: #1e3a5f;
-      --green: #10b981;
-      --green-dim: #064e3b;
-      --red: #ef4444;
-      --red-dim: #4c1414;
-      --yellow: #f59e0b;
-      --yellow-dim: #4a3508;
-      --cyan: #06b6d4;
-      --purple: #8b5cf6;
-      --font-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
-    }
-
-    html, body {
-      height: 100%;
-    }
-
-    body {
-      background: var(--bg-0);
-      color: var(--text-0);
-      font-family: var(--font-sans);
-      font-size: 13px;
-      line-height: 1.5;
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    /* ================================================================
-       TOPBAR
-       ================================================================ */
-    .topbar {
-      background: var(--bg-1);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 16px;
-      height: 44px;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-
-    .topbar-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .logo {
-      font-family: var(--font-mono);
-      font-weight: 700;
-      font-size: 14px;
-      color: var(--text-0);
-      letter-spacing: 0.5px;
-    }
-
-    .logo span {
-      color: var(--text-2);
-      font-weight: 400;
-      font-size: 11px;
-    }
-
-    .mode-badge {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 3px 10px;
-      border-radius: 4px;
-      font-family: var(--font-mono);
-      font-size: 11px;
-      font-weight: 600;
-      border: 1px solid;
-    }
-
-    .mode-badge.paper {
-      color: var(--accent);
-      border-color: var(--accent-dim);
-      background: rgba(59,130,246,0.08);
-    }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .status-dot.ok  { background: var(--green); box-shadow: 0 0 6px var(--green); }
-    .status-dot.err { background: var(--red);   box-shadow: 0 0 6px var(--red); }
-
-    .topbar-right {
-      font-family: var(--font-mono);
-      font-size: 12px;
-      color: var(--text-2);
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .topbar-right .sep { color: var(--text-3); }
-
-    /* -- Connection banner -- */
-    #conn-banner {
-      display: none;
-      background: var(--red-dim);
-      border-bottom: 1px solid var(--red);
-      color: var(--red);
-      text-align: center;
-      padding: 6px;
-      font-size: 11px;
-      font-weight: 600;
-      font-family: var(--font-mono);
-    }
-
-    /* ================================================================
-       KPI STRIP (7-column, full width, 1px gap gridlines)
-       ================================================================ */
-    .kpi-strip {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 1px;
-      background: var(--border);
-    }
-
-    .kpi {
-      background: var(--bg-1);
-      padding: 12px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .kpi-label {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--text-3);
-    }
-
-    .kpi-value {
-      font-family: var(--font-mono);
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--text-0);
-      line-height: 1.2;
-    }
-
-    .kpi-sub {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      color: var(--text-2);
-    }
-
-    .kpi-value.positive { color: var(--green); }
-    .kpi-value.negative { color: var(--red); }
-    .kpi-value.warn     { color: var(--yellow); }
-
-    /* -- Risk bar -- */
-    .risk-bar-track {
-      height: 4px;
-      background: var(--bg-3);
-      border-radius: 2px;
-      overflow: hidden;
-      margin-top: 4px;
-    }
-
-    .risk-bar-fill {
-      height: 100%;
-      border-radius: 2px;
-      transition: width .5s ease, background .5s ease;
-    }
-
-    /* ================================================================
-       DASHBOARD GRID (4-column, 1px gap gridlines)
-       ================================================================ */
-    .dashboard {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr 1fr;
-      grid-template-rows: minmax(200px, 1fr) minmax(160px, 1fr) minmax(160px, 1fr);
-      gap: 1px;
-      background: var(--border);
-      flex: 1;
-      padding-top: 1px;
-    }
-
-    .equity-panel    { grid-column: 1 / 4; }
-    .system-panel    { grid-column: 4 / 5; }
-    .positions-panel { grid-column: 1 / 3; }
-    .pipeline-panel  { grid-column: 3 / 5; }
-    .trades-panel    { grid-column: 1 / 3; }
-    .health-panel    { grid-column: 3 / 5; }
-
-    .panel {
-      background: var(--bg-1);
-      display: flex;
-      flex-direction: column;
-    }
-
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 16px;
-      border-bottom: 1px solid var(--border-accent);
-    }
-
-    .panel-title {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--text-3);
-    }
-
-    .panel-body { flex: 1; }
-
-    #equity-chart { width: 100%; height: 100%; min-height: 200px; }
-
-    /* ================================================================
-       DATA TABLE
-       ================================================================ */
-    .data-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    .data-table th {
-      text-align: left;
-      padding: 6px 12px;
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--text-3);
-      background: var(--bg-2);
-      border-bottom: 1px solid var(--border-accent);
-      white-space: nowrap;
-    }
-
-    .data-table th.right, .data-table td.right { text-align: right; }
-
-    .data-table td {
-      padding: 5px 12px;
-      font-family: var(--font-mono);
-      font-size: 11px;
-      color: var(--text-1);
-      border-bottom: 1px solid var(--bg-3);
-      white-space: nowrap;
-    }
-
-    .data-table tr:last-child td { border-bottom: none; }
-    .data-table tr:hover td { background: var(--bg-2); }
-
-    .side-long  { color: var(--green); font-weight: 600; }
-    .side-short { color: var(--red); font-weight: 600; }
-    .pnl-pos  { color: var(--green); }
-    .pnl-neg  { color: var(--red); }
-    .pnl-zero { color: var(--text-3); }
-
-    /* -- Status pills -- */
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      padding: 1px 6px;
-      border-radius: 3px;
-      font-family: var(--font-mono);
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-    }
-
-    .pill-open  { background: rgba(59,130,246,0.12); color: var(--accent); }
-    .pill-flat  { background: var(--bg-3); color: var(--text-3); }
-    .pill-long  { background: rgba(16,185,129,0.12); color: var(--green); }
-    .pill-short { background: rgba(239,68,68,0.12); color: var(--red); }
-    .pill-win   { background: rgba(16,185,129,0.12); color: var(--green); }
-    .pill-loss  { background: rgba(239,68,68,0.12); color: var(--red); }
-    .pill-be    { background: rgba(245,158,11,0.12); color: var(--yellow); }
-
-    /* ================================================================
-       SYSTEM ROWS
-       ================================================================ */
-    .sys-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 5px 16px;
-      border-bottom: 1px solid var(--bg-3);
-      font-size: 12px;
-    }
-
-    .sys-row:last-child { border-bottom: none; }
-
-    .sys-label { color: var(--text-2); font-size: 11px; }
-
-    .sys-value {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      font-weight: 600;
-    }
-
-    .sys-ok   { color: var(--green); }
-    .sys-warn { color: var(--yellow); }
-    .sys-err  { color: var(--red); }
-    .sys-dim  { color: var(--text-3); }
-
-    /* ================================================================
-       SIGNAL PIPELINE
-       ================================================================ */
-    .pipeline-pair {
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--bg-3);
-    }
-
-    .pipeline-pair:last-child { border-bottom: none; }
-
-    .pipeline-pair-name {
-      font-family: var(--font-mono);
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--cyan);
-      margin-bottom: 6px;
-    }
-
-    .pipeline-stages {
-      display: flex;
-      align-items: center;
-      gap: 3px;
-    }
-
-    .pipeline-stage {
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-family: var(--font-mono);
-      font-size: 9px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      border: 1px solid;
-    }
-
-    .stage-pass { color: var(--green); border-color: var(--green-dim); background: rgba(16,185,129,0.08); }
-    .stage-fail { color: var(--red);   border-color: var(--red-dim);   background: rgba(239,68,68,0.08); }
-    .stage-idle { color: var(--text-3); border-color: var(--bg-3);     background: var(--bg-2); }
-
-    .pipeline-arrow {
-      color: var(--text-3);
-      font-size: 9px;
-      flex-shrink: 0;
-    }
-
-    .pipeline-meta {
-      display: flex;
-      gap: 10px;
-      margin-top: 5px;
-      font-family: var(--font-mono);
-      font-size: 10px;
-      color: var(--text-2);
-    }
-
-    .pipeline-meta .label { color: var(--text-3); margin-right: 2px; }
-
-    /* ================================================================
-       TRADE FEED (Activity Log style)
-       ================================================================ */
-    .log-container {
-      max-height: 280px;
-      overflow-y: auto;
-    }
-
-    .log-container::-webkit-scrollbar { width: 4px; }
-    .log-container::-webkit-scrollbar-track { background: transparent; }
-    .log-container::-webkit-scrollbar-thumb { background: var(--border-accent); border-radius: 2px; }
-
-    .log-line {
-      display: flex;
-      align-items: center;
-      padding: 4px 16px;
-      border-bottom: 1px solid var(--bg-3);
-      font-family: var(--font-mono);
-      font-size: 11px;
-      gap: 10px;
-    }
-
-    .log-line:last-child { border-bottom: none; }
-    .log-line:hover { background: var(--bg-2); }
-
-    .log-time  { color: var(--text-3); min-width: 50px; flex-shrink: 0; }
-    .log-level { font-weight: 700; text-transform: uppercase; min-width: 36px; flex-shrink: 0; font-size: 10px; }
-    .log-level.ok   { color: var(--green); }
-    .log-level.warn { color: var(--yellow); }
-    .log-level.err  { color: var(--red); }
-    .log-pair  { color: var(--cyan); font-weight: 600; min-width: 56px; flex-shrink: 0; }
-    .log-msg   { color: var(--text-1); }
-    .log-pnl   { margin-left: auto; font-weight: 700; flex-shrink: 0; }
-
-    /* ================================================================
-       METRICS GRID
-       ================================================================ */
-    .metrics-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1px;
-      background: var(--border);
-    }
-
-    .metric {
-      background: var(--bg-1);
-      padding: 10px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .metric-label {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--text-3);
-    }
-
-    .metric-value {
-      font-family: var(--font-mono);
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text-0);
-    }
-
-    .metric-value.positive { color: var(--green); }
-    .metric-value.negative { color: var(--red); }
-
-    .empty-state {
-      text-align: center;
-      padding: 24px 16px;
-      color: var(--text-3);
-      font-size: 11px;
-      font-family: var(--font-mono);
-    }
-
-    /* ================================================================
-       FOOTER
-       ================================================================ */
-    .footer {
-      background: var(--bg-1);
-      border-top: 1px solid var(--border);
-      padding: 6px 16px;
-      text-align: center;
-      font-family: var(--font-mono);
-      font-size: 10px;
-      color: var(--text-3);
-    }
-
-    .footer a { color: var(--accent); text-decoration: none; }
-    .footer a:hover { text-decoration: underline; }
-
-    /* ================================================================
-       RESPONSIVE
-       ================================================================ */
-    @media (max-width: 1200px) {
-      .kpi-strip { grid-template-columns: repeat(4, 1fr); }
-      .dashboard { grid-template-columns: 1fr 1fr; }
-      .equity-panel, .system-panel, .positions-panel,
-      .pipeline-panel, .trades-panel, .health-panel { grid-column: 1 / -1; }
-    }
-
-    @media (max-width: 768px) {
-      .kpi-strip { grid-template-columns: repeat(2, 1fr); }
-      .topbar { flex-direction: column; gap: 8px; height: auto; padding: 8px 16px; }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="darkreader-lock">
+<title>ALPHAEDGE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --cds-background: #030711;
+  --cds-layer-01: #060d1e;
+  --cds-layer-02: #0a1429;
+  --cds-layer-03: #0f1d3a;
+  --cds-border-subtle-01: #1a3158;
+  --cds-border-subtle-02: #274677;
+  --cds-text-primary: #e4ecfa;
+  --cds-text-secondary: #9bb0d3;
+  --cds-text-helper: #6f86ac;
+  --cds-focus: #78a9ff;
+  --cds-support-success: #00c389;
+  --cds-support-error: #ff5f6d;
+  --cds-support-warning: #f1c21b;
+  --spacing-01: 0.125rem;
+  --spacing-02: 0.25rem;
+  --spacing-03: 0.5rem;
+  --spacing-04: 0.75rem;
+  --spacing-05: 1rem;
+  --spacing-06: 1.5rem;
+  --vignette-gap: 0.875rem;
+  --motion-productive: cubic-bezier(0.2, 0, 0.38, 0.9);
+  --bg-top: #030711;
+  --bg-bottom: #070f21;
+  --bg: #030711;
+  --surface-0: #050c1b;
+  --surface-1: #060d1e;
+  --surface-2: #0a1429;
+  --tile-bg: #060d1e;
+  --panel-bg: #070d15;
+  --panel-head-bg: #0e1723;
+  --panel-border: #1a2a3b;
+  --panel-title: #d6a63a;
+  --panel-badge: #4e627b;
+  --line: #1a3158;
+  --line-strong: #274677;
+  --text-1: #e4ecfa;
+  --text-2: #9bb0d3;
+  --text-3: #6f86ac;
+  --brand: #f0b534;
+  --ok: #00c389;
+  --bad: #ff5f6d;
+  --warn: #f1c21b;
+  --mono: 'IBM Plex Mono', 'Courier New', monospace;
+  --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-2);
+  background:
+    radial-gradient(1200px 520px at 20% -10%, rgba(47, 82, 150, 0.08), transparent 66%),
+    radial-gradient(940px 480px at 88% -18%, rgba(34, 70, 136, 0.07), transparent 69%),
+    linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+}
+
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 2px; }
+
+.app-header {
+  height: 44px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-0);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.logo {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--text-1);
+  line-height: 1;
+}
+
+.logo .brand { color: var(--brand); }
+
+.logo-sub {
+  font-family: var(--sans);
+  font-size: 9px;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#clock {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-2);
+  letter-spacing: 0.4px;
+}
+
+.btn-refresh {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  padding: 4px 9px;
+  cursor: pointer;
+  line-height: 1;
+  transition: background-color 120ms var(--motion-productive), color 120ms var(--motion-productive), border-color 120ms var(--motion-productive);
+}
+
+.btn-refresh:hover { background: var(--surface-2); color: var(--text-1); }
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 6px var(--ok);
+  flex-shrink: 0;
+}
+
+.status-dot.offline {
+  background: var(--bad);
+  box-shadow: 0 0 6px var(--bad);
+  animation: blink 1.2s ease infinite;
+}
+
+.status-dot.warn {
+  background: var(--warn);
+  box-shadow: 0 0 6px var(--warn);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+.alert {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-left: 3px solid var(--bad);
+  background: rgba(255, 95, 109, 0.08);
+  color: var(--bad);
+  font-family: var(--mono);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.alert.visible { display: flex; }
+
+#halt-alert {
+  border-left-color: var(--warn);
+  background: rgba(241, 194, 27, 0.08);
+  color: var(--warn);
+}
+
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--vignette-gap);
+  background: var(--bg);
+  padding: var(--vignette-gap) var(--vignette-gap) var(--spacing-03);
+  border-bottom: none;
+  flex-shrink: 0;
+}
+
+.kpi-card {
+  position: relative;
+  background: var(--tile-bg);
+  min-height: 82px;
+  padding: 11px 12px 8px 13px;
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  box-shadow: inset 0 1px 0 rgba(123, 165, 245, 0.08);
+  transition: border-color 140ms var(--motion-productive), background-color 140ms var(--motion-productive), transform 140ms var(--motion-productive);
+}
+
+.kpi-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--brand);
+}
+
+.kpi-card:hover {
+  background: var(--tile-bg);
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+
+.kpi-label {
+  font-size: 9px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--brand);
+  margin-bottom: 6px;
+  font-family: var(--sans);
+  font-weight: 600;
+}
+
+.kpi-value {
+  font-family: var(--mono);
+  font-size: 24px;
+  line-height: 1;
+  color: var(--text-1);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: flex-end;
+  flex: 1;
+}
+
+.kpi-value.pos { color: var(--ok); }
+.kpi-value.neg { color: var(--bad); }
+
+.kpi-sub {
+  margin-top: 3px;
+  min-height: 13px;
+  font-size: 10px;
+  color: var(--text-3);
+  font-family: var(--mono);
+}
+
+.kpi-sub.pos { color: var(--ok); }
+.kpi-sub.neg { color: var(--bad); }
+
+.main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 42% 58%;
+  gap: var(--vignette-gap);
+  background: transparent;
+  padding: var(--spacing-03) var(--vignette-gap) var(--spacing-06);
+}
+
+.row {
+  display: grid;
+  gap: var(--vignette-gap);
+  min-height: 0;
+  background: transparent;
+}
+
+.row-top { grid-template-columns: 3fr 2fr; }
+.row-bottom { grid-template-columns: 1fr 1fr; }
+.row-bottom { padding-bottom: var(--vignette-gap); }
+
+.panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+  border-radius: 0;
+  box-shadow: inset 0 1px 0 rgba(103, 136, 176, 0.06);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--panel-border);
+  padding: 9px 14px;
+  background: var(--panel-head-bg);
+  flex-shrink: 0;
+}
+
+.panel-title {
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--panel-title);
+  font-weight: 600;
+}
+
+.panel-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--panel-badge);
+}
+
+.panel-badge.pos { color: var(--ok); }
+.panel-badge.neg { color: var(--bad); }
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.chart-wrap {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 14px 8px;
+  overflow: hidden;
+}
+
+#equity-chart {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel-head-bg);
+  border-bottom: 1px solid var(--panel-border);
+  color: var(--panel-badge);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2.6px;
+  text-align: left;
+  padding: 8px 11px;
+  white-space: nowrap;
+}
+
+.table thead th.r { text-align: right; }
+
+.table tbody td {
+  border-bottom: 1px solid rgba(26, 42, 59, 0.9);
+  padding: 8px 11px;
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.table tbody td.r { text-align: right; }
+.table tbody tr:hover td { background: #0e1723; }
+.t-sym { color: var(--text-1) !important; font-weight: 600; }
+.t-sym-wrap { display: block; }
+
+.t-meta {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-3);
+  font-size: 9px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.t-dim { color: var(--text-3) !important; }
+.t-pos { color: var(--ok) !important; }
+.t-neg { color: var(--bad) !important; }
+
+.empty-cell {
+  color: var(--text-3) !important;
+  text-align: center !important;
+  font-style: italic;
+  padding: 14px !important;
+}
+
+.pnl-block { text-align: right; }
+.pnl-main { display: block; }
+.pnl-pct { display: block; font-size: 9px; opacity: 0.8; }
+
+.badge {
+  display: inline-block;
+  border: 1px solid;
+  padding: 1px 6px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+}
+
+.badge-buy,
+.badge-win,
+.badge-long {
+  color: var(--ok);
+  background: rgba(0, 195, 137, 0.12);
+  border-color: rgba(0, 195, 137, 0.3);
+}
+
+.badge-close,
+.badge-loss,
+.badge-short,
+.badge-flat {
+  color: #ff8790;
+  background: rgba(255, 135, 144, 0.1);
+  border-color: rgba(255, 135, 144, 0.28);
+}
+
+#live-log {
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.52;
+}
+
+.log-line {
+  padding: 2px 10px;
+  color: var(--text-3);
+  border-bottom: 1px solid rgba(26, 37, 56, 0.7);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-line:hover { background: var(--surface-2); }
+.log-line.err { color: #ff8790; }
+.log-line.warn { color: var(--warn); }
+.log-line.dbg { color: var(--text-3); opacity: 0.7; }
+
+footer {
+  height: 24px;
+  min-height: 24px;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(11, 19, 34, 0.98), rgba(8, 18, 36, 0.98));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  color: var(--text-3);
+  font-size: 9px;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.btn-refresh:focus-visible,
+.kpi-card:focus-visible,
+.panel:focus-visible {
+  outline: 2px solid var(--cds-focus);
+  outline-offset: 1px;
+}
+
+@media (max-width: 980px) {
+  .kpi-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .row-top, .row-bottom { grid-template-columns: 1fr; }
+  .main { grid-template-rows: 1fr 1fr; }
+}
+
+@media (max-width: 640px) {
+  .kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-header, footer {
+    height: auto;
+    min-height: 44px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+}
+</style>
 </head>
 <body>
-
-<!-- -- Connection Banner -- -->
-<div id="conn-banner">&#9888; WebSocket disconnected &#8212; reconnecting&#8230;</div>
-
-<!-- ================================================================
-     TOPBAR
-     ================================================================ -->
-<div class="topbar">
-  <div class="topbar-left">
-    <div class="logo">ALPHAEDGE <span>| MOMENTUM+CARRY MONITOR</span></div>
-    <div class="mode-badge paper" id="mode-badge">
-      <span class="status-dot ok" id="status-dot"></span>
-      <span id="mode-text">PAPER</span>
-    </div>
+<header class="app-header">
+  <div class="header-left">
+    <span class="logo"><span class="brand">ALPHA</span>EDGE</span>
+    <span class="logo-sub">Dashboard</span>
   </div>
-  <div class="topbar-right">
-    <span id="ib-status">IB --</span>
-    <span class="sep">|</span>
-    <span id="session-status">SESSION --</span>
-    <span class="sep">|</span>
-    <span id="clock">--:--:-- UTC</span>
+  <div class="header-right">
+    <span id="clock">--:--:-- LOCAL</span>
+    <button class="btn-refresh" id="btn-refresh" type="button">&#8635; REFRESH</button>
+    <span class="status-dot" id="status-dot"></span>
   </div>
-</div>
+</header>
 
-<!-- ================================================================
-     KPI STRIP (7 columns)
-     ================================================================ -->
+<div class="alert" id="disconnect-alert"><span>&#9888;</span><span>Gateway disconnected - websocket retry in progress.</span></div>
+<div class="alert" id="halt-alert"><span>&#9888;</span><span>Daily loss halt active - trading blocked.</span></div>
+
 <div class="kpi-strip">
-  <div class="kpi">
+  <section class="kpi-card">
     <div class="kpi-label">Equity</div>
     <div class="kpi-value" id="kpi-equity">--</div>
-    <div class="kpi-sub" id="kpi-equity-sub">initial: --</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">Daily P&amp;L</div>
-    <div class="kpi-value" id="kpi-pnl">--</div>
-    <div class="kpi-sub" id="kpi-pnl-pct"></div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">Risk Budget</div>
-    <div class="kpi-value" id="kpi-risk">--</div>
-    <div class="risk-bar-track">
-      <div class="risk-bar-fill" id="risk-bar" style="width:0%; background:var(--green);"></div>
-    </div>
-    <div class="kpi-sub" id="kpi-risk-sub"></div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">Win Rate</div>
-    <div class="kpi-value" id="kpi-winrate">--</div>
-    <div class="kpi-sub" id="kpi-winloss"></div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">Trades Today</div>
-    <div class="kpi-value" id="kpi-trades">0</div>
-    <div class="kpi-sub" id="kpi-trades-sub"></div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">Loss Streak</div>
-    <div class="kpi-value" id="kpi-streak">0</div>
-    <div class="kpi-sub" id="kpi-streak-sub"></div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">Remaining</div>
-    <div class="kpi-value" id="kpi-remaining">--</div>
-    <div class="kpi-sub">max daily trades</div>
-  </div>
+    <div class="kpi-sub" id="kpi-equity-sub">&nbsp;</div>
+  </section>
+  <section class="kpi-card">
+    <div class="kpi-label">Baseline</div>
+    <div class="kpi-value" id="kpi-baseline">--</div>
+    <div class="kpi-sub" id="kpi-baseline-sub">&nbsp;</div>
+  </section>
+  <section class="kpi-card">
+    <div class="kpi-label">Day P&amp;L</div>
+    <div class="kpi-value" id="kpi-daypnl">--</div>
+    <div class="kpi-sub" id="kpi-daypnl-sub">&nbsp;</div>
+  </section>
+  <section class="kpi-card">
+    <div class="kpi-label">Vs. Start</div>
+    <div class="kpi-value" id="kpi-vsstart">--</div>
+    <div class="kpi-sub" id="kpi-vsstart-sub">&nbsp;</div>
+  </section>
+  <section class="kpi-card">
+    <div class="kpi-label">Positions</div>
+    <div class="kpi-value" id="kpi-positions">--</div>
+    <div class="kpi-sub" id="kpi-positions-sub">&nbsp;</div>
+  </section>
 </div>
 
-<!-- ================================================================
-     DASHBOARD GRID (4-column)
-     ================================================================ -->
-<div class="dashboard">
-
-  <!-- Equity Panel (3 cols) -->
-  <div class="panel equity-panel">
-    <div class="panel-header">
-      <div class="panel-title">Equity Curve</div>
-      <div id="equity-delta" style="font-family:var(--font-mono); font-size:11px; font-weight:600;"></div>
-    </div>
-    <div class="panel-body">
-      <div id="equity-chart"></div>
-    </div>
-  </div>
-
-  <!-- System Panel (1 col) -->
-  <div class="panel system-panel">
-    <div class="panel-header">
-      <div class="panel-title">System</div>
-    </div>
-    <div class="panel-body">
-      <div class="sys-row"><span class="sys-label">Gateway</span><span class="sys-value sys-dim" id="h-gateway">--</span></div>
-      <div class="sys-row"><span class="sys-label">Uptime</span><span class="sys-value sys-dim" id="h-uptime">--</span></div>
-      <div class="sys-row"><span class="sys-label">Reconcile</span><span class="sys-value sys-dim" id="h-reconcile">--</span></div>
-      <div class="sys-row"><span class="sys-label">P&amp;L Drift</span><span class="sys-value sys-dim" id="h-drift">--</span></div>
-      <div class="sys-row"><span class="sys-label">News</span><span class="sys-value sys-dim" id="h-news">--</span></div>
-      <div class="sys-row"><span class="sys-label">Regime</span><span class="sys-value sys-dim" id="h-regime">--</span></div>
-      <div class="sys-row"><span class="sys-label">Last Update</span><span class="sys-value sys-dim" id="h-update">--</span></div>
-    </div>
-  </div>
-
-  <!-- Positions Panel (2 cols) -->
-  <div class="panel positions-panel">
-    <div class="panel-header">
-      <div class="panel-title">Positions &amp; Pairs</div>
-    </div>
-    <div class="panel-body" style="overflow-x:auto;">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Pair</th>
-            <th>Side</th>
-            <th class="right">Entry</th>
-            <th class="right">SL</th>
-            <th class="right">TP</th>
-            <th class="right">Lots</th>
-            <th class="right">P&amp;L</th>
-            <th class="right">P&amp;L $</th>
-            <th class="right">ADX</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="pairs-body">
-          <tr><td colspan="10" class="empty-state">Waiting for data&#8230;</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Pipeline Panel (2 cols) -->
-  <div class="panel pipeline-panel">
-    <div class="panel-header">
-      <div class="panel-title">Signal Pipeline</div>
-    </div>
-    <div class="panel-body" id="pipeline-container">
-      <div class="empty-state">Waiting for signal data&#8230;</div>
-    </div>
-  </div>
-
-  <!-- Trades Panel (2 cols, activity log style) -->
-  <div class="panel trades-panel">
-    <div class="panel-header">
-      <div class="panel-title">Recent Trades</div>
-      <div id="trades-count" style="font-family:var(--font-mono); font-size:10px; color:var(--text-3);"></div>
-    </div>
-    <div class="panel-body">
-      <div class="log-container" id="trades-feed">
-        <div class="empty-state">No trades yet</div>
+<main class="main">
+  <section class="row row-top">
+    <article class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Equity Curve</span>
+        <span class="panel-badge" id="curve-badge">no data</span>
       </div>
-    </div>
-  </div>
+      <div class="chart-wrap">
+        <svg id="equity-chart" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </article>
 
-  <!-- Performance Panel (2 cols, metrics grid) -->
-  <div class="panel health-panel">
-    <div class="panel-header">
-      <div class="panel-title">Performance</div>
-    </div>
-    <div class="panel-body">
-      <div class="metrics-grid">
-        <div class="metric">
-          <div class="metric-label">Daily Return</div>
-          <div class="metric-value" id="m-return">--</div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">Max Drawdown</div>
-          <div class="metric-value" id="m-drawdown">--</div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">Wins</div>
-          <div class="metric-value positive" id="m-wins">0</div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">Losses</div>
-          <div class="metric-value negative" id="m-losses">0</div>
+    <article class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Open Positions</span>
+        <span class="panel-badge" id="positions-badge">0 / 0</span>
+      </div>
+      <div class="panel-body">
+        <table class="table">
+          <colgroup>
+            <col style="width: 22%">
+            <col style="width: 13%">
+            <col style="width: 20%">
+            <col style="width: 20%">
+            <col style="width: 25%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th class="r">Qty</th>
+              <th class="r">Entry</th>
+              <th class="r">Current</th>
+              <th class="r">P&amp;L</th>
+            </tr>
+          </thead>
+          <tbody id="positions-body">
+            <tr><td class="empty-cell" colspan="5">No open positions</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+
+  <section class="row row-bottom">
+    <article class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Trade History</span>
+        <span class="panel-badge" id="history-badge">last 0</span>
+      </div>
+      <div class="panel-body">
+        <table class="table">
+          <colgroup>
+            <col style="width: 16%">
+            <col style="width: 13%">
+            <col style="width: 14%">
+            <col style="width: 12%">
+            <col style="width: 45%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Action</th>
+              <th>Symbol</th>
+              <th class="r">P&amp;L</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="trades-body">
+            <tr><td class="empty-cell" colspan="5">No trades yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Live Log</span>
+        <span class="panel-badge" id="log-badge">last 0 lines - auto-scroll</span>
+      </div>
+      <div class="panel-body" id="log-scroll">
+        <div id="live-log">
+          <div class="log-line dbg">Waiting for live state...</div>
         </div>
       </div>
-    </div>
-  </div>
+    </article>
+  </section>
+</main>
 
-</div>
+<footer>
+  <span>PAPER TRADING // FOREX SESSION MONITOR // RISK LIMITS ACTIVE</span>
+  <span>Last refresh: <span id="last-refresh">--</span> // <span id="ws-status">connecting</span></span>
+</footer>
 
-<!-- -- FOOTER -- -->
-<div class="footer">
-  ALPHAEDGE v1.0.0 &nbsp;&middot;&nbsp; <a href="/docs" target="_blank">API</a>
-  &nbsp;&middot;&nbsp; <span id="ws-status">Connecting&#8230;</span>
-  &nbsp;&middot;&nbsp; <span id="last-update">Never updated</span>
-</div>
-
-<!-- ================================================================
-     JAVASCRIPT
-     ================================================================ -->
 <script>
 (function () {
   'use strict';
 
-  // ----------------------------------------------------------------
-  // CONFIG
-  // ----------------------------------------------------------------
-  var WS_URL   = 'ws://' + location.host + '/ws';
+  var DEFAULT_STARTING_EQUITY = 1000;
+  var params = new URLSearchParams(location.search);
+  var token = params.get('token') || '';
+  var encodedToken = token ? encodeURIComponent(token) : '';
   var API_BASE = location.protocol + '//' + location.host;
+  var wsScheme = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  var WS_URL = wsScheme + location.host + '/ws' + (encodedToken ? '?token=' + encodedToken : '');
+  var POLL_MS = 15000;
   var RECONNECT_MS = 3000;
-  var EQUITY_POLL_MS = 10000;
-  var TRADES_POLL_MS = 15000;
 
   var ws = null;
   var reconnectTimer = null;
   var pingTimer = null;
+  var curveData = [];
+  var latestState = null;
+  var latestTrades = [];
 
-  // ----------------------------------------------------------------
-  // CLOCK
-  // ----------------------------------------------------------------
+  function byId(id) { return document.getElementById(id); }
+
+  function apiUrl(path) {
+    if (!encodedToken) return API_BASE + path;
+    return API_BASE + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodedToken;
+  }
+
+  function esc(text) {
+    if (text === null || text === undefined) return '';
+    var d = document.createElement('div');
+    d.textContent = String(text);
+    return d.innerHTML;
+  }
+
+  function formatNum(value, decimals) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '--';
+    return Number(value).toLocaleString('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
+  }
+
+  function fmtUsd(value, signed) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '--';
+    var amount = Number(value);
+    var prefix = signed && amount > 0 ? '+' : '';
+    return prefix + formatNum(amount, 2) + ' $';
+  }
+
+  function fmtPct(value, signed) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '--';
+    var amount = Number(value);
+    var prefix = signed && amount > 0 ? '+' : '';
+    return prefix + amount.toFixed(2) + '%';
+  }
+
+  function fmtPrice(value, pair) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '--';
+    var digits = pair && String(pair).indexOf('JPY') >= 0 ? 3 : 5;
+    return Number(value).toFixed(digits);
+  }
+
+  function valueClass(value) {
+    var amount = Number(value);
+    if (amount > 0) return 'pos';
+    if (amount < 0) return 'neg';
+    return '';
+  }
+
+  function shortTime(isoValue) {
+    if (!isoValue) return '--';
+    var date = new Date(isoValue);
+    if (Number.isNaN(date.getTime())) return '--';
+    return String(date.getUTCHours()).padStart(2, '0') + ':' + String(date.getUTCMinutes()).padStart(2, '0') + ':' + String(date.getUTCSeconds()).padStart(2, '0');
+  }
+
+  function shortDate(isoValue) {
+    if (!isoValue) return '--';
+    var date = new Date(isoValue);
+    if (Number.isNaN(date.getTime())) return '--';
+    return date.toISOString().slice(0, 10);
+  }
+
   function updateClock() {
-    var now = new Date();
-    document.getElementById('clock').textContent =
-      now.toISOString().substring(11, 19) + ' UTC';
-  }
-  setInterval(updateClock, 1000);
-  updateClock();
-
-  // ----------------------------------------------------------------
-  // EQUITY CHART (TradingView Lightweight Charts)
-  // ----------------------------------------------------------------
-  var chart = null;
-  var areaSeries = null;
-
-  function initChart() {
-    var container = document.getElementById('equity-chart');
-    if (!container || typeof LightweightCharts === 'undefined') return;
-
-    chart = LightweightCharts.createChart(container, {
-      width: container.clientWidth,
-      height: container.clientHeight || 240,
-      layout: {
-        background: { type: 'solid', color: '#0c1017' },
-        textColor: '#3f4f66',
-        fontSize: 10,
-        fontFamily: "'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace",
-      },
-      grid: {
-        vertLines: { color: '#1e2a3a' },
-        horzLines: { color: '#1e2a3a' },
-      },
-      timeScale: {
-        timeVisible: true,
-        secondsVisible: false,
-        borderColor: '#1e2a3a',
-      },
-      rightPriceScale: {
-        borderColor: '#1e2a3a',
-      },
-      crosshair: {
-        mode: LightweightCharts.CrosshairMode.Normal,
-        vertLine: { color: '#3b82f644', width: 1, style: 0 },
-        horzLine: { color: '#3b82f644', width: 1, style: 0 },
-      },
-    });
-
-    areaSeries = chart.addAreaSeries({
-      topColor: 'rgba(59,130,246,0.28)',
-      bottomColor: 'rgba(59,130,246,0.02)',
-      lineColor: '#3b82f6',
-      lineWidth: 2,
-      crosshairMarkerRadius: 4,
-      priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
-    });
-
-    var ro = new ResizeObserver(function () {
-      if (chart) chart.applyOptions({
-        width: container.clientWidth,
-        height: container.clientHeight || 240,
-      });
-    });
-    ro.observe(container);
+    byId('clock').textContent = new Date().toLocaleTimeString('en-US', { hour12: false }) + ' LOCAL';
   }
 
-  function updateEquityChart(points) {
-    if (!areaSeries || !points || points.length === 0) return;
+  function setKpi(id, value, cls) {
+    var el = byId(id);
+    el.textContent = value;
+    el.className = 'kpi-value' + (cls ? ' ' + cls : '');
+  }
 
-    var data = [];
-    for (var i = 0; i < points.length; i++) {
-      data.push({
-        time: Math.floor(new Date(points[i].timestamp).getTime() / 1000),
-        value: points[i].equity,
-      });
+  function setKpiSub(id, value, cls) {
+    var el = byId(id);
+    el.textContent = value;
+    el.className = 'kpi-sub' + (cls ? ' ' + cls : '');
+  }
+
+  function setConnectionState(state) {
+    var dot = byId('status-dot');
+    var disconnectAlert = byId('disconnect-alert');
+    var haltAlert = byId('halt-alert');
+    var wsStatus = byId('ws-status');
+    var limit = Number(state.daily_loss_limit_pct || 0);
+    var used = Number(state.daily_loss_used_pct || 0);
+    var halted = limit > 0 && used >= limit;
+    var gatewayConnected = !!state.gateway_connected;
+    var brokerConnected = !!state.ib_connected;
+
+    if (!gatewayConnected) {
+      dot.className = 'status-dot offline';
+      disconnectAlert.classList.add('visible');
+      wsStatus.textContent = 'gateway down';
+    } else if (state.session_active && !brokerConnected) {
+      dot.className = 'status-dot offline';
+      disconnectAlert.classList.add('visible');
+      wsStatus.textContent = 'ib disconnected';
+    } else if (halted || !state.session_active) {
+      dot.className = 'status-dot warn';
+      disconnectAlert.classList.remove('visible');
+      wsStatus.textContent = state.session_active ? 'risk halt' : 'waiting session';
+    } else {
+      dot.className = 'status-dot';
+      disconnectAlert.classList.remove('visible');
+      wsStatus.textContent = 'gateway healthy';
     }
 
-    // Deduplicate by time
-    var seen = {};
-    var unique = [];
-    for (var j = 0; j < data.length; j++) {
-      if (!seen[data[j].time]) {
-        seen[data[j].time] = true;
-        unique.push(data[j]);
-      }
+    if (halted) haltAlert.classList.add('visible');
+    else haltAlert.classList.remove('visible');
+  }
+
+  function renderSummary(state) {
+    var daily = state.daily || {};
+    var baseline = Number(state.starting_equity || DEFAULT_STARTING_EQUITY);
+    var equity = Number(state.current_equity || baseline || DEFAULT_STARTING_EQUITY);
+    var dailyPnl = Number(daily.total_pnl_usd || 0);
+    var dayPct = Number(daily.pnl_pct_today || 0);
+    var vsRef = baseline > 0 ? equity - baseline : dailyPnl;
+    var openPositions = (state.pairs || []).filter(function (pair) { return !!pair.is_position_open; }).length;
+    var limitUsed = Number(state.daily_loss_used_pct || 0);
+    var remainingTrades = state.max_trades_remaining == null ? '--' : String(state.max_trades_remaining);
+
+    setKpi('kpi-equity', equity > 0 ? fmtUsd(equity, false) : '--', '');
+    setKpiSub('kpi-equity-sub', 'daily return: ' + fmtPct(dayPct, true), valueClass(dayPct));
+
+    setKpi('kpi-baseline', baseline > 0 ? fmtUsd(baseline, false) : '--', '');
+    setKpiSub('kpi-baseline-sub', baseline > 0 ? 'session start equity' : 'baseline unavailable', '');
+
+    setKpi('kpi-daypnl', fmtUsd(dailyPnl, true), valueClass(dailyPnl));
+    setKpiSub('kpi-daypnl-sub', 'realized today ' + fmtPct(dayPct, true), valueClass(dayPct));
+
+    setKpi('kpi-vsstart', fmtUsd(vsRef, true), valueClass(vsRef));
+    setKpiSub('kpi-vsstart-sub', fmtPct(limitUsed, false) + ' loss used', valueClass(vsRef));
+
+    setKpi('kpi-positions', String(openPositions), '');
+    setKpiSub('kpi-positions-sub', 'max remaining ' + remainingTrades, '');
+  }
+
+  function renderPositions(state) {
+    var tbody = byId('positions-body');
+    var all = state.pairs || [];
+    var open = all.filter(function (pair) { return !!pair.is_position_open; });
+
+    byId('positions-badge').textContent = open.length + ' / ' + all.length;
+
+    if (!open.length) {
+      tbody.innerHTML = '<tr><td class="empty-cell" colspan="5">No open positions</td></tr>';
+      return;
     }
-    unique.sort(function (a, b) { return a.time - b.time; });
-    areaSeries.setData(unique);
 
-    // Color by P&L
-    if (unique.length >= 2) {
-      var first = unique[0].value;
-      var last = unique[unique.length - 1].value;
-      var isProfit = last >= first;
-      areaSeries.applyOptions({
-        topColor: isProfit ? 'rgba(16,185,129,0.28)' : 'rgba(239,68,68,0.28)',
-        bottomColor: isProfit ? 'rgba(16,185,129,0.02)' : 'rgba(239,68,68,0.02)',
-        lineColor: isProfit ? '#10b981' : '#ef4444',
-      });
+    tbody.innerHTML = open.map(function (pair) {
+      var currentPrice = pair.current_price != null
+        ? Number(pair.current_price)
+        : state.position && state.position.pair === pair.pair && state.position.current_price != null
+          ? Number(state.position.current_price)
+          : null;
+      var pnlUsd = pair.pnl_usd != null
+        ? Number(pair.pnl_usd)
+        : state.position && state.position.pair === pair.pair && state.position.pnl_usd != null
+          ? Number(state.position.pnl_usd)
+          : Number(pair.pnl_usd_today || 0);
+      var pnlPips = currentPrice != null && pair.entry_price != null
+        ? ((currentPrice - Number(pair.entry_price)) * (String(pair.pair || '').indexOf('JPY') >= 0 ? 100 : 10000) * (String(pair.direction || '').toUpperCase() === 'SHORT' ? -1 : 1))
+        : null;
+      var meta = [];
+      if (pair.direction) meta.push(pair.direction);
+      if (pair.fill_status) meta.push(pair.fill_status);
+      if (pair.spread_pips) meta.push('spread ' + Number(pair.spread_pips).toFixed(1));
+      return '<tr>'
+        + '<td class="t-sym"><span class="t-sym-wrap">' + esc(pair.pair || '--') + '<span class="t-meta">' + esc(meta.join(' | ')) + '</span></span></td>'
+        + '<td class="r">' + (pair.lot_size ? formatNum(pair.lot_size, 2) : '--') + '</td>'
+        + '<td class="r">' + fmtPrice(pair.entry_price, pair.pair) + '</td>'
+        + '<td class="r">' + fmtPrice(currentPrice, pair.pair) + '</td>'
+        + '<td>'
+        +   '<div class="pnl-block">'
+        +     '<span class="pnl-main t-' + (valueClass(pnlUsd) || 'dim') + '">' + fmtUsd(pnlUsd, true) + '</span>'
+        +     (pnlPips != null ? '<span class="pnl-pct t-' + (valueClass(pnlUsd) || 'dim') + '">' + (pnlPips > 0 ? '+' : '') + pnlPips.toFixed(1) + ' pips</span>' : '')
+        +   '</div>'
+        + '</td>'
+        + '</tr>';
+    }).join('');
+  }
 
-      var delta = last - first;
-      var el = document.getElementById('equity-delta');
-      el.textContent = (delta >= 0 ? '+' : '') + delta.toFixed(2) + ' $';
-      el.style.color = isProfit ? 'var(--green)' : 'var(--red)';
+  function tradeBadgeClass(trade) {
+    var outcome = String(trade.outcome || '').toLowerCase();
+    var direction = String(trade.direction || '').toLowerCase();
+    if (outcome === 'win') return 'badge-win';
+    if (outcome === 'loss') return 'badge-loss';
+    if (direction === 'long') return 'badge-long';
+    if (direction === 'short') return 'badge-short';
+    return 'badge-close';
+  }
+
+  function tradeBadgeLabel(trade) {
+    if (trade.outcome) return String(trade.outcome).toUpperCase();
+    if (trade.direction) return String(trade.direction).toUpperCase();
+    return 'CLOSE';
+  }
+
+  function renderTrades() {
+    var tbody = byId('trades-body');
+    byId('history-badge').textContent = 'last ' + latestTrades.length;
+
+    if (!latestTrades.length) {
+      tbody.innerHTML = '<tr><td class="empty-cell" colspan="5">No trades yet</td></tr>';
+      return;
     }
 
-    chart.timeScale().fitContent();
+    tbody.innerHTML = latestTrades.slice().reverse().map(function (trade) {
+      var pnl = Number(trade.pnl_usd || 0);
+      var details = 'entry ' + fmtPrice(trade.entry_price, trade.pair)
+        + ' / exit ' + fmtPrice(trade.exit_price, trade.pair)
+        + ' / ' + (trade.pnl_pips > 0 ? '+' : '') + Number(trade.pnl_pips || 0).toFixed(1) + ' pips';
+
+      return '<tr>'
+        + '<td class="t-dim">' + esc(shortDate(trade.exit_time || trade.entry_time) + ' ' + shortTime(trade.exit_time || trade.entry_time).slice(0, 5)) + '</td>'
+        + '<td><span class="badge ' + tradeBadgeClass(trade) + '">' + esc(tradeBadgeLabel(trade)) + '</span></td>'
+        + '<td class="t-sym">' + esc(trade.pair || '--') + '</td>'
+        + '<td class="r t-' + (valueClass(pnl) || 'dim') + '">' + fmtUsd(pnl, true) + '</td>'
+        + '<td>' + esc(details) + '</td>'
+        + '</tr>';
+    }).join('');
   }
 
-  // ----------------------------------------------------------------
-  // FORMAT HELPERS
-  // ----------------------------------------------------------------
-  function fmtUSD(v) {
-    if (v == null) return '\u2014';
-    return (v >= 0 ? '+' : '') + v.toFixed(2) + ' $';
-  }
+  function buildLogRows() {
+    var rows = [];
+    var state = latestState;
 
-  function pnlClass(v) {
-    if (v > 0) return 'pnl-pos';
-    if (v < 0) return 'pnl-neg';
-    return 'pnl-zero';
-  }
-
-  function fmtPrice(v, pair) {
-    if (v == null || v === 0) return '\u2014';
-    var digits = (pair && pair.indexOf('JPY') !== -1) ? 3 : 5;
-    return v.toFixed(digits);
-  }
-
-  function fmtPct(v) {
-    if (v == null) return '\u2014';
-    return v.toFixed(2) + '%';
-  }
-
-  function timeAgo(isoStr) {
-    if (!isoStr) return '\u2014';
-    var diff = Date.now() - new Date(isoStr).getTime();
-    if (diff < 60000) return Math.floor(diff / 1000) + 's ago';
-    if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
-    return Math.floor(diff / 3600000) + 'h ago';
-  }
-
-  function shortTime(isoStr) {
-    if (!isoStr) return '';
-    var d = new Date(isoStr);
-    return String(d.getUTCHours()).padStart(2, '0') + ':' +
-           String(d.getUTCMinutes()).padStart(2, '0');
-  }
-
-  // ----------------------------------------------------------------
-  // RENDER STATE
-  // ----------------------------------------------------------------
-  function render(state) {
-    // -- Topbar: IB status --
-    var ibEl = document.getElementById('ib-status');
-    ibEl.textContent = 'IB ' + (state.ib_connected ? 'CONNECTED' : 'DISCONNECTED');
-    ibEl.style.color = state.ib_connected ? 'var(--green)' : 'var(--red)';
-
-    // -- Topbar: Session status --
-    var sessEl = document.getElementById('session-status');
-    if (state.session_active) {
-      sessEl.textContent = 'SESSION ACTIVE';
-      sessEl.style.color = 'var(--green)';
-    } else if (state.next_session_utc) {
-      var next = new Date(state.next_session_utc);
-      var diffMs = next - new Date();
-      if (diffMs > 0) {
-        var h = Math.floor(diffMs / 3600000);
-        var m = Math.floor((diffMs % 3600000) / 60000);
-        sessEl.textContent = 'NEXT ' + h + 'h ' + m + 'm';
-        sessEl.style.color = 'var(--text-2)';
+    if (state) {
+      if (Array.isArray(state.live_log) && state.live_log.length) {
+        rows = state.live_log.slice().reverse().map(function (entry) {
+          var level = String(entry.level || 'INFO').toUpperCase();
+          var source = entry.source ? ' ' + String(entry.source) + ' |' : '';
+          return {
+            cls: entry.cls || (level === 'ERROR' || level === 'CRITICAL' ? 'err' : (level === 'WARNING' ? 'warn' : 'dbg')),
+            text: shortDate(entry.timestamp || state.utc_time) + ' ' + shortTime(entry.timestamp || state.utc_time) + ' ' + level + source + ' ' + String(entry.message || '')
+          };
+        });
       } else {
-        sessEl.textContent = 'SESSION IDLE';
-        sessEl.style.color = 'var(--text-3)';
+        var gatewayConnected = !!state.gateway_connected;
+        rows.push({
+          cls: gatewayConnected ? 'dbg' : 'err',
+          text: shortDate(state.utc_time) + ' ' + shortTime(state.utc_time) + ' ' + (gatewayConnected ? 'INFO' : 'ERROR') + ' Gateway: ' + (state.gateway_status || (gatewayConnected ? 'healthy' : 'down'))
+        });
+
+        rows.push({
+          cls: state.session_active ? 'dbg' : 'warn',
+          text: shortDate(state.utc_time) + ' ' + shortTime(state.utc_time) + ' ' + (state.session_active ? 'INFO' : 'WARN') + ' Session: ' + (state.session_active ? 'active' : 'waiting for next session')
+        });
+
+        rows.push({
+          cls: state.news_blackout_active ? 'warn' : 'dbg',
+          text: shortDate(state.utc_time) + ' ' + shortTime(state.utc_time) + ' ' + (state.news_blackout_active ? 'WARN' : 'INFO') + ' Risk: loss used ' + fmtPct(state.daily_loss_used_pct || 0, false) + (state.news_blackout_active ? ' / blackout active' : ' / no blackout')
+        });
+
+        (state.pairs || []).forEach(function (pair) {
+          rows.push({
+            cls: pair.is_position_open ? 'dbg' : 'warn',
+            text: shortDate(state.utc_time) + ' ' + shortTime(state.utc_time) + ' ' + (pair.is_position_open ? 'INFO' : 'WARN') + ' ' + (pair.pair || 'PAIR') + ': ' + (pair.is_position_open ? 'position open' : 'flat') + ' / adx ' + (pair.adx ? Number(pair.adx).toFixed(1) : '--') + ' / spread ' + (pair.spread_pips ? Number(pair.spread_pips).toFixed(1) : '--')
+          });
+        });
       }
-    } else {
-      sessEl.textContent = 'SESSION IDLE';
-      sessEl.style.color = 'var(--text-3)';
     }
 
-    // -- Mode badge: status dot --
-    var dot = document.getElementById('status-dot');
-    dot.className = 'status-dot ' + (state.ib_connected ? 'ok' : 'err');
-
-    // -- KPI: Equity --
-    var equity = state.current_equity || (state.daily || {}).equity || 0;
-    var startEq = state.starting_equity || 0;
-    var eqEl = document.getElementById('kpi-equity');
-    if (equity > 0) {
-      eqEl.textContent = '$' + equity.toLocaleString('en-US', {
-        minimumFractionDigits: 0, maximumFractionDigits: 0
+    latestTrades.slice().reverse().slice(0, 16).forEach(function (trade) {
+      rows.push({
+        cls: Number(trade.pnl_usd || 0) >= 0 ? 'dbg' : 'err',
+        text: shortDate(trade.exit_time || trade.entry_time) + ' ' + shortTime(trade.exit_time || trade.entry_time) + ' ' + (Number(trade.pnl_usd || 0) >= 0 ? 'INFO' : 'ERROR') + ' ' + (trade.pair || 'TRADE') + ': ' + String(trade.direction || 'trade').toUpperCase() + ' closed / ' + fmtUsd(trade.pnl_usd || 0, true) + ' / ' + String(trade.outcome || 'closed')
       });
-    } else {
-      eqEl.textContent = '--';
-    }
-    document.getElementById('kpi-equity-sub').textContent =
-      startEq > 0 ? 'initial: $' + startEq.toLocaleString('en-US', {
-        minimumFractionDigits: 0, maximumFractionDigits: 0
-      }) : 'initial: --';
+    });
 
-    // -- KPI: Daily P&L --
-    var daily = state.daily || {};
-    var pnl = daily.total_pnl_usd != null ? daily.total_pnl_usd :
-              (daily.pnl_usd_today != null ? daily.pnl_usd_today : 0);
-    var pnlEl = document.getElementById('kpi-pnl');
-    pnlEl.textContent = fmtUSD(pnl);
-    pnlEl.className = 'kpi-value ' + (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '');
-
-    var pnlPct = daily.pnl_pct_today != null ? daily.pnl_pct_today : null;
-    document.getElementById('kpi-pnl-pct').textContent = pnlPct != null ? fmtPct(pnlPct) : '';
-
-    // -- KPI: Risk Budget --
-    var limitPct = state.daily_loss_limit_pct || 3.0;
-    var usedPct = state.daily_loss_used_pct || 0;
-    var remaining = Math.max(0, limitPct - usedPct);
-    var riskEl = document.getElementById('kpi-risk');
-    riskEl.textContent = remaining.toFixed(1) + '%';
-    riskEl.className = 'kpi-value ' + (remaining < 1 ? 'negative' : remaining < 1.5 ? 'warn' : '');
-
-    var barPct = Math.min(100, (usedPct / limitPct) * 100);
-    var barEl = document.getElementById('risk-bar');
-    barEl.style.width = barPct + '%';
-    barEl.style.background = barPct > 80 ? 'var(--red)' : barPct > 50 ? 'var(--yellow)' : 'var(--green)';
-    document.getElementById('kpi-risk-sub').textContent =
-      usedPct.toFixed(1) + '% / ' + limitPct.toFixed(1) + '%';
-
-    // -- KPI: Win Rate --
-    var trades = daily.total_trades != null ? daily.total_trades :
-                 (daily.trades_today != null ? daily.trades_today : 0);
-    var wins = daily.wins_today || 0;
-    var losses = daily.losses_today || 0;
-    var wrEl = document.getElementById('kpi-winrate');
-    wrEl.textContent = trades > 0 ? (wins / trades * 100).toFixed(0) + '%' : '--';
-    wrEl.className = 'kpi-value ' +
-      (trades > 0 && wins / trades >= 0.5 ? 'positive' : trades > 0 ? 'negative' : '');
-    document.getElementById('kpi-winloss').textContent = wins + 'W / ' + losses + 'L';
-
-    // -- KPI: Trades Today --
-    document.getElementById('kpi-trades').textContent = trades;
-
-    // -- KPI: Loss Streak --
-    var streak = state.consecutive_losses || 0;
-    var streakEl = document.getElementById('kpi-streak');
-    streakEl.textContent = streak;
-    streakEl.className = 'kpi-value ' + (streak >= 3 ? 'negative' : streak >= 2 ? 'warn' : '');
-
-    // -- KPI: Remaining --
-    var rem = state.max_trades_remaining;
-    var remEl = document.getElementById('kpi-remaining');
-    if (rem != null && rem > 0) {
-      remEl.textContent = rem;
-      remEl.className = 'kpi-value ' + (rem <= 1 ? 'warn' : '');
-    } else if (rem === 0) {
-      remEl.textContent = '0';
-      remEl.className = 'kpi-value negative';
-    } else {
-      remEl.textContent = '--';
-      remEl.className = 'kpi-value';
-    }
-
-    // -- Signal Pipeline --
-    renderPipeline(state.signal_pipeline || []);
-
-    // -- Pairs Table --
-    renderPairsTable(state.pairs || []);
-
-    // -- System Health --
-    renderSystem(state);
-
-    // -- Performance Metrics --
-    renderMetrics(state);
-
-    // -- Last update --
-    document.getElementById('h-update').textContent =
-      new Date().toLocaleTimeString();
-    document.getElementById('last-update').textContent =
-      'Updated ' + new Date().toLocaleTimeString();
+    return rows.slice(0, 120);
   }
 
-  // ----------------------------------------------------------------
-  // SIGNAL PIPELINE
-  // ----------------------------------------------------------------
-  function renderPipeline(pipeline) {
-    var container = document.getElementById('pipeline-container');
-    if (!pipeline || pipeline.length === 0) {
-      container.innerHTML = '<div class="empty-state">Waiting for signal data\u2026</div>';
+  function renderLog() {
+    var rows = buildLogRows();
+    byId('log-badge').textContent = 'last ' + rows.length + ' lines - auto-scroll';
+
+    if (!rows.length) {
+      byId('live-log').innerHTML = '<div class="log-line dbg">Waiting for live state...</div>';
       return;
     }
 
-    var stages = ['range', 'gap', 'engulf', 'carry', 'risk', 'order'];
-    var labels = ['RNG', 'GAP', 'ENG', 'CAR', 'RSK', 'ORD'];
+    byId('live-log').innerHTML = rows.map(function (row) {
+      return '<div class="log-line ' + row.cls + '">' + esc(row.text) + '</div>';
+    }).join('');
 
-    var html = '';
-    for (var i = 0; i < pipeline.length; i++) {
-      var p = pipeline[i];
-      html += '<div class="pipeline-pair">';
-      html += '<div class="pipeline-pair-name">' + (p.pair || '???') + '</div>';
-      html += '<div class="pipeline-stages">';
+    byId('log-scroll').scrollTop = 0;
+  }
 
-      for (var j = 0; j < stages.length; j++) {
-        if (j > 0) html += '<span class="pipeline-arrow">&#9656;</span>';
-        var key = stages[j] + '_ok';
-        var val = p[key];
-        var cls = val === true ? 'stage-pass' : val === false ? 'stage-fail' : 'stage-idle';
-        html += '<span class="pipeline-stage ' + cls + '">' + labels[j] + '</span>';
+  function drawChart(points) {
+    var svg = byId('equity-chart');
+    if (!svg) return;
+
+    var width = svg.clientWidth || (svg.parentElement && svg.parentElement.offsetWidth) || 640;
+    var height = svg.clientHeight || (svg.parentElement && svg.parentElement.offsetHeight) || 210;
+    svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+    svg.innerHTML = '';
+
+    var NS = 'http://www.w3.org/2000/svg';
+
+    if (!points || points.length < 2) {
+      var msg = document.createElementNS(NS, 'text');
+      msg.setAttribute('x', width / 2);
+      msg.setAttribute('y', height / 2);
+      msg.setAttribute('text-anchor', 'middle');
+      msg.setAttribute('fill', '#5c6880');
+      msg.setAttribute('font-family', 'IBM Plex Mono, monospace');
+      msg.setAttribute('font-size', '11');
+      msg.textContent = 'No historical data yet';
+      svg.appendChild(msg);
+      return;
+    }
+
+    var pad = { top: 12, right: 14, bottom: 30, left: 72 };
+    var chartW = width - pad.left - pad.right;
+    var chartH = height - pad.top - pad.bottom;
+
+    var vals = points.map(function (p) { return Number(p.equity); });
+    var ts = points.map(function (p) { return new Date(p.ts || p.timestamp).getTime(); });
+
+    var minV = Math.min.apply(null, vals);
+    var maxV = Math.max.apply(null, vals);
+    var spread = maxV - minV;
+    var magnitude = Math.max(Math.abs(maxV), Math.abs(minV), 1);
+    var extra = spread > 0
+      ? Math.max(spread * 0.12, magnitude * 0.005)
+      : Math.max(magnitude * 0.01, 0.5);
+
+    minV -= extra;
+    maxV += extra;
+    spread = maxV - minV || 1;
+
+    var dataStartTs = ts[0];
+    var dataEndTs = ts[ts.length - 1];
+    var dataSpanMs = Math.max(1, dataEndTs - dataStartTs);
+    var domainPaddingMs = Math.max(30 * 60 * 1000, dataSpanMs * 0.15);
+    var minDomainMs = 2 * 60 * 60 * 1000;
+    var domainStartTs = dataStartTs - domainPaddingMs;
+    var domainEndTs = Math.max(dataEndTs + domainPaddingMs, domainStartTs + minDomainMs);
+    var tSpread = Math.max(1, domainEndTs - domainStartTs);
+
+    function xPos(t) { return pad.left + ((t - domainStartTs) / tSpread) * chartW; }
+    function yPos(v) { return pad.top + chartH - ((v - minV) / spread) * chartH; }
+    function axisPrice(v) {
+      var sign = v < 0 ? '-' : '';
+      var absV = Math.abs(v);
+      if (absV >= 1000) {
+        var k = absV / 1000;
+        var kLabel = (k >= 10 ? k.toFixed(0) : k.toFixed(1)).replace(/\.0$/, '');
+        return sign + kLabel + 'K$';
       }
-
-      html += '</div>';
-
-      // Meta: ADX, Spread, ATR, Strength
-      html += '<div class="pipeline-meta">';
-      if (p.adx != null) html += '<span><span class="label">ADX</span>' + p.adx.toFixed(1) + '</span>';
-      if (p.spread != null) html += '<span><span class="label">SPR</span>' + p.spread.toFixed(1) + '</span>';
-      if (p.atr != null) html += '<span><span class="label">ATR</span>' + p.atr.toFixed(1) + '</span>';
-      if (p.strength != null) html += '<span><span class="label">SIG</span>' + (p.strength * 100).toFixed(0) + '%</span>';
-      html += '</div>';
-
-      html += '</div>';
+      return sign + absV.toFixed(0) + '$';
     }
 
-    container.innerHTML = html;
+    var defs = document.createElementNS(NS, 'defs');
+
+    var fillGrad = document.createElementNS(NS, 'linearGradient');
+    fillGrad.setAttribute('id', 'curve-fill');
+    fillGrad.setAttribute('x1', '0');
+    fillGrad.setAttribute('y1', '0');
+    fillGrad.setAttribute('x2', '0');
+    fillGrad.setAttribute('y2', '1');
+
+    var fs1 = document.createElementNS(NS, 'stop');
+    fs1.setAttribute('offset', '0%');
+    fs1.setAttribute('stop-color', '#d9a227');
+    fs1.setAttribute('stop-opacity', '0.30');
+    fillGrad.appendChild(fs1);
+
+    var fs2 = document.createElementNS(NS, 'stop');
+    fs2.setAttribute('offset', '100%');
+    fs2.setAttribute('stop-color', '#d9a227');
+    fs2.setAttribute('stop-opacity', '0.02');
+    fillGrad.appendChild(fs2);
+    defs.appendChild(fillGrad);
+
+    var glow = document.createElementNS(NS, 'filter');
+    glow.setAttribute('id', 'curve-glow');
+    glow.setAttribute('x', '-20%');
+    glow.setAttribute('y', '-20%');
+    glow.setAttribute('width', '140%');
+    glow.setAttribute('height', '140%');
+    var blur = document.createElementNS(NS, 'feGaussianBlur');
+    blur.setAttribute('stdDeviation', '1.8');
+    blur.setAttribute('result', 'coloredBlur');
+    glow.appendChild(blur);
+    defs.appendChild(glow);
+
+    svg.appendChild(defs);
+
+    var yTicks = 6;
+    for (var i = 0; i <= yTicks; i++) {
+      var v = minV + (spread * i) / yTicks;
+      var y = yPos(v);
+
+      var hLine = document.createElementNS(NS, 'line');
+      hLine.setAttribute('x1', pad.left);
+      hLine.setAttribute('x2', pad.left + chartW);
+      hLine.setAttribute('y1', y);
+      hLine.setAttribute('y2', y);
+      hLine.setAttribute('stroke', '#193150');
+      hLine.setAttribute('stroke-width', '1');
+      svg.appendChild(hLine);
+
+      var yLabel = document.createElementNS(NS, 'text');
+      yLabel.setAttribute('x', pad.left - 7);
+      yLabel.setAttribute('y', y + 3);
+      yLabel.setAttribute('text-anchor', 'end');
+      yLabel.setAttribute('fill', '#567090');
+      yLabel.setAttribute('font-family', 'IBM Plex Mono, monospace');
+      yLabel.setAttribute('font-size', '8');
+      yLabel.textContent = axisPrice(v);
+      svg.appendChild(yLabel);
+    }
+
+    var minTickSpacingPx = 220;
+    var xTicks = Math.max(2, Math.min(5, Math.floor(chartW / minTickSpacingPx)));
+    for (var j = 0; j <= xTicks; j++) {
+      var tickTs = domainStartTs + (tSpread * j) / xTicks;
+      var x = xPos(tickTs);
+
+      var vLine = document.createElementNS(NS, 'line');
+      vLine.setAttribute('x1', x);
+      vLine.setAttribute('x2', x);
+      vLine.setAttribute('y1', pad.top);
+      vLine.setAttribute('y2', pad.top + chartH);
+      vLine.setAttribute('stroke', '#132741');
+      vLine.setAttribute('stroke-width', '1');
+      svg.appendChild(vLine);
+
+      var label = document.createElementNS(NS, 'text');
+      label.setAttribute('x', x);
+      label.setAttribute('y', pad.top + chartH + 15);
+      label.setAttribute('text-anchor', j === 0 ? 'start' : j === xTicks ? 'end' : 'middle');
+      label.setAttribute('fill', '#567090');
+      label.setAttribute('font-family', 'IBM Plex Mono, monospace');
+      label.setAttribute('font-size', '8');
+      if (j === xTicks) {
+        label.textContent = 'Now';
+      } else {
+        var dt = new Date(tickTs);
+        label.textContent = String(dt.getFullYear()) + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+      }
+      svg.appendChild(label);
+    }
+
+    var areaPath = 'M' + xPos(ts[0]) + ' ' + (pad.top + chartH) + ' L' + xPos(ts[0]) + ' ' + yPos(vals[0]);
+    for (var k = 1; k < points.length; k++) {
+      areaPath += ' L' + xPos(ts[k]) + ' ' + yPos(vals[k]);
+    }
+    areaPath += ' L' + xPos(ts[ts.length - 1]) + ' ' + (pad.top + chartH) + ' Z';
+
+    var area = document.createElementNS(NS, 'path');
+    area.setAttribute('d', areaPath);
+    area.setAttribute('fill', 'url(#curve-fill)');
+    svg.appendChild(area);
+
+    var linePath = 'M' + xPos(ts[0]) + ' ' + yPos(vals[0]);
+    for (var m = 1; m < points.length; m++) {
+      linePath += ' L' + xPos(ts[m]) + ' ' + yPos(vals[m]);
+    }
+
+    var glowLine = document.createElementNS(NS, 'path');
+    glowLine.setAttribute('d', linePath);
+    glowLine.setAttribute('fill', 'none');
+    glowLine.setAttribute('stroke', '#d9a227');
+    glowLine.setAttribute('stroke-opacity', '0.35');
+    glowLine.setAttribute('stroke-width', '4');
+    glowLine.setAttribute('filter', 'url(#curve-glow)');
+    glowLine.setAttribute('stroke-linecap', 'round');
+    glowLine.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(glowLine);
+
+    var line = document.createElementNS(NS, 'path');
+    line.setAttribute('d', linePath);
+    line.setAttribute('fill', 'none');
+    line.setAttribute('stroke', '#d9a227');
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('stroke-linecap', 'round');
+    line.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(line);
+
+    var xLast = xPos(ts[ts.length - 1]);
+    var yLast = yPos(vals[vals.length - 1]);
+
+    var lastGuide = document.createElementNS(NS, 'line');
+    lastGuide.setAttribute('x1', xLast);
+    lastGuide.setAttribute('x2', xLast);
+    lastGuide.setAttribute('y1', pad.top);
+    lastGuide.setAttribute('y2', pad.top + chartH);
+    lastGuide.setAttribute('stroke', '#213b67');
+    lastGuide.setAttribute('stroke-width', '1');
+    lastGuide.setAttribute('stroke-dasharray', '3 3');
+    svg.appendChild(lastGuide);
+
+    var ring = document.createElementNS(NS, 'circle');
+    ring.setAttribute('cx', xLast);
+    ring.setAttribute('cy', yLast);
+    ring.setAttribute('r', '4.6');
+    ring.setAttribute('fill', 'rgba(217,162,39,0.15)');
+    ring.setAttribute('stroke', '#d9a227');
+    ring.setAttribute('stroke-width', '1.2');
+    svg.appendChild(ring);
+
+    var dot = document.createElementNS(NS, 'circle');
+    dot.setAttribute('cx', xLast);
+    dot.setAttribute('cy', yLast);
+    dot.setAttribute('r', '2.4');
+    dot.setAttribute('fill', '#f0b534');
+    svg.appendChild(dot);
   }
 
-  // ----------------------------------------------------------------
-  // PAIRS TABLE
-  // ----------------------------------------------------------------
-  function renderPairsTable(pairs) {
-    var tbody = document.getElementById('pairs-body');
-    if (!pairs || pairs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No pairs configured</td></tr>';
+  function renderEquity(points) {
+    curveData = points || [];
+    drawChart(curveData);
+
+    if (curveData.length > 1) {
+      var first = Number(curveData[0].equity || 0);
+      var last = Number(curveData[curveData.length - 1].equity || 0);
+      var pct = first > 0 ? ((last - first) / first) * 100 : 0;
+      var badge = byId('curve-badge');
+      badge.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '% total';
+      badge.className = 'panel-badge ' + valueClass(pct);
       return;
     }
 
-    var html = '';
-    for (var i = 0; i < pairs.length; i++) {
-      var p = pairs[i];
-      var pnlUsd = p.pnl_usd_today || 0;
-      var pnlPips = p.pnl_pips_today || 0;
-      var isOpen = p.is_position_open;
-      var dir = p.direction || '';
-
-      var sideClass = '';
-      var sideText = '\u2014';
-      if (dir === 'LONG' || dir === 'BUY') { sideClass = 'side-long'; sideText = 'LONG'; }
-      else if (dir === 'SHORT' || dir === 'SELL') { sideClass = 'side-short'; sideText = 'SHORT'; }
-
-      var statusPill = isOpen
-        ? '<span class="pill pill-open">OPEN</span>'
-        : '<span class="pill pill-flat">FLAT</span>';
-
-      html += '<tr>';
-      html += '<td style="color:var(--cyan); font-weight:700;">' + (p.pair || '') + '</td>';
-      html += '<td class="' + sideClass + '">' + sideText + '</td>';
-      html += '<td class="right">' + fmtPrice(p.entry_price, p.pair) + '</td>';
-      html += '<td class="right">' + fmtPrice(p.stop_loss, p.pair) + '</td>';
-      html += '<td class="right">' + fmtPrice(p.take_profit, p.pair) + '</td>';
-      html += '<td class="right">' + (p.lot_size != null ? p.lot_size : '\u2014') + '</td>';
-      html += '<td class="right ' + pnlClass(pnlPips) + '">' + (pnlPips !== 0 ? pnlPips.toFixed(1) : '\u2014') + '</td>';
-      html += '<td class="right ' + pnlClass(pnlUsd) + '">' + fmtUSD(pnlUsd) + '</td>';
-      html += '<td class="right">' + (p.adx != null ? p.adx.toFixed(1) : '\u2014') + '</td>';
-      html += '<td>' + statusPill + '</td>';
-      html += '</tr>';
-    }
-
-    tbody.innerHTML = html;
+    byId('curve-badge').textContent = 'no data';
+    byId('curve-badge').className = 'panel-badge';
   }
 
-  // ----------------------------------------------------------------
-  // RECENT TRADES (Activity Log style)
-  // ----------------------------------------------------------------
-  function renderTrades(trades) {
-    var feed = document.getElementById('trades-feed');
-    var countEl = document.getElementById('trades-count');
-
-    if (!trades || trades.length === 0) {
-      feed.innerHTML = '<div class="empty-state">No trades yet</div>';
-      countEl.textContent = '';
-      return;
-    }
-
-    countEl.textContent = trades.length + ' trade' + (trades.length > 1 ? 's' : '');
-    var sorted = trades.slice().reverse();
-    var html = '';
-
-    for (var i = 0; i < sorted.length; i++) {
-      var t = sorted[i];
-      var pnlUsd = t.pnl_usd || 0;
-      var levelClass = t.outcome === 'win' ? 'ok' : t.outcome === 'loss' ? 'err' : 'warn';
-      var levelText = (t.outcome || 'BE').toUpperCase();
-
-      html += '<div class="log-line">';
-      html += '<span class="log-time">' + shortTime(t.exit_time || t.entry_time) + '</span>';
-      html += '<span class="log-level ' + levelClass + '">' + levelText + '</span>';
-      html += '<span class="log-pair">' + (t.pair || '') + '</span>';
-      html += '<span class="log-msg">' + (t.direction || '') + ' @ ' + (t.entry_price || '') + '</span>';
-      html += '<span class="log-pnl ' + pnlClass(pnlUsd) + '">' + fmtUSD(pnlUsd) + '</span>';
-      html += '</div>';
-    }
-
-    feed.innerHTML = html;
+  function render(state) {
+    latestState = state;
+    setConnectionState(state);
+    renderSummary(state);
+    renderPositions(state);
+    renderTrades();
+    renderLog();
+    byId('last-refresh').textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
   }
 
-  // ----------------------------------------------------------------
-  // SYSTEM HEALTH
-  // ----------------------------------------------------------------
-  function renderSystem(state) {
-    // Gateway
-    var gwEl = document.getElementById('h-gateway');
-    var gwStatus = state.gateway_status || 'unknown';
-    gwEl.textContent = gwStatus.charAt(0).toUpperCase() + gwStatus.slice(1);
-    gwEl.className = 'sys-value ' +
-      (gwStatus === 'healthy' ? 'sys-ok' :
-       gwStatus === 'starting' ? 'sys-warn' :
-       gwStatus === 'down' ? 'sys-err' : 'sys-dim');
-
-    // Uptime
-    var upEl = document.getElementById('h-uptime');
-    if (state.gateway_uptime_s > 0) {
-      var hrs = Math.floor(state.gateway_uptime_s / 3600);
-      var mins = Math.floor((state.gateway_uptime_s % 3600) / 60);
-      upEl.textContent = hrs + 'h ' + mins + 'm';
-      upEl.className = 'sys-value sys-ok';
-    } else {
-      upEl.textContent = '--';
-      upEl.className = 'sys-value sys-dim';
-    }
-
-    // Reconcile
-    var recEl = document.getElementById('h-reconcile');
-    recEl.textContent = state.last_reconcile_utc ? timeAgo(state.last_reconcile_utc) : '--';
-    recEl.className = 'sys-value ' +
-      (state.reconcile_has_critical ? 'sys-err' :
-       state.last_reconcile_utc ? 'sys-ok' : 'sys-dim');
-
-    // Drift
-    var driftEl = document.getElementById('h-drift');
-    var drift = state.reconcile_drift_usd || 0;
-    if (!state.last_reconcile_utc) {
-      driftEl.textContent = '--';
-      driftEl.className = 'sys-value sys-dim';
-    } else {
-      driftEl.textContent = fmtUSD(drift);
-      driftEl.className = 'sys-value ' +
-        (Math.abs(drift) > 50 ? 'sys-err' :
-         Math.abs(drift) > 10 ? 'sys-warn' : 'sys-ok');
-    }
-
-    // News
-    var newsEl = document.getElementById('h-news');
-    if (state.news_blackout_active) {
-      newsEl.textContent = '\u26A0 BLACKOUT' +
-        (state.news_blackout_event ? ': ' + state.news_blackout_event : '');
-      newsEl.className = 'sys-value sys-warn';
-    } else {
-      newsEl.textContent = 'Clear';
-      newsEl.className = 'sys-value sys-ok';
-    }
-
-    // Regime
-    var regEl = document.getElementById('h-regime');
-    var regime = state.regime || 'unknown';
-    regEl.textContent = regime.replace('_', ' ').toUpperCase();
-    regEl.className = 'sys-value ' +
-      (regime === 'high_vol' ? 'sys-warn' :
-       regime === 'low_vol' ? 'sys-ok' : 'sys-dim');
-  }
-
-  // ----------------------------------------------------------------
-  // PERFORMANCE METRICS
-  // ----------------------------------------------------------------
-  function renderMetrics(state) {
-    var daily = state.daily || {};
-    var pnlPct = daily.pnl_pct_today;
-    var retEl = document.getElementById('m-return');
-    if (pnlPct != null) {
-      retEl.textContent = fmtPct(pnlPct);
-      retEl.className = 'metric-value ' + (pnlPct >= 0 ? 'positive' : 'negative');
-    }
-
-    var wins = daily.wins_today || 0;
-    var losses = daily.losses_today || 0;
-    document.getElementById('m-wins').textContent = wins;
-    document.getElementById('m-losses').textContent = losses;
-  }
-
-  // ----------------------------------------------------------------
-  // DATA FETCHING
-  // ----------------------------------------------------------------
   function fetchState() {
-    fetch(API_BASE + '/api/state')
-      .then(function (res) { return res.json(); })
-      .then(function (data) { render(data); })
-      .catch(function () { /* silent -- WS is primary */ });
-  }
-
-  function fetchEquity() {
-    fetch(API_BASE + '/api/equity?limit=2000')
-      .then(function (res) { return res.json(); })
-      .then(function (data) { updateEquityChart(data); })
+    return fetch(apiUrl('/api/state'))
+      .then(function (response) { return response.json(); })
+      .then(render)
       .catch(function () {});
   }
 
   function fetchTrades() {
-    fetch(API_BASE + '/api/trades?limit=50')
-      .then(function (res) { return res.json(); })
-      .then(function (data) { renderTrades(data); })
+    return fetch(apiUrl('/api/trades?limit=50'))
+      .then(function (response) { return response.json(); })
+      .then(function (trades) {
+        latestTrades = trades || [];
+        renderTrades();
+        renderLog();
+      })
       .catch(function () {});
   }
 
-  // ----------------------------------------------------------------
-  // WEBSOCKET
-  // ----------------------------------------------------------------
-  function connectWS() {
-    if (ws) { try { ws.close(); } catch (e) {} }
+  function fetchEquity() {
+    return fetch(apiUrl('/api/equity?limit=240'))
+      .then(function (response) { return response.json(); })
+      .then(renderEquity)
+      .catch(function () {});
+  }
+
+  function fetchAll() {
+    fetchState();
+    fetchTrades();
+    fetchEquity();
+  }
+
+  function manualRefresh() {
+    var btn = byId('btn-refresh');
+    btn.textContent = '...';
+    Promise.all([fetchState(), fetchTrades(), fetchEquity()]).then(function () {
+      btn.innerHTML = '&#8635; REFRESH';
+    });
+  }
+
+  function connectWs() {
+    if (reconnectTimer) {
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (ws) {
+      try { ws.close(); } catch (_error) {}
+    }
 
     ws = new WebSocket(WS_URL);
 
     ws.onopen = function () {
-      document.getElementById('conn-banner').style.display = 'none';
-      document.getElementById('ws-status').textContent = 'WS connected';
-      document.getElementById('ws-status').style.color = 'var(--green)';
-
-      if (pingTimer) clearInterval(pingTimer);
-      pingTimer = setInterval(function () {
+      byId('ws-status').textContent = 'ws connected';
+      if (pingTimer) window.clearInterval(pingTimer);
+      pingTimer = window.setInterval(function () {
         if (ws && ws.readyState === WebSocket.OPEN) ws.send('ping');
       }, 30000);
     };
 
-    ws.onmessage = function (evt) {
-      if (evt.data === 'pong') return;
+    ws.onmessage = function (event) {
+      if (event.data === 'pong') return;
       try {
-        var state = JSON.parse(evt.data);
-        render(state);
-      } catch (e) {}
+        render(JSON.parse(event.data));
+      } catch (_error) {}
     };
 
     ws.onclose = function () {
-      document.getElementById('conn-banner').style.display = 'block';
-      document.getElementById('ws-status').textContent = 'WS disconnected';
-      document.getElementById('ws-status').style.color = 'var(--red)';
-      if (pingTimer) clearInterval(pingTimer);
-      reconnectTimer = setTimeout(connectWS, RECONNECT_MS);
+      byId('ws-status').textContent = 'ws disconnected';
+      if (pingTimer) window.clearInterval(pingTimer);
+      reconnectTimer = window.setTimeout(connectWs, RECONNECT_MS);
     };
 
     ws.onerror = function () {
-      ws.close();
+      try { ws.close(); } catch (_error) {}
     };
   }
 
-  // ----------------------------------------------------------------
-  // INIT
-  // ----------------------------------------------------------------
-  document.addEventListener('DOMContentLoaded', function () {
-    initChart();
-    connectWS();
-
-    fetchState();
-    fetchEquity();
-    fetchTrades();
-
-    setInterval(fetchEquity, EQUITY_POLL_MS);
-    setInterval(fetchTrades, TRADES_POLL_MS);
+  window.addEventListener('resize', function () {
+    if (curveData.length > 1) drawChart(curveData);
   });
 
+  document.addEventListener('DOMContentLoaded', function () {
+    updateClock();
+    window.setInterval(updateClock, 1000);
+    byId('btn-refresh').addEventListener('click', manualRefresh);
+    connectWs();
+    fetchAll();
+    window.setInterval(fetchState, POLL_MS);
+    window.setInterval(fetchTrades, POLL_MS);
+    window.setInterval(fetchEquity, POLL_MS);
+  });
 })();
 </script>
 </body>

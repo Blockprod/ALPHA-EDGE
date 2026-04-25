@@ -1423,6 +1423,12 @@ class SessionLifecycle:
                     chunk = min(1800.0, wait_s)
                     await asyncio.sleep(chunk)
                     wait_s -= chunk
+                    if wait_s > 0 and not self._s._shutdown_requested:
+                        logger.info(
+                            f"ALPHAEDGE: Weekend standby — "
+                            f"waking in {wait_s / 3600:.1f}h "
+                            f"({format_dual_time(next_start)})"
+                        )
                 continue
 
             # Already inside the window — proceed immediately
@@ -1456,6 +1462,12 @@ class SessionLifecycle:
                         chunk = min(1800.0, wait_s_long)
                         await asyncio.sleep(chunk)
                         wait_s_long -= chunk
+                        if wait_s_long > 0 and not self._s._shutdown_requested:
+                            logger.info(
+                                f"ALPHAEDGE: Weekend standby — "
+                                f"waking in {wait_s_long / 3600:.1f}h "
+                                f"({format_dual_time(next_start)})"
+                            )
                     continue
                 # Log at first check and then every ~15 min to avoid flooding
                 if now.minute % 15 == 0 or wait_h > 19.9:
