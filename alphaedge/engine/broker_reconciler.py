@@ -182,17 +182,27 @@ class BrokerReconciler:
                 if live_equity > 0.0:
                     ib_pnl = live_equity - starting_equity
                     local_pnl = sum(s.pnl_usd_today for s in states.values())
-                    pnl_drift_usd = abs(ib_pnl - local_pnl)
-                    pnl_drift_pct = (pnl_drift_usd / starting_equity) * 100.0
-                    if pnl_drift_pct > 1.0:
-                        logger.warning(
-                            "ALPHAEDGE RECONCILE: P&L drift %.2f%% "
-                            "(local=%.2f IB_delta=%.2f drift_usd=%.2f)",
-                            pnl_drift_pct,
-                            local_pnl,
-                            ib_pnl,
-                            pnl_drift_usd,
+                    # Skip drift check when no trades have been recorded
+                    # locally (fresh state, state reset, or 0-trade session).
+                    # Comparing against a zeroed local P&L produces
+                    # misleading 100,000%+ drift alarms in paper mode.
+                    if local_pnl == 0.0:
+                        logger.debug(
+                            "ALPHAEDGE RECONCILE: P&L drift skipped "
+                            "(local_pnl=0.0 — no trades recorded this session)"
                         )
+                    else:
+                        pnl_drift_usd = abs(ib_pnl - local_pnl)
+                        pnl_drift_pct = (pnl_drift_usd / starting_equity) * 100.0
+                        if pnl_drift_pct > 1.0:
+                            logger.warning(
+                                "ALPHAEDGE RECONCILE: P&L drift {:.2f}% "
+                                "(local={:.2f} IB_delta={:.2f} drift_usd={:.2f})",
+                                pnl_drift_pct,
+                                local_pnl,
+                                ib_pnl,
+                                pnl_drift_usd,
+                            )
             except Exception:
                 logger.exception("ALPHAEDGE BrokerReconciler: P&L drift check failed")
 

@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import alphaedge.engine.broker_reconciler as broker_reconciler_mod
 from alphaedge.engine.broker_reconciler import (
     BrokerExecutorProtocol,
     BrokerReconciler,
@@ -215,10 +216,15 @@ class TestPnlDrift:
 
     @pytest.mark.asyncio()
     async def test_drift_detected_above_threshold(self) -> None:
-        """P&L drift > 1% starting_equity → pnl_drift_pct > 1.0."""
+        """P&L drift > 1% starting_equity → pnl_drift_pct > 1.0.
+
+        local_pnl must be non-zero: drift check is intentionally skipped
+        when local_pnl=0.0 (no trades recorded) to avoid false alarms
+        after a state reset in paper mode.
+        """
         starting_equity = 10_000.0
-        local_pnl = 0.0  # bot thinks P&L is 0
-        live_equity = 10_200.0  # IB equity is up $200 (2% drift)
+        local_pnl = 50.0  # bot recorded a $50 trade
+        live_equity = 10_250.0  # IB equity shows $250 gain → $200 drift
 
         executor = _make_executor(positions=[], equity=live_equity)
         states: dict[str, _FakeState] = {
@@ -235,6 +241,31 @@ class TestPnlDrift:
         assert report.pnl_drift_pct == pytest.approx(2.0, abs=0.01)
 
     @pytest.mark.asyncio()
+    async def test_drift_warning_formats_numeric_values(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The warning log should render numeric drift values, not raw placeholders."""
+        logged: list[str] = []
+
+        def _capture_warning(message: str, *args: object) -> None:
+            logged.append(message.format(*args))
+
+        monkeypatch.setattr(broker_reconciler_mod.logger, "warning", _capture_warning)
+
+        executor = _make_executor(positions=[], equity=10_250.0)
+        states: dict[str, _FakeState] = {
+            "EURUSD": _FakeState(pair="EURUSD", pnl_usd_today=50.0)
+        }
+        reconciler = BrokerReconciler(cast(BrokerExecutorProtocol, executor))
+
+        await reconciler.reconcile(states, starting_equity=10_000.0)
+
+        assert logged == [
+            "ALPHAEDGE RECONCILE: P&L drift 2.00% "
+            "(local=50.00 IB_delta=250.00 drift_usd=200.00)"
+        ]
+
+    @pytest.mark.asyncio()
     async def test_pnl_drift_skipped_when_no_starting_equity(self) -> None:
         """starting_equity=0 → equity not fetched, drift fields stay zero."""
         executor = _make_executor(equity=12_000.0)
@@ -244,6 +275,34 @@ class TestPnlDrift:
         report = await reconciler.reconcile(states)
 
         executor.get_account_equity.assert_not_called()
+        assert report.pnl_drift_usd == 0.0
+        assert report.pnl_drift_pct == 0.0
+
+    @pytest.mark.asyncio()
+    async def test_pnl_drift_skipped_when_local_pnl_zero(self) -> None:
+        """local_pnl=0.0 → drift check skipped to prevent false alarms.
+
+        After a state reset (e.g. corrupt state file deleted) the local P&L
+        is 0 for the entire session while the IB paper account carries
+        accumulated equity from prior sessions.  Comparing these two values
+        would produce absurd drift percentages (100,000%+), so the check
+        is intentionally skipped when no trades have been recorded locally.
+        """
+        starting_equity = 10_000.0
+        live_equity = 1_010_000.0  # paper account accumulated from prior sessions
+
+        executor = _make_executor(positions=[], equity=live_equity)
+        states: dict[str, _FakeState] = {
+            "EURUSD": _FakeState(pair="EURUSD", pnl_usd_today=0.0)
+        }
+        reconciler = BrokerReconciler(cast(BrokerExecutorProtocol, executor))
+
+        report = await reconciler.reconcile(
+            states,
+            starting_equity=starting_equity,
+        )
+
+        # drift fields must stay at their default (0.0) — no false alarm
         assert report.pnl_drift_usd == 0.0
         assert report.pnl_drift_pct == 0.0
 

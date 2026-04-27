@@ -28,6 +28,7 @@ from alphaedge.config.constants import (
 from alphaedge.utils.logger import get_logger
 
 logger = get_logger()
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 # ------------------------------------------------------------------
@@ -95,8 +96,23 @@ def _load_calendar(path: Path) -> list[NewsEvent]:
                 )
             except (KeyError, ValueError) as exc:
                 logger.debug(f"ALPHAEDGE NEWS: Skipping invalid row: {exc}")
-    logger.info(f"ALPHAEDGE NEWS: Loaded {len(events)} events from {path}")
+    if events:
+        logger.info(f"ALPHAEDGE NEWS: Loaded {len(events)} events from {path}")
+    else:
+        logger.warning(
+            "ALPHAEDGE NEWS: Loaded 0 events from %s — "
+            "news blackout filter is disabled (calendar empty or wrong format)",
+            path,
+        )
     return events
+
+
+def _resolve_calendar_path(path: str | Path) -> Path:
+    """Resolve relative calendar paths from the repository root."""
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return candidate
+    return _REPO_ROOT / candidate
 
 
 # ------------------------------------------------------------------
@@ -118,7 +134,9 @@ class EconomicNewsFilter:
         self._config = config
         self._events: list[NewsEvent] = []
         if config.enabled:
-            self._events = _load_calendar(Path(config.calendar_path))
+            resolved_path = _resolve_calendar_path(config.calendar_path)
+            self._config.calendar_path = str(resolved_path)
+            self._events = _load_calendar(resolved_path)
 
     @property
     def event_count(self) -> int:

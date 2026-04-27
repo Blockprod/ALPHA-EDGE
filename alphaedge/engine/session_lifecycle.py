@@ -1469,14 +1469,28 @@ class SessionLifecycle:
                                 f"({format_dual_time(next_start)})"
                             )
                     continue
-                # Log at first check and then every ~15 min to avoid flooding
-                if now.minute % 15 == 0 or wait_h > 19.9:
-                    logger.info(
-                        f"ALPHAEDGE: Session ended for today. "
-                        f"Next window in {wait_h:.1f}h "
-                        f"({format_dual_time(next_start)})"
-                    )
-                await asyncio.sleep(60.0)
+                # Inter-session standby: one long sleep instead of 60s
+                # polling for the full ~22h inter-day gap.
+                # Wake 60 min before next session to run health checks.
+                wake_at = next_start - timedelta(hours=1)
+                wait_s_inter = max(0.0, (wake_at - now).total_seconds())
+                logger.info(
+                    f"ALPHAEDGE: Session ended for today. "
+                    f"Next window in {wait_h:.1f}h ({format_dual_time(next_start)}). "
+                    f"Standby until {format_dual_time(wake_at)}"
+                )
+                while wait_s_inter > 0 and not self._s._shutdown_requested:
+                    chunk = min(1800.0, wait_s_inter)
+                    await asyncio.sleep(chunk)
+                    wait_s_inter -= chunk
+                    if wait_s_inter > 0 and not self._s._shutdown_requested:
+                        now_inner = now_utc()
+                        wait_h_inner = (next_start - now_inner).total_seconds() / 3600.0
+                        logger.info(
+                            f"ALPHAEDGE: Inter-session standby — "
+                            f"waking in {wait_h_inner:.1f}h "
+                            f"({format_dual_time(next_start)})"
+                        )
                 continue
 
             # Before today's session_start
