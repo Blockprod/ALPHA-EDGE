@@ -142,7 +142,7 @@ goto MENU
 echo.
 echo [*] Lancement du bot dans une nouvelle fenetre (paper)...
 echo     Fermez la fenetre "ALPHAEDGE Bot" pour arreter le bot.
-start "ALPHAEDGE Bot" cmd /k "cd /d "%PROJECT_DIR%" && "%PYTHON_EXE%" -m alphaedge --mode paper"
+start "ALPHAEDGE Bot" cmd /k "cd /d %PROJECT_DIR% && %PYTHON_EXE% -m alphaedge --mode paper"
 echo [OK] Bot demarre. Vous pouvez maintenant lancer l'option 10.
 timeout /t 2 >nul
 goto MENU

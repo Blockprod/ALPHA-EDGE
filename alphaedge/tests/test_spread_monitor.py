@@ -11,10 +11,13 @@
 
 from __future__ import annotations
 
+import io
+from collections.abc import Generator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from loguru import logger
 
 from alphaedge.config.loader import AppConfig, IBConfig, TradingConfig
 from alphaedge.engine.strategy import CoreModules, StrategyState, SwingStrategy
@@ -54,6 +57,17 @@ def _make_strategy() -> SwingStrategy:
     return strategy
 
 
+@pytest.fixture()
+def log_capture() -> Generator[io.StringIO, None, None]:
+    """Capture loguru output for assertions."""
+    sink = io.StringIO()
+    handler_id = logger.add(sink, format="{message}", level="DEBUG")
+    try:
+        yield sink
+    finally:
+        logger.remove(handler_id)
+
+
 # ==================================================================
 # Tests
 # ==================================================================
@@ -90,6 +104,36 @@ class TestSpreadCheckBeforeExecution:
 
         assert result is False
         # _execute_signal should NOT have been called
+
+    @pytest.mark.asyncio()
+    async def test_wide_spread_logs_once_for_same_pair(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        log_capture: io.StringIO,
+    ) -> None:
+        """Repeated spread blocks should only log once until state changes."""
+        strategy = _make_strategy()
+        state = StrategyState(pair="EURUSD")
+        signal: dict[str, Any] = {
+            "detected": True,
+            "direction": 1,
+            "entry_price": 1.0850,
+            "stop_loss": 1.0830,
+            "take_profit": 1.0910,
+            "risk_pips": 20.0,
+        }
+
+        monkeypatch.setattr(
+            strategy._rt_feed,
+            "get_live_spread",
+            AsyncMock(return_value=0.0003),
+        )
+
+        await strategy._lifecycle._check_spread_and_execute(state, signal, 0.0001)
+        await strategy._lifecycle._check_spread_and_execute(state, signal, 0.0001)
+
+        output = log_capture.getvalue()
+        assert output.count("ALPHAEDGE SPREAD: EURUSD blocked") == 1
 
     @pytest.mark.asyncio()
     async def test_tight_spread_executes_signal(

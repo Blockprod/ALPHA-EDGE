@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from alphaedge.config.constants import PROJECT_VERSION
 from alphaedge.engine.web_dashboard import (
+    DashboardLogEntry,
     DashboardState,
     DashboardStore,
     EquityPoint,
@@ -24,9 +25,12 @@ from alphaedge.engine.web_dashboard import (
     configure_auth,
     create_app,
     get_store,
+    install_dashboard_log_sink,
+    remove_dashboard_log_sink,
     run_web_dashboard,
     set_store,
 )
+from alphaedge.utils.logger import get_logger
 
 
 # ------------------------------------------------------------------
@@ -67,6 +71,22 @@ class TestHealthEndpoint:
         assert resp.status_code == 200
 
 
+class TestDashboardUiRoutes:
+    def test_root_serves_dashboard_html(self, client: TestClient) -> None:
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        body = resp.text
+        assert '<span class="logo"><span class="brand">ALPHA</span>EDGE</span>' in body
+        assert "Equity Curve" in body
+        assert "Trade History" in body
+
+    def test_dashboard_route_serves_same_template(self, client: TestClient) -> None:
+        resp = client.get("/dashboard")
+        assert resp.status_code == 200
+        assert 'id="btn-refresh"' in resp.text
+
+
 # ------------------------------------------------------------------
 # State endpoint
 # ------------------------------------------------------------------
@@ -76,12 +96,14 @@ class TestStateEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["ib_connected"] is False
+        assert data["gateway_connected"] is False
         assert data["pairs"] == []
 
     def test_updated_state(self, client: TestClient, store: DashboardStore) -> None:
         store.update_state(
             DashboardState(
                 ib_connected=True,
+                gateway_connected=True,
                 session_active=True,
                 utc_time="2026-03-08T10:00:00Z",
                 pairs=[{"pair": "EURUSD", "spread": 0.8}],
@@ -93,6 +115,7 @@ class TestStateEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["ib_connected"] is True
+        assert data["gateway_connected"] is True
         assert data["session_active"] is True
         assert len(data["pairs"]) == 1
         assert data["position"]["pnl_usd"] == 50.0
@@ -104,6 +127,27 @@ class TestStateEndpoint:
     def test_state_with_valid_token(self, auth_client: TestClient) -> None:
         resp = auth_client.get("/api/state?token=test-secret-token")
         assert resp.status_code == 200
+
+    def test_state_includes_live_log(
+        self, client: TestClient, store: DashboardStore
+    ) -> None:
+        store.update_state(DashboardState(utc_time="2026-03-08T10:00:00Z"))
+        store.add_log(
+            DashboardLogEntry(
+                timestamp="2026-03-08T10:00:01Z",
+                level="INFO",
+                source="strategy:run_session",
+                message="Signal accepted for EURUSD",
+                cls="dbg",
+            )
+        )
+
+        resp = client.get("/api/state")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["live_log"]) == 1
+        assert data["live_log"][0]["message"] == "Signal accepted for EURUSD"
 
 
 # ------------------------------------------------------------------
@@ -245,6 +289,24 @@ class TestDashboardStore:
         assert len(points) == 10
         assert points[0].equity == 10090.0
 
+    def test_live_log_limit(self, store: DashboardStore) -> None:
+        for i in range(405):
+            store.add_log(
+                DashboardLogEntry(
+                    timestamp=f"2026-03-08T10:00:{i:02d}Z",
+                    level="INFO",
+                    source="test:case",
+                    message=f"line {i}",
+                    cls="dbg",
+                )
+            )
+
+        lines = store.get_live_log(limit=400)
+
+        assert len(lines) == 400
+        assert lines[0].message == "line 5"
+        assert lines[-1].message == "line 404"
+
     def test_ws_register_unregister(self, store: DashboardStore) -> None:
         # Use a mock WebSocket for unit test
         class FakeWS:
@@ -271,6 +333,20 @@ class TestDashboardStore:
 # Data models
 # ------------------------------------------------------------------
 class TestDataModels:
+    def test_dashboard_log_entry_fields(self) -> None:
+        entry = DashboardLogEntry(
+            timestamp="2026-03-08T10:00:00Z",
+            level="INFO",
+            source="broker:connect",
+            message="Gateway ready",
+            cls="dbg",
+        )
+
+        d = asdict(entry)
+
+        assert d["level"] == "INFO"
+        assert d["source"] == "broker:connect"
+
     def test_trade_history_entry_fields(self) -> None:
         t = TradeHistoryEntry(
             trade_id=1,
@@ -297,6 +373,7 @@ class TestDataModels:
     def test_dashboard_state_defaults(self) -> None:
         s = DashboardState()
         assert s.ib_connected is False
+        assert s.gateway_connected is False
         assert s.session_active is False
         assert s.utc_time == ""
         assert s.pairs == []
@@ -306,12 +383,24 @@ class TestDataModels:
     def test_dashboard_state_serialization(self) -> None:
         s = DashboardState(
             ib_connected=True,
+            gateway_connected=True,
             pairs=[{"pair": "EURUSD"}],
             daily={"trades_today": 2},
+            live_log=[
+                DashboardLogEntry(
+                    timestamp="2026-03-08T10:00:00Z",
+                    level="INFO",
+                    source="strategy:run_session",
+                    message="Session active",
+                    cls="dbg",
+                )
+            ],
         )
         d = asdict(s)
         assert d["ib_connected"] is True
+        assert d["gateway_connected"] is True
         assert len(d["pairs"]) == 1
+        assert d["live_log"][0]["message"] == "Session active"
 
 
 # ------------------------------------------------------------------
@@ -401,6 +490,22 @@ class TestModuleLevelStore:
         set_store(original)  # restore
 
 
+class TestDashboardLogSink:
+    def test_log_sink_streams_runtime_lines(self, store: DashboardStore) -> None:
+        logger = get_logger()
+        install_dashboard_log_sink(store=store, level="INFO")
+        try:
+            logger.info("Dashboard sink smoke test")
+        finally:
+            remove_dashboard_log_sink()
+
+        lines = store.get_live_log(limit=1)
+
+        assert len(lines) == 1
+        assert lines[0].level == "INFO"
+        assert lines[0].message == "Dashboard sink smoke test"
+
+
 # ------------------------------------------------------------------
 # run_web_dashboard loop
 # ------------------------------------------------------------------
@@ -417,6 +522,7 @@ class TestRunWebDashboard:
                 raise KeyboardInterrupt
             return {
                 "ib_connected": True,
+                "gateway_connected": True,
                 "session_active": True,
                 "pairs": [{"pair": "EURUSD"}],
                 "position": {},
@@ -431,7 +537,53 @@ class TestRunWebDashboard:
             )
 
         assert store.state.ib_connected is True
+        assert store.state.gateway_connected is True
         assert len(store.get_equity_curve()) >= 1
+
+    @pytest.mark.asyncio
+    async def test_update_loop_syncs_trade_history_and_current_equity(self) -> None:
+        store = DashboardStore()
+        call_count = 0
+
+        async def mock_provider() -> dict[str, Any]:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                raise KeyboardInterrupt
+            return {
+                "ib_connected": True,
+                "session_active": True,
+                "pairs": [],
+                "position": {},
+                "daily": {},
+                "current_equity": 10500.0,
+                "trade_history": [
+                    {
+                        "trade_id": 1,
+                        "pair": "EURUSD",
+                        "direction": "LONG",
+                        "entry_price": 1.08,
+                        "exit_price": 1.085,
+                        "entry_time": "2026-03-08T09:30:00Z",
+                        "exit_time": "2026-03-08T09:45:00Z",
+                        "pnl_pips": 5.0,
+                        "pnl_usd": 50.0,
+                        "outcome": "win",
+                    }
+                ],
+            }
+
+        with pytest.raises(KeyboardInterrupt):
+            await run_web_dashboard(
+                state_provider=mock_provider,
+                store=store,
+                refresh_rate=0.01,
+            )
+
+        trades = store.get_trades()
+        assert len(trades) == 1
+        assert trades[0].trade_id == 1
+        assert store.get_equity_curve(limit=1)[0].equity == 10500.0
 
     @pytest.mark.asyncio
     async def test_update_loop_handles_errors(self) -> None:

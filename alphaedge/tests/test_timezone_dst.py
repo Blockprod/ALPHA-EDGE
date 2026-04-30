@@ -25,24 +25,24 @@ class TestTimezoneDST:
     """Tests for correct DST handling in session window calculations."""
 
     def test_session_window_est_winter(self) -> None:
-        """Session 9:40-10:30 ET in EST (UTC-5) should be 14:40-15:30 UTC."""
+        """Session 9:30-10:30 ET in EST (UTC-5) should be 14:30-15:30 UTC."""
         # January 15, 2025 — EST (no DST)
         ref = datetime(2025, 1, 15, 10, 0, tzinfo=ZoneInfo("America/New_York"))
         start, end = get_session_window_utc(ref)
 
         assert start.hour == 14
-        assert start.minute == 40
+        assert start.minute == 30
         assert end.hour == 15
         assert end.minute == 30
 
     def test_session_window_edt_summer(self) -> None:
-        """Session 9:40-10:30 ET in EDT (UTC-4) should be 13:40-14:30 UTC."""
+        """Session 9:30-10:30 ET in EDT (UTC-4) should be 13:30-14:30 UTC."""
         # July 15, 2025 — EDT (DST active)
         ref = datetime(2025, 7, 15, 10, 0, tzinfo=ZoneInfo("America/New_York"))
         start, end = get_session_window_utc(ref)
 
         assert start.hour == 13
-        assert start.minute == 40
+        assert start.minute == 30
         assert end.hour == 14
         assert end.minute == 30
 
@@ -76,7 +76,7 @@ class TestTimezoneDST:
         est_start, _ = get_session_window_utc(est_ref)
         edt_start, _ = get_session_window_utc(edt_ref)
 
-        # EST start is 14:40 UTC, EDT start is 13:40 UTC — 1 hour difference
+        # EST start is 14:30 UTC, EDT start is 13:30 UTC — 1 hour difference
         assert est_start.hour - edt_start.hour == 1
 
 

@@ -26,10 +26,16 @@ import signal
 import sys
 from typing import Any
 
-from alphaedge.config.constants import IB_LIVE_PORT, IB_PAPER_PORT
+from alphaedge.config.constants import (
+    IB_GATEWAY_WATCHDOG_INTERVAL_SECONDS,
+    IB_LIVE_PORT,
+    IB_PAPER_PORT,
+)
 from alphaedge.config.loader import AppConfig, load_config
 from alphaedge.engine.strategy import SwingStrategy
+from alphaedge.utils.gw_manager import check_gateway_health, ensure_gateway_ready
 from alphaedge.utils.logger import get_logger, setup_logging
+from alphaedge.utils.timezone import is_weekend_paris
 
 logger = get_logger()
 
@@ -128,6 +134,43 @@ def _apply_proactor_monkey_patch() -> None:
     setattr(_transport_cls, "_loop_writing", _patched_loop_writing)
 
 
+async def _run_gateway_watchdog_tick(
+    strategy: SwingStrategy,
+    config: AppConfig,
+) -> None:
+    """Refresh gateway availability without relaunching over a live broker session."""
+    broker_connected = bool(getattr(strategy._broker, "is_connected", False))
+    if broker_connected:
+        strategy.set_gateway_health(
+            gateway_connected=True,
+            gateway_status="healthy",
+        )
+        return
+
+    if await check_gateway_health(config.ib):
+        strategy.set_gateway_health(
+            gateway_connected=True,
+            gateway_status="healthy",
+        )
+        return
+
+    strategy.set_gateway_health(
+        gateway_connected=False,
+        gateway_status="down",
+    )
+    logger.warning(
+        "ALPHAEDGE GW: Watchdog detected unavailable gateway — reasserting availability"
+    )
+    if not await ensure_gateway_ready(config.ib):
+        logger.error("ALPHAEDGE GW: Watchdog could not restore gateway availability")
+        return
+
+    strategy.set_gateway_health(
+        gateway_connected=True,
+        gateway_status="healthy",
+    )
+
+
 # ------------------------------------------------------------------
 # Async main
 # ------------------------------------------------------------------
@@ -166,6 +209,21 @@ async def _main() -> None:
         _stdout("=" * 60)
 
     strategy = SwingStrategy(config)
+    _gateway_watchdog_task: asyncio.Task[None] | None = None
+
+    async def _gateway_watchdog() -> None:
+        while not strategy._shutdown_requested:
+            await asyncio.sleep(IB_GATEWAY_WATCHDOG_INTERVAL_SECONDS)
+            if strategy._shutdown_requested or is_weekend_paris():
+                continue
+            if getattr(strategy, "_reconnecting", False):
+                continue
+            try:
+                await _run_gateway_watchdog_tick(strategy, config)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("ALPHAEDGE GW: Watchdog failed")
 
     # Install signal handlers for graceful shutdown
     # add_signal_handler is not supported on Windows — use try/except for all signals
@@ -206,6 +264,7 @@ async def _main() -> None:
 
         from alphaedge.engine.web_dashboard import (
             configure_auth,
+            install_dashboard_log_sink,
             run_web_dashboard,
             start_server,
         )
@@ -215,6 +274,7 @@ async def _main() -> None:
         dash_token: str = str(config.dashboard_raw.get("api_token", ""))
         if dash_token:
             configure_auth(dash_token)
+        install_dashboard_log_sink(level="INFO")
 
         threading.Thread(
             target=start_server,
@@ -222,7 +282,7 @@ async def _main() -> None:
             daemon=True,
             name="alphaedge-web-dashboard",
         ).start()
-        logger.info(f"Web dashboard: http://{dash_host}:{dash_port}/docs")
+        logger.info(f"Web dashboard: http://{dash_host}:{dash_port}/")
 
         async def _get_dashboard_state() -> dict[str, Any]:
             return strategy.get_live_state()
@@ -231,6 +291,11 @@ async def _main() -> None:
             run_web_dashboard(_get_dashboard_state, refresh_rate=2.0),
             name="web-dashboard-loop",
         )
+
+    _gateway_watchdog_task = asyncio.create_task(
+        _gateway_watchdog(),
+        name="gateway-watchdog",
+    )
 
     try:
         while not strategy._shutdown_requested:
@@ -244,6 +309,10 @@ async def _main() -> None:
         logger.info("ALPHAEDGE: Interrupted — triggering graceful shutdown")
         await strategy.graceful_shutdown()
     finally:
+        if _gateway_watchdog_task is not None:
+            _gateway_watchdog_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await _gateway_watchdog_task
         if _dashboard_task is not None:
             _dashboard_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

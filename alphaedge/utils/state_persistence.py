@@ -21,7 +21,7 @@ from alphaedge.utils.logger import get_logger
 
 logger = get_logger()
 
-STATE_FILE = "alphaedge_daily_state.json"
+STATE_FILE = str(Path(__file__).resolve().parents[2] / "alphaedge_daily_state.json")
 
 
 @dataclass
@@ -73,7 +73,13 @@ def load_daily_state() -> DailyState | None:
             return None
         return state
     except (json.JSONDecodeError, TypeError, KeyError, ValueError):
-        logger.warning("ALPHAEDGE STATE: Corrupt state file — ignoring")
+        logger.warning("ALPHAEDGE STATE: Corrupt state file — deleting and resetting")
+        try:
+            path.unlink()
+        except OSError:
+            logger.debug(
+                f"ALPHAEDGE STATE: Failed to delete corrupt state file: {path}"
+            )
         return None
 
 

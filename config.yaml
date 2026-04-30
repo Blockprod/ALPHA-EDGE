@@ -19,6 +19,8 @@ ib:
   account_id: ""            # Set in .env (ALPHAEDGE_IB_ACCOUNT)
   account_type: "Individual"  # Individual or Financial Advisor
   gateway_path: ""              # Set in .env (ALPHAEDGE_IB_GATEWAY_PATH) or here
+  launcher_path: ""             # Optional external launcher (ex: StartIBC.bat)
+  login_mode: "manual"          # manual | stored | ibc
 
 # --- Trading Parameters ---
 trading:
@@ -118,7 +120,7 @@ trading:
   lot_type: "micro"
 
   # NYSE session window (Eastern Time — DST auto-handled)
-  session_start: "09:40"
+  session_start: "09:30"
   session_end: "10:30"
 
   # Action at session end if position still open: "hold" or "close"
@@ -138,8 +140,8 @@ trading:
   # EUR/USD rate for PnL conversion in backtest reports (update as needed)
   eur_usd_rate: 1.08
 
-  # Starting equity for backtest drawdown and Sharpe calculations (USD)
-  starting_equity: 10000.0
+  # Starting equity for live strategy virtual capital and backtest metrics (USD)
+  starting_equity: 1000.0
 
 # --- Momentum Signal Parameters ---
 momentum:

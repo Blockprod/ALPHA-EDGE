@@ -188,3 +188,65 @@ class TestHeartbeatRestartedAfterReconnect:
 
         start_hb.assert_called_once()
         assert strategy._reconnecting is False
+
+
+class TestConfiguredStartingEquity:
+    @pytest.mark.asyncio()
+    async def test_run_session_uses_configured_virtual_capital(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        strategy = _build_strategy()
+        strategy._config.trading.starting_equity = 1000.0
+
+        captured_args: list[tuple[float, float, object, object]] = []
+
+        async def _capture_init_pairs(
+            self: object,
+            starting_equity: float,
+            current_equity: float,
+            persisted: object,
+            session_start: object,
+        ) -> list[str]:
+            captured_args.append(
+                (starting_equity, current_equity, persisted, session_start)
+            )
+            return []
+
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
+            AsyncMock(return_value=True),
+        )
+        monkeypatch.setattr(strategy._broker, "connect", AsyncMock(return_value=True))
+        monkeypatch.setattr(strategy._broker, "disconnect", AsyncMock())
+        monkeypatch.setattr(strategy._broker, "stop_heartbeat", AsyncMock())
+        monkeypatch.setattr(strategy._broker, "start_heartbeat", MagicMock())
+        monkeypatch.setattr(strategy._broker, "refresh_account_funds", AsyncMock())
+        monkeypatch.setattr(
+            strategy._executor,
+            "get_account_equity",
+            AsyncMock(return_value=1_002_297.26),
+        )
+        monkeypatch.setattr(strategy._rt_feed, "on_bar", MagicMock())
+        monkeypatch.setattr(strategy._rt_feed, "unsubscribe_all", AsyncMock())
+        monkeypatch.setattr(
+            strategy._lifecycle,
+            "_init_session_pairs",
+            _capture_init_pairs.__get__(strategy._lifecycle, type(strategy._lifecycle)),
+        )
+        monkeypatch.setattr(strategy._lifecycle, "_run_reconcile", AsyncMock())
+        monkeypatch.setattr(strategy._lifecycle, "_handle_session_end", AsyncMock())
+        monkeypatch.setattr(strategy._lifecycle, "_wait_for_session_open", AsyncMock())
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.is_session_active",
+            lambda: False,
+        )
+        monkeypatch.setattr(
+            "alphaedge.engine.session_lifecycle.load_daily_state",
+            lambda: None,
+        )
+        strategy._shutdown_requested = False
+
+        await strategy._lifecycle.run_session()
+
+        assert strategy._lifecycle._session_starting_equity == 1000.0
+        assert captured_args == [(1000.0, 1000.0, None, captured_args[0][3])]

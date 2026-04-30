@@ -823,6 +823,27 @@ class RealtimeDataFeed:
             logger.exception(f"ALPHAEDGE get_mid_price failed unexpectedly: {pair}")
             return None
 
+    def peek_mid_price(self, pair: str) -> float | None:
+        """Return the latest cached mid price for a pair without awaiting IB."""
+        if not self._broker.is_connected:
+            return None
+
+        stale_for = time.monotonic() - self._last_tick_ts.get(pair, 0.0)
+        if stale_for > self._MAX_TICK_STALENESS_SECONDS:
+            return None
+
+        try:
+            ticker = self._broker.ib.ticker(build_forex_contract(pair))
+            if ticker and ticker.bid > 0 and ticker.ask > 0:
+                return float((ticker.bid + ticker.ask) / 2.0)
+            return None
+        except RuntimeError:
+            logger.exception(f"ALPHAEDGE peek_mid_price IB runtime failure: {pair}")
+            return None
+        except Exception:
+            logger.exception(f"ALPHAEDGE peek_mid_price failed unexpectedly: {pair}")
+            return None
+
 
 if __name__ == "__main__":
     logger.info("ALPHAEDGE — Data Feed module loaded (standalone test)")

@@ -33,9 +33,6 @@
     // --- Type Checking (Pylance) ---
     "python.analysis.autoImportCompletions": true,
     "python.analysis.diagnosticMode": "workspace",
-    "python.analysis.ignore": [
-        "C:/Users/averr/EDGECORE_V1/**"
-    ],
 
     // --- Testing (Pytest) ---
     "python.testing.pytestEnabled": true,
@@ -76,6 +73,10 @@
                 ". .venv\\Scripts\\Activate.ps1"
             ]
         }
+    },
+    "terminal.integrated.automationProfile.windows": {
+        "source": "PowerShell",
+        "icon": "terminal-powershell"
     },
     "terminal.integrated.defaultProfile.windows": "PowerShell"
 }

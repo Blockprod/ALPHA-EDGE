@@ -69,6 +69,7 @@ class StrategyState:
     carry_rates: dict[str, float] = field(default_factory=dict)
     pip_size: float = 0.0
     current_atr_pips: float = 0.0
+    last_block_reason: str = ""
 
 
 # ------------------------------------------------------------------
@@ -196,9 +197,63 @@ class SwingStrategy:
 
         # Last known volatility regime — updated each bar in _detect_momentum
         self._last_regime: str = "unknown"
+        self._gateway_connected: bool = False
+        self._gateway_status: str = "unknown"
+        self._dashboard_trade_history: list[dict[str, str | int | float]] = []
+        self._dashboard_trade_seq: int = 0
 
         # Wire IB disconnect event for auto-reconnection
         self._broker.add_disconnect_handler(self._lifecycle._on_ib_disconnect)
+
+    def set_gateway_health(
+        self,
+        *,
+        gateway_connected: bool,
+        gateway_status: str | None = None,
+    ) -> None:
+        """Persist the latest known IB Gateway availability for the dashboard."""
+        self._gateway_connected = gateway_connected
+        self._gateway_status = gateway_status or (
+            "healthy" if gateway_connected else "down"
+        )
+
+    def _virtual_current_equity(self) -> float:
+        """Return configured starting capital plus realized PnL."""
+        starting_equity = self._lifecycle._session_starting_equity
+        if starting_equity <= 0.0:
+            starting_equity = float(self._config.trading.starting_equity)
+
+        total_pnl = sum(state.pnl_usd_today for state in self._states.values())
+        current_equity = starting_equity + total_pnl
+        if current_equity <= 0.0:
+            return starting_equity
+        return current_equity
+
+    def _remember_dashboard_trade(self, record: LiveTradeRecord) -> None:
+        """Store a normalized closed-trade snapshot for the web dashboard."""
+        self._dashboard_trade_seq += 1
+        self._dashboard_trade_history.append(
+            {
+                "trade_id": self._dashboard_trade_seq,
+                "pair": record.pair,
+                "direction": "LONG" if record.direction > 0 else "SHORT",
+                "entry_price": record.fill_price
+                if record.fill_price > 0
+                else record.entry_price,
+                "exit_price": record.exit_price,
+                "entry_time": record.entry_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "exit_time": (
+                    record.exit_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+                    if record.exit_time is not None
+                    else ""
+                ),
+                "pnl_pips": record.pnl_pips,
+                "pnl_usd": record.pnl_usd,
+                "outcome": record.outcome,
+            }
+        )
+        if len(self._dashboard_trade_history) > 200:
+            self._dashboard_trade_history = self._dashboard_trade_history[-200:]
 
     async def graceful_shutdown(self) -> None:
         """Initiate graceful shutdown (called by signal handler)."""
@@ -267,8 +322,9 @@ class SwingStrategy:
     ) -> DailyLimitResult:
         """Check daily risk limits before placing a trade."""
         risk_mod = self._modules.risk_manager
-        equity = await self._executor.get_account_equity()
-        state.current_equity = equity
+        equity = self._virtual_current_equity()
+        for pair_state in self._states.values():
+            pair_state.current_equity = equity
 
         result: DailyLimitResult = risk_mod.check_daily_limit(
             starting_equity=state.starting_equity,
@@ -321,17 +377,60 @@ class SwingStrategy:
             now_utc,
         )
 
+        def _pair_snapshot(state: StrategyState) -> dict[str, Any]:
+            record = state.live_record
+            signal = state.signal_result
+            current_price = 0.0
+            open_pnl_usd = 0.0
+
+            if record is not None and state.is_position_open:
+                live_mid = self._rt_feed.peek_mid_price(state.pair)
+                if live_mid is not None:
+                    current_price = live_mid
+                    raw_pnl = (
+                        (live_mid - record.entry_price)
+                        * record.direction
+                        * record.lot_size
+                        * 100_000
+                    )
+                    open_pnl_usd = (
+                        raw_pnl / record.exchange_rate
+                        if record.exchange_rate > 0.0
+                        else raw_pnl
+                    )
+
+            direction = ""
+            if record is not None:
+                direction = "LONG" if record.direction > 0 else "SHORT"
+            elif signal is not None:
+                signal_direction = int(signal.get("direction", 0))
+                if signal_direction > 0:
+                    direction = "LONG"
+                elif signal_direction < 0:
+                    direction = "SHORT"
+
+            return {
+                "pair": state.pair,
+                "is_position_open": state.is_position_open,
+                "trades_today": state.trades_today,
+                "pnl_usd_today": state.pnl_usd_today,
+                "pnl_pips_today": record.pnl_pips if record is not None else 0.0,
+                "direction": direction,
+                "entry_price": record.entry_price if record is not None else 0.0,
+                "stop_loss": record.stop_loss if record is not None else 0.0,
+                "take_profit": record.take_profit if record is not None else 0.0,
+                "lot_size": record.lot_size if record is not None else 0.0,
+                "spread_pips": record.spread_pips if record is not None else 0.0,
+                "adx": record.adx_at_entry if record is not None else 0.0,
+                "strength": record.strength_at_entry if record is not None else 0.0,
+                "fill_status": record.fill_status if record is not None else "",
+                "current_price": current_price,
+                "pnl_usd": round(open_pnl_usd, 2),
+            }
+
         # If session not yet started, show configured pairs with zero values
         if self._states:
-            pairs_info = [
-                {
-                    "pair": s.pair,
-                    "is_position_open": s.is_position_open,
-                    "trades_today": s.trades_today,
-                    "pnl_usd_today": s.pnl_usd_today,
-                }
-                for s in self._states.values()
-            ]
+            pairs_info = [_pair_snapshot(s) for s in self._states.values()]
         else:
             pairs_info = [
                 {
@@ -339,6 +438,16 @@ class SwingStrategy:
                     "is_position_open": False,
                     "trades_today": 0,
                     "pnl_usd_today": 0.0,
+                    "pnl_pips_today": 0.0,
+                    "direction": "",
+                    "entry_price": 0.0,
+                    "stop_loss": 0.0,
+                    "take_profit": 0.0,
+                    "lot_size": 0.0,
+                    "spread_pips": 0.0,
+                    "adx": 0.0,
+                    "strength": 0.0,
+                    "fill_status": "",
                 }
                 for p in self._config.trading.pairs
             ]
@@ -365,18 +474,19 @@ class SwingStrategy:
 
         # Equity
         starting_equity = self._lifecycle._session_starting_equity
-        current_equity = 0.0
-        if self._states:
-            current_equity = next(
-                (
-                    s.current_equity
-                    for s in self._states.values()
-                    if s.current_equity > 0
-                ),
-                0.0,
-            )
-        if current_equity == 0.0 and starting_equity > 0:
-            current_equity = starting_equity
+        if starting_equity <= 0.0:
+            starting_equity = float(self._config.trading.starting_equity)
+        current_equity = self._virtual_current_equity()
+
+        position: dict[str, Any] = {}
+        for pair_info in pairs_info:
+            if pair_info["is_position_open"]:
+                position = {
+                    "pair": pair_info["pair"],
+                    "current_price": pair_info["current_price"],
+                    "pnl_usd": pair_info["pnl_usd"],
+                }
+                break
 
         # Daily loss used
         daily_loss_pct = self._config.trading.max_daily_loss_pct
@@ -408,6 +518,21 @@ class SwingStrategy:
             {
                 "pair": s.pair,
                 "signal": s.signal_result["direction"] if s.signal_result else None,
+                "adx": (
+                    float(s.signal_result.get("adx", 0.0))
+                    if s.signal_result is not None
+                    else None
+                ),
+                "strength": (
+                    float(s.signal_result.get("strength", 0.0))
+                    if s.signal_result is not None
+                    else None
+                ),
+                "spread": (
+                    s.live_record.spread_pips if s.live_record is not None else None
+                ),
+                "atr": s.current_atr_pips if s.current_atr_pips > 0 else None,
+                "carry_ok": None,
             }
             for s in self._states.values()
         ]
@@ -419,17 +544,25 @@ class SwingStrategy:
         )
 
         # Gateway
-        gw_connected = self._broker.is_connected
-        gateway_status = "healthy" if gw_connected else "down"
+        broker_connected = self._broker.is_connected
+        gateway_connected = bool(
+            broker_connected or getattr(self, "_gateway_connected", False)
+        )
+        gateway_status = getattr(self, "_gateway_status", "unknown")
+        if broker_connected and gateway_status in {"unknown", "down"}:
+            gateway_status = "healthy"
+        elif not gateway_connected and gateway_status == "unknown":
+            gateway_status = "down"
         gateway_uptime_s = self._broker.uptime_seconds
 
         return {
-            "ib_connected": gw_connected,
+            "ib_connected": broker_connected,
+            "gateway_connected": gateway_connected,
             "session_active": is_session_active() and not self._shutdown_requested,
             "next_session_utc": next_session_utc,
             "paris_time": paris_time,
             "pairs": pairs_info,
-            "position": {},
+            "position": position,
             "daily": {
                 "total_pnl_usd": total_pnl,
                 "total_trades": total_trades,
@@ -461,6 +594,8 @@ class SwingStrategy:
             "regime": self._last_regime,
             # Carry
             "carry_rates": carry_rates,
+            # Dashboard collections
+            "trade_history": list(self._dashboard_trade_history),
         }
 
     async def run_session(self) -> None:

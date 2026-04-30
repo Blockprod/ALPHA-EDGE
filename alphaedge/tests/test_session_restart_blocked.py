@@ -73,10 +73,12 @@ def _cleanup_state_file() -> Generator[None, None, None]:
     clear_daily_state()
 
 
-def _today_state(*, shutdown_triggered: bool) -> DailyState:
+def _today_state(
+    *, shutdown_triggered: bool, starting_equity: float = 1000.0
+) -> DailyState:
     return DailyState(
         date=date.today().isoformat(),
-        starting_equity=10_000.0,
+        starting_equity=starting_equity,
         trades_today=0,
         shutdown_triggered=shutdown_triggered,
     )
@@ -117,6 +119,55 @@ class TestSessionRestartBlocked:
             _stop_early, strategy._lifecycle
         )
         strategy._executor.get_account_equity = AsyncMock(return_value=10_000.0)
+        strategy._broker.refresh_account_funds = AsyncMock()
+
+        with (
+            patch.object(
+                strategy._lifecycle,
+                "_wait_for_session_open",
+                new=AsyncMock(),
+            ),
+            patch(
+                "alphaedge.engine.session_lifecycle.is_session_active",
+                return_value=False,
+            ),
+            patch(
+                "alphaedge.engine.session_lifecycle.check_gateway_health",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch(
+                "alphaedge.engine.session_lifecycle.ensure_gateway_ready",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            asyncio.run(strategy._lifecycle.run_session())
+
+        mock_broker.connect.assert_called_once()
+
+    def test_shutdown_state_with_old_capital_is_ignored(self) -> None:
+        """A stale shutdown state must not block restart after capital changes."""
+        strategy, mock_broker = _build_strategy()
+        save_daily_state(
+            _today_state(shutdown_triggered=True, starting_equity=1_002_297.26)
+        )
+
+        import types
+
+        async def _stop_early(
+            _self,
+            _starting_equity: float,
+            _live_equity: float,
+            _persisted: object,
+            _session_start: object,
+        ) -> list[str]:
+            return []
+
+        strategy._lifecycle._init_session_pairs = types.MethodType(
+            _stop_early, strategy._lifecycle
+        )
+        strategy._executor.get_account_equity = AsyncMock(return_value=1_002_297.26)
         strategy._broker.refresh_account_funds = AsyncMock()
 
         with (

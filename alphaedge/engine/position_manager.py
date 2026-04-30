@@ -101,7 +101,14 @@ class PositionManager:
             exchange_rate=exchange_rate,
         )
         if not pos_result["is_valid"]:
-            logger.warning(f"ALPHAEDGE: Invalid position size for {state.pair}")
+            logger.warning(
+                "ALPHAEDGE: Invalid position size for {} "
+                "(equity={:.2f}, sl_pips={:.1f}, risk_pct={:.4f})",
+                state.pair,
+                equity,
+                float(signal["risk_pips"]),
+                effective_risk_pct,
+            )
             return None
         if pos_result["lot_size"] > max_cap:
             logger.warning(

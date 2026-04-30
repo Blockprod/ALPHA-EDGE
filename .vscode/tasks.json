@@ -1,4 +1,4 @@
-﻿{
+{
     // ============================================================
     // PROJECT      : ALPHAEDGE — Momentum+Carry Forex Trading Bot
     // FILE         : .vscode/tasks.json
@@ -9,7 +9,7 @@
         {
             "label": "ALPHAEDGE — QA (Ruff + Pyright + Pytest)",
             "type": "shell",
-            "command": "make qa",
+            "command": "C:/Users/averr/AlphaEdge/.venv/Scripts/python.exe -m ruff check alphaedge/ --config pyproject.toml; C:/Users/averr/AlphaEdge/.venv/Scripts/python.exe -m pyright alphaedge/; C:/Users/averr/AlphaEdge/.venv/Scripts/python.exe -m pytest alphaedge/tests -v --tb=short --cov=alphaedge --cov-report=html:reports/ALPHAEDGE_coverage_report --cov-fail-under=80",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -27,7 +27,7 @@
         {
             "label": "ALPHAEDGE — QA Strict (+ Pylint)",
             "type": "shell",
-            "command": "make qa-strict",
+            "command": "C:/Users/averr/AlphaEdge/.venv/Scripts/python.exe -m ruff check alphaedge/ --config pyproject.toml; C:/Users/averr/AlphaEdge/.venv/Scripts/python.exe -m pyright alphaedge/; C:/Users/averr/AlphaEdge/.venv/Scripts/python.exe -m pylint alphaedge/; C:/Users/averr/AlphaEdge/.venv/Scripts/python.exe -m bandit -r alphaedge/ -ll --exclude alphaedge/tests,alphaedge/core/_stubs; C:/Users/averr/AlphaEdge/.venv/Scripts/python.exe -m pytest alphaedge/tests -v --tb=short --cov=alphaedge --cov-report=html:reports/ALPHAEDGE_coverage_report --cov-fail-under=80",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -42,7 +42,7 @@
         {
             "label": "ALPHAEDGE — Tests Only",
             "type": "shell",
-            "command": "make test",
+            "command": "C:/Users/averr/AlphaEdge/.venv/Scripts/python.exe -m pytest alphaedge/tests -v --tb=short --cov=alphaedge --cov-report=html:reports/ALPHAEDGE_coverage_report --cov-fail-under=80",
             "group": {
                 "kind": "test",
                 "isDefault": true
@@ -60,7 +60,7 @@
         {
             "label": "ALPHAEDGE — Build Cython",
             "type": "shell",
-            "command": "make build",
+            "command": "C:/Users/averr/AlphaEdge/.venv/Scripts/python.exe setup.py build_ext --inplace",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -75,7 +75,7 @@
         {
             "label": "ALPHAEDGE — Clean",
             "type": "shell",
-            "command": "make clean",
+            "command": "C:/Users/averr/AlphaEdge/.venv/Scripts/python.exe -c \"import pathlib, shutil; [p.unlink() for pattern in ('*.pyd', '*.so') for p in pathlib.Path('.').rglob(pattern)]; [p.unlink() for p in pathlib.Path('alphaedge/core').glob('*.c')]; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('*.egg-info')]; [shutil.rmtree(pathlib.Path(name)) for name in ('build', 'dist') if pathlib.Path(name).exists()]\"",
             "group": "build",
             "presentation": {
                 "echo": true,

@@ -56,5 +56,4 @@ types-PyYAML==6.0.12.20240311
 # --- Type Checking ---
 pyright>=1.1.400
 
-# --- Windows GUI Automation (auto-login to IB Gateway login form) ---
-pywinauto>=0.6.8
+# Gateway auth now uses manual, stored, or IBC flows only.

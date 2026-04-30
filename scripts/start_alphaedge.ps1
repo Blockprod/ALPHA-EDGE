@@ -25,6 +25,6 @@ Start-Sleep -Seconds 15
 Write-Log "Starting ALPHAEDGE paper trading bot..."
 Set-Location $ProjectDir
 
-& $VenvPython -m alphaedge.engine.strategy --mode paper *>> $LogFile
+& $VenvPython -m alphaedge --mode paper *>> $LogFile
 
 Write-Log "ALPHAEDGE process exited (code $LASTEXITCODE)"

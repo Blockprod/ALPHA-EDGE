@@ -13,9 +13,10 @@ import asyncio
 import hmac
 import json
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import Any, Protocol
 
 from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, status
@@ -64,11 +65,23 @@ class EquityPoint:
 
 
 @dataclass
+class DashboardLogEntry:
+    """A single runtime log line rendered by the web dashboard."""
+
+    timestamp: str
+    level: str
+    source: str
+    message: str
+    cls: str
+
+
+@dataclass
 class DashboardState:
     """Complete dashboard state snapshot."""
 
     # ── Core (original) ──────────────────────────────────────────
     ib_connected: bool = False
+    gateway_connected: bool = False
     session_active: bool = False
     utc_time: str = ""
     pairs: list[dict[str, Any]] = field(default_factory=list)
@@ -103,11 +116,17 @@ class DashboardState:
     # ── Carry data ───────────────────────────────────────────────
     carry_rates: dict[str, Any] = field(default_factory=dict)
 
+    # ── Operational log stream ───────────────────────────────────
+    live_log: list[DashboardLogEntry] = field(default_factory=list)
+
 
 # ------------------------------------------------------------------
 # Token authentication
 # ------------------------------------------------------------------
 _api_token: str = ""
+_MAX_LOG_LINES = 400
+_LIVE_LOG_LIMIT = 120
+_dashboard_log_sink_id: int | None = None
 
 
 def configure_auth(token: str) -> None:
@@ -156,23 +175,36 @@ class DashboardStore:
     """Thread-safe in-memory store for dashboard data."""
 
     def __init__(self) -> None:
+        self._lock = RLock()
         self._state: DashboardState = DashboardState()
         self._trades: list[TradeHistoryEntry] = []
         self._equity_curve: list[EquityPoint] = []
+        self._live_log: list[DashboardLogEntry] = []
         self._ws_clients: list[WSClient] = []
 
     @property
     def state(self) -> DashboardState:
         """Current dashboard state."""
-        return self._state
+        with self._lock:
+            return replace(
+                self._state,
+                live_log=list(self._live_log[-_LIVE_LOG_LIMIT:]),
+            )
 
     def update_state(self, state: DashboardState) -> None:
         """Update the dashboard state snapshot."""
-        self._state = state
+        with self._lock:
+            self._state = state
 
     def add_trade(self, trade: TradeHistoryEntry) -> None:
         """Append a trade to the history."""
-        self._trades.append(trade)
+        with self._lock:
+            self._trades.append(trade)
+
+    def replace_trades(self, trades: list[TradeHistoryEntry]) -> None:
+        """Replace the full trade history snapshot."""
+        with self._lock:
+            self._trades = list(trades)
 
     def get_trades(self, limit: int = 50) -> list[TradeHistoryEntry]:
         """Return the most recent trades.
@@ -182,11 +214,13 @@ class DashboardStore:
         limit:
             Maximum number of trades to return.
         """
-        return self._trades[-limit:]
+        with self._lock:
+            return list(self._trades[-limit:])
 
     def add_equity_point(self, point: EquityPoint) -> None:
         """Append an equity curve point."""
-        self._equity_curve.append(point)
+        with self._lock:
+            self._equity_curve.append(point)
 
     def get_equity_curve(self, limit: int = 500) -> list[EquityPoint]:
         """Return the most recent equity points.
@@ -196,21 +230,92 @@ class DashboardStore:
         limit:
             Maximum number of points to return.
         """
-        return self._equity_curve[-limit:]
+        with self._lock:
+            return list(self._equity_curve[-limit:])
+
+    def add_log(self, entry: DashboardLogEntry) -> None:
+        """Append a runtime log line and trim the ring buffer."""
+        with self._lock:
+            self._live_log.append(entry)
+            overflow = len(self._live_log) - _MAX_LOG_LINES
+            if overflow > 0:
+                del self._live_log[:overflow]
+
+    def get_live_log(self, limit: int = _LIVE_LOG_LIMIT) -> list[DashboardLogEntry]:
+        """Return the most recent dashboard log lines."""
+        with self._lock:
+            return list(self._live_log[-limit:])
 
     def register_ws(self, ws: WSClient) -> None:
         """Register a WebSocket client."""
-        self._ws_clients.append(ws)
+        with self._lock:
+            self._ws_clients.append(ws)
 
     def unregister_ws(self, ws: WSClient) -> None:
         """Remove a WebSocket client."""
-        if ws in self._ws_clients:
-            self._ws_clients.remove(ws)
+        with self._lock:
+            if ws in self._ws_clients:
+                self._ws_clients.remove(ws)
 
     @property
     def ws_clients(self) -> list[WSClient]:
         """List of active WebSocket clients."""
-        return list(self._ws_clients)
+        with self._lock:
+            return list(self._ws_clients)
+
+
+def _log_css_class(level_name: str) -> str:
+    """Map a log level to the dashboard row CSS class."""
+    level = level_name.upper()
+    if level in {"ERROR", "CRITICAL"}:
+        return "err"
+    if level == "WARNING":
+        return "warn"
+    return "dbg"
+
+
+def install_dashboard_log_sink(
+    store: DashboardStore | None = None,
+    level: str = "INFO",
+) -> int:
+    """Attach a Loguru sink that streams runtime logs into the dashboard."""
+    global _dashboard_log_sink_id  # noqa: PLW0603
+
+    if _dashboard_log_sink_id is not None:
+        logger.remove(_dashboard_log_sink_id)
+
+    target_store = store if store is not None else get_store()
+
+    def _sink(message) -> None:
+        record = message.record
+        timestamp = record["time"].astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        source_name = str(record["name"]).split(".")[-1]
+        source = f"{source_name}:{record['function']}"
+        level_name = record["level"].name
+        target_store.add_log(
+            DashboardLogEntry(
+                timestamp=timestamp,
+                level=level_name,
+                source=source,
+                message=str(record["message"]),
+                cls=_log_css_class(level_name),
+            )
+        )
+
+    handler_id = logger.add(_sink, level=level, enqueue=True)
+    _dashboard_log_sink_id = handler_id
+    return handler_id
+
+
+def remove_dashboard_log_sink() -> None:
+    """Detach the runtime log sink used by the dashboard."""
+    global _dashboard_log_sink_id  # noqa: PLW0603
+
+    if _dashboard_log_sink_id is None:
+        return
+
+    logger.remove(_dashboard_log_sink_id)
+    _dashboard_log_sink_id = None
 
 
 # ------------------------------------------------------------------
@@ -392,6 +497,7 @@ async def run_web_dashboard(
             new_state = DashboardState(
                 # ── Core ──
                 ib_connected=raw.get("ib_connected", False),
+                gateway_connected=raw.get("gateway_connected", False),
                 session_active=raw.get("session_active", False),
                 utc_time=now_str,
                 pairs=raw.get("pairs", []),
@@ -423,9 +529,20 @@ async def run_web_dashboard(
             )
             s.update_state(new_state)
 
+            trade_history_raw = raw.get("trade_history", [])
+            s.replace_trades(
+                [TradeHistoryEntry(**trade) for trade in trade_history_raw]
+            )
+
             # Update equity curve if equity info available
-            equity_val = raw.get("daily", {}).get("equity", 0.0)
-            if equity_val > 0:
+            equity_val = float(
+                raw.get("current_equity", 0.0)
+                or raw.get("daily", {}).get("equity", 0.0)
+                or raw.get("starting_equity", 0.0)
+            )
+            last_point = s.get_equity_curve(limit=1)
+            last_equity = last_point[0].equity if last_point else None
+            if equity_val > 0 and equity_val != last_equity:
                 s.add_equity_point(EquityPoint(timestamp=now_str, equity=equity_val))
 
             await broadcast_state(s)

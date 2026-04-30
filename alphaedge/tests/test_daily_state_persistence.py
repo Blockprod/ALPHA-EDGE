@@ -59,6 +59,7 @@ def _build_strategy() -> SwingStrategy:
     # Make async cleanup methods awaitable for robustness under test ordering
     strategy._rt_feed.unsubscribe_all = AsyncMock()
     strategy._broker.disconnect = AsyncMock()
+    strategy._broker.stop_heartbeat = AsyncMock()
     strategy._executor.get_open_positions = AsyncMock(return_value=[])
     return strategy
 
@@ -76,6 +77,23 @@ def _cleanup_state_file() -> Generator[None, None, None]:
 # ==================================================================
 class TestDailyStateRoundTrip:
     """Verify save/load of DailyState."""
+
+    def test_state_file_is_isolated_per_test(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        state = DailyState(
+            date=date.today().isoformat(),
+            starting_equity=10000.0,
+            trades_today=1,
+            shutdown_triggered=False,
+        )
+
+        monkeypatch.chdir(tmp_path)
+        save_daily_state(state)
+
+        assert Path(_state_mod.STATE_FILE) == tmp_path / "alphaedge_daily_state.json"
+        assert Path(_state_mod.STATE_FILE).exists()
+        assert load_daily_state() is not None
 
     def test_save_and_load(self) -> None:
         state = DailyState(
@@ -116,6 +134,7 @@ class TestDailyStateRoundTrip:
         )
         loaded = load_daily_state()
         assert loaded is None
+        assert Path(_state_mod.STATE_FILE).exists() is False
 
     def test_load_rejects_invalid_schema(self) -> None:
         Path(_state_mod.STATE_FILE).write_text(
@@ -131,6 +150,7 @@ class TestDailyStateRoundTrip:
         loaded = load_daily_state()
 
         assert loaded is None
+        assert Path(_state_mod.STATE_FILE).exists() is False
 
     def test_load_rejects_invalid_open_pairs(self) -> None:
         Path(_state_mod.STATE_FILE).write_text(
@@ -158,11 +178,12 @@ class TestShutdownBlocksRestart:
     @pytest.mark.asyncio()
     async def test_run_session_refused_after_shutdown(self) -> None:
         """run_session returns immediately if shutdown was persisted."""
+        configured_starting_equity = _make_config().trading.starting_equity
         # Persist a shutdown state for today
         save_daily_state(
             DailyState(
                 date=date.today().isoformat(),
-                starting_equity=10000.0,
+                starting_equity=configured_starting_equity,
                 trades_today=3,
                 shutdown_triggered=True,
             )
@@ -219,11 +240,12 @@ class TestRestoredEquityOnRestart:
 
     @pytest.mark.asyncio()
     async def test_equity_restored_from_state(self) -> None:
-        """run_session uses persisted starting_equity."""
+        """run_session keeps configured starting_equity and restores counters."""
+        configured_starting_equity = _make_config().trading.starting_equity
         save_daily_state(
             DailyState(
                 date=date.today().isoformat(),
-                starting_equity=9500.0,
+                starting_equity=configured_starting_equity,
                 trades_today=2,
                 shutdown_triggered=False,
             )
@@ -272,8 +294,9 @@ class TestRestoredEquityOnRestart:
         ):
             await strategy.run_session()
 
-        # starting_equity should be the PERSISTED value, not live
+        # starting_equity must remain the configured virtual capital,
+        # not a persisted or live broker value.
         state = strategy._states.get("EURUSD")
         assert state is not None
-        assert state.starting_equity == 9500.0
+        assert state.starting_equity == strategy._config.trading.starting_equity
         assert state.trades_today == 2

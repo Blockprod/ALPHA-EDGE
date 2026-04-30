@@ -87,6 +87,7 @@ class TestGracefulShutdownMethod:
         loaded = load_daily_state()
         assert loaded is not None
         assert loaded.trades_today == 1
+        assert loaded.shutdown_triggered is False
 
     @pytest.mark.asyncio()
     async def test_idempotent_multiple_calls(self) -> None:

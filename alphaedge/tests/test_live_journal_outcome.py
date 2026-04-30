@@ -136,6 +136,10 @@ class TestExitReasonTpHit:
         assert record.exit_reason == "tp_hit"
         assert record.outcome == "win"
         assert record.exit_price == pytest.approx(1.2600)
+        live_history = strategy.get_live_state()["trade_history"]
+        assert len(live_history) == 1
+        assert live_history[0]["pair"] == "EURUSD"
+        assert live_history[0]["outcome"] == "win"
 
     @pytest.mark.asyncio()
     async def test_tp_fill_with_int_subtype_order_id(self) -> None:
