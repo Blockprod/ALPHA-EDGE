@@ -100,9 +100,8 @@ def _load_calendar(path: Path) -> list[NewsEvent]:
         logger.info(f"ALPHAEDGE NEWS: Loaded {len(events)} events from {path}")
     else:
         logger.warning(
-            "ALPHAEDGE NEWS: Loaded 0 events from %s — "
-            "news blackout filter is disabled (calendar empty or wrong format)",
-            path,
+            f"ALPHAEDGE NEWS: Loaded 0 events from {path} — "
+            "news blackout filter is disabled (calendar empty or wrong format)"
         )
     return events
 

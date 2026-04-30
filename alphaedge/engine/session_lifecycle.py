@@ -1253,14 +1253,12 @@ class SessionLifecycle:
                     )
             else:
                 logger.info("ALPHAEDGE SESSION END: No open positions")
-                asyncio.ensure_future(
-                    self._s._alert_manager.send_async(alert_session_end_clean())
-                ).add_done_callback(self._on_task_done)
 
             # Session summary
             for pair, state in self._s._states.items():
                 logger.info(f"ALPHAEDGE SUMMARY: {pair} — trades={state.trades_today}")
 
+            # Alerts in deterministic order: daily_summary always first
             asyncio.ensure_future(
                 self._s._alert_manager.send_async(
                     alert_daily_summary(
@@ -1271,6 +1269,10 @@ class SessionLifecycle:
                     )
                 )
             ).add_done_callback(self._on_task_done)
+            if open_count == 0:
+                asyncio.ensure_future(
+                    self._s._alert_manager.send_async(alert_session_end_clean())
+                ).add_done_callback(self._on_task_done)
         except Exception:
             logger.exception("ALPHAEDGE _handle_session_end failed")
 
@@ -1392,6 +1394,7 @@ class SessionLifecycle:
     async def _wait_for_session_open(self) -> None:
         """Block until the NYSE session window opens, logging a countdown."""
         logger.debug("ALPHAEDGE: _wait_for_session_open starting (pid=%d)", os.getpid())
+        _last_health_check_date: date | None = None
         while not self._s._shutdown_requested:
             now = now_utc()
             # Anchor to UTC noon to avoid the UTC-midnight / NY-prior-evening
@@ -1514,7 +1517,8 @@ class SessionLifecycle:
             check_after_et = restart_et + timedelta(
                 minutes=IB_POST_RESTART_CHECK_DELAY_MINUTES,
             )
-            if ny_now >= check_after_et and ny_now.minute % 15 == 0:
+            if ny_now >= check_after_et and _last_health_check_date != ny_now.date():
+                _last_health_check_date = ny_now.date()
                 _rt = f"{IB_DAILY_RESTART_HOUR_ET:02d}:{IB_DAILY_RESTART_MINUTE_ET:02d}"
                 logger.info(
                     f"ALPHAEDGE: Post-restart gateway health check "
@@ -1538,7 +1542,12 @@ class SessionLifecycle:
                     f"ALPHAEDGE: Session opens in {wait_s / 60:.0f}min "
                     f"({format_dual_time(session_start)})"
                 )
-                await asyncio.sleep(min(wait_s - 30.0, 60.0))
+                if wait_s > 900:
+                    # More than 15 min away: sleep 15 min between logs
+                    await asyncio.sleep(min(wait_s - 30.0, 900.0))
+                else:
+                    # Final 15 min: log every minute for precise countdown
+                    await asyncio.sleep(min(wait_s - 30.0, 60.0))
             else:
                 await asyncio.sleep(1.0)
 
@@ -1691,13 +1700,12 @@ class SessionLifecycle:
             starting_equity = float(self._s._config.trading.starting_equity)
             if persisted and persisted.starting_equity > 0:
                 logger.info(
-                    "ALPHAEDGE: Restored persisted starting_equity=%.2f "
-                    "(trades_today=%s)",
-                    starting_equity,
-                    persisted.trades_today,
+                    f"ALPHAEDGE: Restored persisted "
+                    f"starting_equity={starting_equity:.2f} "
+                    f"(trades_today={persisted.trades_today})"
                 )
             self._session_starting_equity = starting_equity
-            session_start, _session_end = get_session_window_utc()
+            session_start, session_end = get_session_window_utc()
 
             # Process each pair — regime gate, signal init
             active_pairs = await self._init_session_pairs(
@@ -1721,7 +1729,8 @@ class SessionLifecycle:
             risk_check_counter = 0
             self._reconcile_counter = 0
             while is_session_active() and not self._s._shutdown_requested:
-                await asyncio.sleep(1.0)
+                _remaining = (session_end - datetime.now(UTC)).total_seconds()
+                await asyncio.sleep(min(1.0, max(0.0, _remaining)))
                 risk_check_counter += 1
                 self._reconcile_counter += 1
 
