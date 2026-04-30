@@ -388,11 +388,12 @@ class TestPostRestartGatewayCheck:
         )
 
     @pytest.mark.asyncio()
-    async def test_health_check_skipped_before_restart_time(
+    async def test_health_check_fires_after_overnight_restart(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Before the restart time (04:00 ET), the proactive check must NOT
-        fire even though it is a weekday."""
+        """At 04:00 ET Monday, the IBC restart occurred Sunday at 17:45 ET
+        (overnight).  The proactive check must fire once even though it is
+        early morning — the restart is already in the past."""
         strategy = _build_strategy()
         sleep_calls: list[float] = []
         gw_calls: list[bool] = []
@@ -452,9 +453,9 @@ class TestPostRestartGatewayCheck:
         strategy._shutdown_requested = False
         await strategy._lifecycle._wait_for_session_open()
 
-        assert len(gw_calls) == 0, (
-            f"Gateway check should NOT fire before restart time, "
-            f"but got {len(gw_calls)} call(s)"
+        assert len(gw_calls) == 1, (
+            f"Expected 1 proactive gateway check at 04:00 ET "
+            f"(restart was Sunday 17:45 ET), but got {len(gw_calls)} call(s)"
         )
 
 

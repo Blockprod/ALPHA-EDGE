@@ -31,7 +31,7 @@ TZ_PARIS: str = "Europe/Paris"
 # Session window (NYSE open, in local EST/EDT)
 # ------------------------------------------------------------------
 SESSION_START_HOUR: int = 9
-SESSION_START_MINUTE: int = 40
+SESSION_START_MINUTE: int = 30
 SESSION_END_HOUR: int = 10
 SESSION_END_MINUTE: int = 30
 
@@ -219,8 +219,10 @@ IB_MAX_CONCURRENT_HIST_REQUESTS: int = 3  # IB cancels >~3 simultaneous hist req
 IB_GATEWAY_HEALTH_RETRIES: int = 8
 IB_GATEWAY_HEALTH_RETRY_DELAY_SECONDS: int = 10
 IB_GATEWAY_STARTUP_TIMEOUT_SECONDS: int = 120  # max wait after auto-launching gateway
-IB_DAILY_RESTART_HOUR_ET: int = 5  # IB Gateway auto-restart hour (ET)
-IB_DAILY_RESTART_MINUTE_ET: int = 30  # IB Gateway auto-restart minute (ET)
+IB_DAILY_RESTART_HOUR_ET: int = (
+    17  # IBC restart at 23:45 Paris time (= 17:45 ET, DST-invariant)
+)
+IB_DAILY_RESTART_MINUTE_ET: int = 45  # IB Gateway auto-restart minute (ET)
 IB_POST_RESTART_CHECK_DELAY_MINUTES: int = 10  # wait after restart before health check
 
 # Circuit breaker: open after this many consecutive connection failures
@@ -232,6 +234,8 @@ IB_CIRCUIT_BREAKER_RESET_SECONDS: int = 300
 IB_HEARTBEAT_INTERVAL_SECONDS: int = 30
 # Heartbeat: consider connection dead after this many consecutive missed probes
 IB_HEARTBEAT_MAX_MISSES: int = 3
+# Background watchdog: reassert IB Gateway availability between sessions.
+IB_GATEWAY_WATCHDOG_INTERVAL_SECONDS: int = 60
 
 # Offset applied to client_id for the lightweight API health-probe connection.
 # Must not collide with any other client (EDGECORE uses 1, ALPHAEDGE uses 2).

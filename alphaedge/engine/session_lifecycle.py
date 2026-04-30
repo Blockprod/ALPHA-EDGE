@@ -1500,12 +1500,12 @@ class SessionLifecycle:
             wait_s = (session_start - now).total_seconds()
 
             # ----------------------------------------------------------
-            # Proactive gateway health check after IB daily restart
-            # IB Gateway auto-restarts at ~05:30 ET every day.  After
-            # the restart the login window reappears and credentials
-            # must be re-entered.  Instead of waiting until session
-            # open to discover this, we check periodically once the
-            # restart time has passed (+ a buffer for IB to come back).
+            # Proactive gateway health check after IBC daily restart
+            # IBC auto-restarts at 23:45 Paris time = 17:45 ET (DST-invariant).
+            # Since the restart occurs overnight and the bot is in inter-session
+            # standby at that time, the pre-session countdown always starts
+            # AFTER the restart.  Use yesterday's restart time when today's
+            # restart hasn't happened yet to ensure the check fires correctly.
             # ----------------------------------------------------------
             ny_now = now.astimezone(get_tz_ny())
             restart_et = ny_now.replace(
@@ -1514,6 +1514,9 @@ class SessionLifecycle:
                 second=0,
                 microsecond=0,
             )
+            # Restart is tonight (hasn't happened yet today) — use yesterday's
+            if ny_now < restart_et:
+                restart_et -= timedelta(days=1)
             check_after_et = restart_et + timedelta(
                 minutes=IB_POST_RESTART_CHECK_DELAY_MINUTES,
             )
