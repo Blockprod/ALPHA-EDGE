@@ -78,6 +78,25 @@ qa_run.log
 tasks_dump.txt
 test_logger.txt
 test_results.txt
+
+# --- Session output / debug dumps (root level) ---
+log_correction.md
+pyright_err.txt
+pyright_out.txt
+pyright_test.txt
+pytest_err.txt
+test_b02_out.txt
+test_err.txt
+test_final_b01.txt
+test_m01.txt
+test_results_b01.txt
+test_results_b02.txt
+test_results_m01.txt
+test_run_output.txt
+
+# --- Data and reports directories ---
+data/
+reports/
 tests_output.txt
 
 # --- OS ---
