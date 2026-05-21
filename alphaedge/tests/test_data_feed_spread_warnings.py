@@ -38,8 +38,7 @@ def feed() -> RealtimeDataFeed:
 async def test_get_live_spread_ticker_none_returns_none(
     feed: RealtimeDataFeed,
 ) -> None:
-    """ticker is None → returns None."""
-    feed._broker.ib.ticker = MagicMock(return_value=None)
+    """ticker is None → returns None (pair not in _mkt_tickers)."""
     result = await feed.get_live_spread("USDJPY")
     assert result is None
 
@@ -49,7 +48,7 @@ async def test_get_live_spread_ticker_none_emits_warning(
     feed: RealtimeDataFeed,
 ) -> None:
     """ticker is None → WARNING mentioning 'No ticker object'."""
-    feed._broker.ib.ticker = MagicMock(return_value=None)
+    # Do NOT populate _mkt_tickers — simulates reqMktData never called
 
     captured: list[str] = []
     handler_id = logger.add(
@@ -73,7 +72,7 @@ async def test_get_live_spread_bid_zero_returns_none(
     ticker = MagicMock()
     ticker.bid = 0.0
     ticker.ask = 149.5
-    feed._broker.ib.ticker = MagicMock(return_value=ticker)
+    feed._mkt_tickers["USDJPY"] = ticker
     result = await feed.get_live_spread("USDJPY")
     assert result is None
 
@@ -86,7 +85,7 @@ async def test_get_live_spread_bid_zero_emits_warning(
     ticker = MagicMock()
     ticker.bid = 0.0
     ticker.ask = 149.5
-    feed._broker.ib.ticker = MagicMock(return_value=ticker)
+    feed._mkt_tickers["USDJPY"] = ticker
 
     captured: list[str] = []
     handler_id = logger.add(
@@ -110,7 +109,7 @@ async def test_get_live_spread_ask_zero_returns_none(
     ticker = MagicMock()
     ticker.bid = 149.2
     ticker.ask = 0.0
-    feed._broker.ib.ticker = MagicMock(return_value=ticker)
+    feed._mkt_tickers["USDJPY"] = ticker
     result = await feed.get_live_spread("USDJPY")
     assert result is None
 
@@ -123,7 +122,7 @@ async def test_get_live_spread_valid_quotes_returns_spread(
     ticker = MagicMock()
     ticker.bid = 149.20
     ticker.ask = 149.23
-    feed._broker.ib.ticker = MagicMock(return_value=ticker)
+    feed._mkt_tickers["USDJPY"] = ticker
 
     result = await feed.get_live_spread("USDJPY")
 

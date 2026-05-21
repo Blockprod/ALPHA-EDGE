@@ -649,6 +649,9 @@ class RealtimeDataFeed:
         """Initialize with a broker connection."""
         self._broker = broker
         self._subscriptions: dict[str, Any] = {}
+        self._mkt_tickers: dict[
+            str, Any
+        ] = {}  # Tickers from reqMktData — keyed by pair
         self._bar_callbacks: list[Any] = []
         self._aggregator = M1BarAggregator()
         self._last_tick_ts: dict[str, float] = {}
@@ -693,8 +696,10 @@ class RealtimeDataFeed:
             bars.updateEvent += lambda bars, has_new: self._on_bar_update(
                 pair, bars, has_new
             )
-            # Stream bid/ask — eliminates per-call reqMktData in spread/mid reads
-            self._broker.ib.reqMktData(contract)
+            # Stream bid/ask — store Ticker reference to avoid contract-lookup
+            # mismatch after IB qualifies the contract (conId changes hash).
+            mkt_ticker = self._broker.ib.reqMktData(contract)
+            self._mkt_tickers[pair] = mkt_ticker
             logger.info(f"ALPHAEDGE subscribed to real-time bars: {pair}")
         except RuntimeError:
             logger.exception(f"ALPHAEDGE subscribe IB runtime failure: {pair}")
@@ -728,7 +733,12 @@ class RealtimeDataFeed:
             Currency pair to unsubscribe from.
         """
         if pair in self._subscriptions:
-            self._broker.ib.cancelMktData(build_forex_contract(pair))
+            # Use the stored ticker's contract to ensure IB can match it
+            if pair in self._mkt_tickers:
+                self._broker.ib.cancelMktData(self._mkt_tickers[pair].contract)
+                del self._mkt_tickers[pair]
+            else:
+                self._broker.ib.cancelMktData(build_forex_contract(pair))
             self._broker.ib.cancelRealTimeBars(self._subscriptions[pair])
             del self._subscriptions[pair]
             logger.info(f"ALPHAEDGE unsubscribed from: {pair}")
@@ -759,25 +769,22 @@ class RealtimeDataFeed:
         stale_for = time.monotonic() - self._last_tick_ts.get(pair, 0.0)
         if stale_for > self._MAX_TICK_STALENESS_SECONDS:
             logger.warning(
-                "ALPHAEDGE STALE TICK: %s — no bar update for %.0fs", pair, stale_for
+                f"ALPHAEDGE STALE TICK: {pair} — no bar update for {stale_for:.0f}s"
             )
             return None
 
         try:
-            ticker = self._broker.ib.ticker(build_forex_contract(pair))
+            ticker = self._mkt_tickers.get(pair)
             if ticker is None:
                 logger.warning(
-                    "ALPHAEDGE: No ticker object for %s "
-                    "— reqMktData may not have been called",
-                    pair,
+                    f"ALPHAEDGE: No ticker object for {pair} "
+                    f"— reqMktData may not have been called"
                 )
                 return None
             if ticker.bid <= 0 or ticker.ask <= 0:
                 logger.warning(
-                    "ALPHAEDGE: %s bid=%.5f ask=%.5f — quotes not yet delivered by IB",
-                    pair,
-                    ticker.bid,
-                    ticker.ask,
+                    f"ALPHAEDGE: {pair} bid={ticker.bid:.5f} ask={ticker.ask:.5f}"
+                    f" — quotes not yet delivered by IB"
                 )
                 return None
             return float(ticker.ask - ticker.bid)
@@ -807,12 +814,12 @@ class RealtimeDataFeed:
         stale_for = time.monotonic() - self._last_tick_ts.get(pair, 0.0)
         if stale_for > self._MAX_TICK_STALENESS_SECONDS:
             logger.warning(
-                "ALPHAEDGE STALE TICK: %s — no bar update for %.0fs", pair, stale_for
+                f"ALPHAEDGE STALE TICK: {pair} — no bar update for {stale_for:.0f}s"
             )
             return None
 
         try:
-            ticker = self._broker.ib.ticker(build_forex_contract(pair))
+            ticker = self._mkt_tickers.get(pair)
             if ticker and ticker.bid > 0 and ticker.ask > 0:
                 return float((ticker.bid + ticker.ask) / 2.0)
             return None
@@ -833,7 +840,7 @@ class RealtimeDataFeed:
             return None
 
         try:
-            ticker = self._broker.ib.ticker(build_forex_contract(pair))
+            ticker = self._mkt_tickers.get(pair)
             if ticker and ticker.bid > 0 and ticker.ask > 0:
                 return float((ticker.bid + ticker.ask) / 2.0)
             return None
