@@ -49,6 +49,7 @@ class AlertEvent(Enum):
     SESSION_END_OPEN = "session_end_open_position"
     SESSION_END_CLEAN = "session_end_clean"
     DAILY_SUMMARY = "daily_summary"
+    CARRY_RATES_STALE = "carry_rates_stale"
 
 
 # ------------------------------------------------------------------
@@ -89,6 +90,7 @@ _EVENT_EMOJI: dict[AlertEvent, str] = {
     AlertEvent.SESSION_END_OPEN: "\u26a0\ufe0f",
     AlertEvent.SESSION_END_CLEAN: "\u2705",
     AlertEvent.DAILY_SUMMARY: "\U0001f4ca",
+    AlertEvent.CARRY_RATES_STALE: "\U0001f4c5",
 }
 
 
@@ -511,6 +513,30 @@ def alert_daily_summary(
         level=AlertLevel.INFO,
         title="Daily Summary",
         message=(f"Trades: {trades} (W: {wins} / L: {losses})\nP&L: ${pnl_usd:+.2f}"),
+    )
+
+
+def alert_carry_rates_stale(days_old: int, last_updated: str) -> Alert:
+    """Build an alert for stale carry rates.
+
+    Parameters
+    ----------
+    days_old:
+        Number of days since carry rates were last updated.
+    last_updated:
+        ISO-8601 date string of the last known update (e.g. "2026-05-27").
+    """
+    level = AlertLevel.CRITICAL if days_old > 60 else AlertLevel.WARNING
+    updated_str = last_updated if last_updated else "unknown"
+    return Alert(
+        event=AlertEvent.CARRY_RATES_STALE,
+        level=level,
+        title=f"Carry rates stale ({days_old}d)",
+        message=(
+            f"Carry rates have not been updated in {days_old} days\n"
+            f"Last updated: {updated_str}\n"
+            "Review data/carry_rates.json and central bank rate changes."
+        ),
     )
 
 

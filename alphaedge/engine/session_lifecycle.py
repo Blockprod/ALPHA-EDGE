@@ -48,6 +48,7 @@ from alphaedge.utils.alerting import (
     Alert,
     AlertEvent,
     AlertLevel,
+    alert_carry_rates_stale,
     alert_daily_summary,
     alert_ib_disconnected,
     alert_ib_reconnected,
@@ -86,6 +87,53 @@ if TYPE_CHECKING:
     from alphaedge.engine.strategy import StrategyState, SwingStrategy
 
 logger = get_logger()
+
+
+def _check_carry_rates_freshness(carry_rates_updated: str) -> int:
+    """Return days since last carry rates update; log a warning when stale.
+
+    Parameters
+    ----------
+    carry_rates_updated:
+        ISO-8601 date string from ``config.trading.carry_rates_updated``
+        (e.g. ``"2026-05-27"``).  Empty string means unknown.
+
+    Returns
+    -------
+    int
+        Days since the update date, or 0 when the date is unknown/invalid.
+    """
+    if not carry_rates_updated:
+        logger.warning(
+            "ALPHAEDGE carry rates: carry_rates_updated is not set in config. "
+            "Cannot verify freshness — review data/carry_rates.json."
+        )
+        return 0
+    try:
+        updated_date = date.fromisoformat(str(carry_rates_updated))
+    except (ValueError, TypeError):
+        logger.warning(
+            "ALPHAEDGE carry rates: invalid carry_rates_updated format '%s' "
+            "(expected ISO-8601 YYYY-MM-DD)",
+            carry_rates_updated,
+        )
+        return 0
+    days_old = (date.today() - updated_date).days
+    if days_old > 60:
+        logger.error(
+            "ALPHAEDGE carry rates CRITICAL: last updated %d days ago (%s). "
+            "Central bank rates may have changed significantly — update immediately.",
+            days_old,
+            carry_rates_updated,
+        )
+    elif days_old > 30:
+        logger.warning(
+            "ALPHAEDGE carry rates: last updated %d days ago (%s). "
+            "Review for CB rate changes (ECB, Fed, BOJ, BOE, etc.).",
+            days_old,
+            carry_rates_updated,
+        )
+    return days_old
 
 
 def _is_usd_filter_enabled(value: Any) -> bool:
@@ -1699,6 +1747,20 @@ class SessionLifecycle:
                         "— using config.yaml rates"
                     )
 
+            # Check carry rates freshness — warn and alert if stale
+            days_stale = _check_carry_rates_freshness(
+                self._s._config.trading.carry_rates_updated
+            )
+            if days_stale > 45:
+                asyncio.ensure_future(
+                    self._s._alert_manager.send_async(
+                        alert_carry_rates_stale(
+                            days_stale,
+                            self._s._config.trading.carry_rates_updated,
+                        )
+                    )
+                ).add_done_callback(self._on_task_done)
+
             # Use configured virtual capital for live strategy sizing and risk.
             starting_equity = float(self._s._config.trading.starting_equity)
             if persisted and persisted.starting_equity > 0:
@@ -1717,6 +1779,20 @@ class SessionLifecycle:
                 persisted,
                 session_start,
             )
+
+            # Warn if regime gate is enabled but not enough sessions have been observed
+            regime_filter = getattr(self._s, "_regime_filter", None)
+            if (
+                self._s._config.regime_gate_enabled
+                and regime_filter is not None
+                and regime_filter.sessions_observed < 30
+            ):
+                logger.warning(
+                    "ALPHAEDGE regime gate: only %d sessions observed "
+                    "(min 30 for reliable classification). "
+                    "Gate is active but predictions may be unreliable.",
+                    regime_filter.sessions_observed,
+                )
 
             # Reconcile position state with IB at startup
             await self._run_reconcile(starting_equity)

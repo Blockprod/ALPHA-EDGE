@@ -231,6 +231,9 @@ class TradingConfig:
     carry_rates: dict[str, float] = field(default_factory=dict)
     # "static" = use rates from config.yaml; "file" = reload from data/carry_rates.json
     carry_rates_source: str = "static"
+    # ISO-8601 date when carry_rates were last reviewed (e.g. "2026-05-27")
+    # Empty string means unknown. Staleness warning logged at session start if >30 days.
+    carry_rates_updated: str = ""
     slippage_buffer_pips: float = DEFAULT_MARKET_SLIPPAGE_PIPS
     max_entry_slippage_pips: float = (
         MAX_ENTRY_SLIPPAGE_PIPS  # P0-02: fill vs expected entry warning threshold
@@ -436,8 +439,13 @@ def load_carry_rates_from_file(
             "ALPHAEDGE: carry_rates.json must be a JSON object, "
             f"got {type(raw).__name__}"
         )
+    # Skip meta-keys (e.g. "_last_updated") — only numeric rates are valid
     try:
-        return {str(k).upper(): float(v) for k, v in raw.items()}
+        return {
+            str(k).upper(): float(v)
+            for k, v in raw.items()
+            if not str(k).startswith("_")
+        }
     except (TypeError, ValueError) as exc:
         raise ValueError(
             f"ALPHAEDGE: invalid carry rate value in {resolved}: {exc}"
@@ -560,6 +568,7 @@ def _build_trading_config(raw: dict[str, Any]) -> TradingConfig:
     )
     cfg.carry_rates = {k: float(v) for k, v in carry_section.get("rates", {}).items()}
     cfg.carry_rates_source = str(carry_section.get("carry_rates_source", "static"))
+    cfg.carry_rates_updated = str(carry_section.get("carry_rates_updated", ""))
     cfg.slippage_buffer_pips = float(
         risk_section.get("slippage_buffer_pips", DEFAULT_MARKET_SLIPPAGE_PIPS)
     )

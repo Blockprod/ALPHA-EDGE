@@ -6,6 +6,21 @@
 
 ---
 
+## ⚠️ ADX Implementation Note (2026-05-27)
+
+`momentum_detector` uses **EMA smoothing** (`k = 2/(period+1) ≈ 0.133`) for TR, +DM, −DM, and ADX,
+not the original **Wilder smoothing** (`k = 1/period ≈ 0.071`).
+
+Consequences:
+- ALPHAEDGE ADX responds ~2× faster than the standard Wilder ADX at the same period (14).
+- `adx_threshold = 32` is **specific to this implementation** — not comparable to external charts.
+- Any visual validation on TradingView / IB Charts will show diverging ADX values.
+- The threshold is frozen at 32 (raised from 25 → 30 → 32). See `tasks/lessons.md`.
+
+**Rule:** Never compare ALPHAEDGE ADX values with external sources without accounting for this divergence.
+
+---
+
 ## Return Value Contracts
 
 > **Pipeline rule: all-or-nothing.**

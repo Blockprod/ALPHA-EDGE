@@ -48,7 +48,7 @@ trading:
   risk_pct_by_pair:
     EURUSD: 0.80
     # GBPUSD: 0.50  # Excluded 2026-04-02 — C-ST-06 Option B
-    USDJPY: 0.70
+    USDJPY: 0.70   # PLAFONNÉ — BOJ policy risk 2025-2026. Voir lessons.md [2026-05-27].
 
   # ATR-scaling reference pips by pair (empty dict = ATR-scaling disabled)
   # risk_pct_eff = risk_pct * min(1.0, max(0.5, ATR_ref / ATR_current))
@@ -148,7 +148,7 @@ momentum:
   fast_period: 12        # EMA fast period
   slow_period: 26        # EMA slow period
   adx_period: 14         # ADX smoothing period
-  adx_threshold: 32.0    # Minimum ADX to confirm trend (gate) — raised 2026-04-01: ADX≥30; raised 2026-04-14: ADX≥32 (WF OOS: PF 1.83→2.02, Sharpe 4.67→5.46, WR 51.8→54.2%)
+  adx_threshold: 32.0    # GELÉ 2026-05-27 — voir tasks/lessons.md [2026-05-27]. Raised: 25→30 (2026-04-01), 30→32 (2026-04-14). Ne pas modifier sans N≥30 trades OOS paper nouveaux.
   lookback_days: 252     # Historical bars for signal computation
 
 # --- Carry Signal Parameters ---
@@ -158,8 +158,10 @@ carry:
   # carry_rates_source controls where live carry rates are loaded from at runtime.
   # "static"  — use rates defined in this file (default; no hot-reload)
   # "file"    — reload from data/carry_rates.json on every session start
-  carry_rates_source: "static"
-  # Update central-bank rates periodically before each trading quarter.
+  carry_rates_source: "file"
+  # ISO-8601 date when carry_rates were last verified against CB publications.
+  # Staleness warning logged at session start if >30 days old.
+  carry_rates_updated: "2026-03-01"
   rates:
     EUR: 3.65   # ECB deposit facility rate (2026-Q1)
     USD: 5.25   # Fed funds rate upper bound (2026-Q1)

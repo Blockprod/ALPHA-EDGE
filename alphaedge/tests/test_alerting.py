@@ -53,12 +53,13 @@ class TestAlertLevel:
 # ------------------------------------------------------------------
 class TestAlertEvent:
     def test_all_events(self) -> None:
-        assert len(AlertEvent) == 9
+        assert len(AlertEvent) == 10
         assert AlertEvent.SIGNAL_DETECTED.value == "signal_detected"
         assert AlertEvent.KILL_SWITCH.value == "kill_switch"
         assert AlertEvent.IB_DISCONNECTED.value == "ib_disconnected"
         assert AlertEvent.SESSION_END_OPEN.value == "session_end_open_position"
         assert AlertEvent.DAILY_SUMMARY.value == "daily_summary"
+        assert AlertEvent.CARRY_RATES_STALE.value == "carry_rates_stale"
 
 
 # ------------------------------------------------------------------
@@ -195,7 +196,7 @@ class TestConfigs:
         c = AlertConfig()
         assert c.telegram.enabled is False
         assert c.discord.enabled is False
-        assert len(c.events) == 9
+        assert len(c.events) == 10
 
 
 # ------------------------------------------------------------------
@@ -519,7 +520,7 @@ class TestBuildAlertConfig:
         cfg = build_alert_config({})
         assert cfg.telegram.enabled is False
         assert cfg.discord.enabled is False
-        assert len(cfg.events) == 9
+        assert len(cfg.events) == 10
 
     def test_telegram_enabled(self) -> None:
         raw: dict[str, Any] = {

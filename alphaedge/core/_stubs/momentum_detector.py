@@ -65,11 +65,20 @@ def _dm_pair(bar: dict[str, Any], prev: dict[str, Any]) -> tuple[float, float]:
 
 
 def _adx(bars: list[dict[str, Any]], period: int) -> float:
-    """Compute Average Directional Index (ADX). Returns 0.0 if insufficient data."""
+    """Compute Average Directional Index (ADX). Returns 0.0 if insufficient data.
+
+    IMPLEMENTATION NOTE — EMA smoothing, NOT Wilder's:
+    This implementation uses the standard EMA factor k = 2/(period+1) ~0.133
+    instead of Welles Wilder's original k = 1/period ~0.071 (for period=14).
+    Result: ADX responds ~2x faster than standard Wilder ADX.
+    The threshold adx_threshold=32 is calibrated on this non-standard
+    implementation. Do NOT compare raw ADX values with external charts
+    (TradingView, IB Charts) which use Wilder smoothing.
+    """
     n = len(bars)
     if n < 2 * period + 1:
         return 0.0
-    k = 2.0 / (period + 1.0)
+    k = 2.0 / (period + 1.0)  # EMA factor (non-Wilder; threshold=32 calibrated on this)
     atr_ema = 0.0
     plus_di_ema = 0.0
     minus_di_ema = 0.0

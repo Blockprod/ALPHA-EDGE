@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import asyncio
-import pickle
+import json
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -42,7 +42,7 @@ class BarDiskCache:
     """
     Rolling file-backed cache for historical bar data.
 
-    One ``.pkl`` file per ``(pair, timeframe)`` stores the full sorted bar
+    One ``.json`` file per ``(pair, timeframe)`` stores the full sorted bar
     history.  On each run, only the gap between the newest cached bar and
     ``end_dt`` is fetched from IB — typically one or two chunks, regardless
     of the backtest window length.
@@ -58,31 +58,70 @@ class BarDiskCache:
 
     def _path(self, pair: str, timeframe: str) -> Path:
         tf_safe = timeframe.replace(" ", "_")
+        return self._dir / f"{pair}_{tf_safe}.json"
+
+    def _path_legacy_pkl(self, pair: str, timeframe: str) -> Path:
+        """Return the legacy .pkl path for one-time migration."""
+        tf_safe = timeframe.replace(" ", "_")
         return self._dir / f"{pair}_{tf_safe}.pkl"
 
     def load(self, pair: str, timeframe: str) -> list[dict[str, Any]] | None:
         """Return all cached bars (sorted by timestamp) or None if no file."""
         p = self._path(pair, timeframe)
+        # One-time migration: import legacy .pkl if .json not yet present
+        legacy = self._path_legacy_pkl(pair, timeframe)
+        if not p.exists() and legacy.exists():
+            import pickle  # noqa: PLC0415  # local import to limit scope
+
+            try:
+                with legacy.open("rb") as fh:
+                    bars: list[dict[str, Any]] = pickle.load(fh)  # nosec B301 — migration only
+                self.save(pair, timeframe, bars)
+                legacy.unlink(missing_ok=True)
+                logger.info(
+                    "ALPHAEDGE cache: migrated %s %s from .pkl to .json",
+                    pair,
+                    timeframe,
+                )
+            except Exception:
+                logger.warning(
+                    "ALPHAEDGE cache: failed to migrate legacy .pkl for %s %s"
+                    " — ignoring",
+                    pair,
+                    timeframe,
+                )
+                return None
         if p.exists():
-            with p.open("rb") as fh:
+            try:
+                with p.open(encoding="utf-8") as fh:
+                    raw: list[dict[str, Any]] = json.load(fh)
+                # Restore datetime objects from ISO strings
+                for bar in raw:
+                    if "datetime" in bar and isinstance(bar["datetime"], str):
+                        bar["datetime"] = datetime.fromisoformat(bar["datetime"])
+                return raw
+            except Exception:
+                logger.warning("ALPHAEDGE cache: corrupt cache file %s — purging", p)
                 try:
-                    return pickle.load(fh)  # nosec B301 — local trusted cache file, not user input
-                except Exception:
-                    logger.warning(
-                        "ALPHAEDGE cache: corrupt cache file %s — purging", p
-                    )
-                    try:
-                        p.unlink()
-                    except OSError:
-                        pass
-                    return None
+                    p.unlink()
+                except OSError:
+                    pass
+                return None
         return None
 
     def save(self, pair: str, timeframe: str, bars: list[dict[str, Any]]) -> None:
         """Persist bars to disk (bars must be sorted by timestamp)."""
         p = self._path(pair, timeframe)
-        with p.open("wb") as fh:
-            pickle.dump(bars, fh)
+
+        def _serialise(obj: object) -> str:
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            raise TypeError(
+                f"Object of type {type(obj).__name__} is not JSON serialisable"
+            )
+
+        with p.open("w", encoding="utf-8") as fh:
+            json.dump(bars, fh, default=_serialise)
 
 
 # ------------------------------------------------------------------

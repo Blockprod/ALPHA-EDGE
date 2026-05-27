@@ -98,6 +98,9 @@ class DailyRegimeFilter:
         self._scaler: StandardScaler | None = None
         self._high_vol_cluster: int = 0
         self._last_fit_date: date | None = None
+        # Count sessions with a valid (non-"unknown") prediction — used to gate
+        # the regime filter until sufficient data has been observed (min 30).
+        self._sessions_observed: int = 0
 
     # ------------------------------------------------------------------
     # Training
@@ -213,6 +216,7 @@ class DailyRegimeFilter:
         cluster = int(self._kmeans.predict(x_scaled)[0])
 
         regime = "high_vol" if cluster == self._high_vol_cluster else "low_vol"
+        self._sessions_observed += 1
         logger.info(
             "DailyRegimeFilter.predict: %s → regime=%s (cluster=%d) [OBSERVATION ONLY]",
             session_date,
@@ -224,6 +228,11 @@ class DailyRegimeFilter:
     # ------------------------------------------------------------------
     # Recalibration guard
     # ------------------------------------------------------------------
+    @property
+    def sessions_observed(self) -> int:
+        """Number of sessions with a valid (non-'unknown') prediction."""
+        return self._sessions_observed
+
     def needs_recalibration(self, reference_date: date | None = None) -> bool:
         """Return True if the model is older than _RECALIBRATION_DAYS days.
 

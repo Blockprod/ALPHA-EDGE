@@ -1,4 +1,4 @@
-﻿# ⚡ ALPHAEDGE — GitHub Copilot Instructions
+# ⚡ ALPHAEDGE — GitHub Copilot Instructions
 
 > This file is read automatically by GitHub Copilot in every session.
 > It defines the project context, rules, and workflow for AI-assisted development.
@@ -58,6 +58,7 @@ IB Gateway
 - Never touch `alphaedge/utils/timezone.py` or `session_manager.py` without re-running DST edge case tests
 - Never mark a task complete without running `make qa` and confirm all tests pass *(partial passes hide regressions — 602 tests is the contract)*
 - Never push a `.pyx` edit without running `make build` followed by `make qa` *(runtime module is the .pyd/.so — the .pyx source alone does nothing)*
+- **Never modify `adx_threshold`** without N≥30 new OOS live/paper trades confirming degradation — each raise (25→30→32) mechanically improved Sharpe by reducing trade count (curve-fitting pattern)
 
 </important>
 
